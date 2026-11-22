@@ -413,6 +413,113 @@ pub enum ClientMsg {
         id: u64,
         chat: u32,
     },
+    /// The Workspaces of `workspaces.toml`, for starting a Task. Nothing secret.
+    Workspaces {
+        id: u64,
+    },
+    /// Approves a Review item: closes its Task (ADR 0068 §7, ADR 0043).
+    InboxApprove {
+        id: u64,
+        item: String,
+        /// Absent: `remove`.
+        #[serde(default)]
+        worktree: Option<WorktreeMode>,
+    },
+    /// Types the user's comment into the Task's agent, and resolves the
+    /// Review item.
+    InboxRequestChanges {
+        id: u64,
+        item: String,
+        comment: String,
+    },
+    /// Runs again what made a Failed item, and resolves it.
+    InboxRetry {
+        id: u64,
+        item: String,
+    },
+}
+
+/// What closing a Task does with a branch worktree that holds work.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorktreeMode {
+    /// Only a clean and merged worktree goes; else `would-lose-work`.
+    #[default]
+    Remove,
+    /// It goes anyway, its branch with `git branch -D`.
+    Force,
+}
+
+/// A Workspace as a client may see it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Workspace {
+    pub name: String,
+    pub root: String,
+    /// The repos as `start-task` takes them: relative to the root, or a
+    /// listed repo's folder name.
+    pub repos: Vec<String>,
+    /// The agent's program name, e.g. `claude`; never its arguments or
+    /// environment.
+    #[serde(default)]
+    pub agent: Option<String>,
+    /// `null` when the Workspace runs no Task Loops.
+    #[serde(rename = "loop")]
+    pub task_loop: Option<WorkspaceLoop>,
+    pub connections: Vec<WorkspaceConnection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceLoop {
+    pub checks: LoopChecks,
+}
+
+/// The checks a Task Loop may run: `"any"` or a list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoopChecks {
+    Any,
+    List(Vec<String>),
+}
+
+impl Serialize for LoopChecks {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            LoopChecks::Any => s.serialize_str("any"),
+            LoopChecks::List(list) => list.serialize(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LoopChecks {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Word(String),
+            List(Vec<String>),
+        }
+        match Raw::deserialize(d)? {
+            Raw::Word(w) if w == "any" => Ok(LoopChecks::Any),
+            Raw::Word(w) => Err(serde::de::Error::custom(format!(
+                "checks is \"any\" or a list, not {w:?}"
+            ))),
+            Raw::List(list) => Ok(LoopChecks::List(list)),
+        }
+    }
+}
+
+/// A connection's name only: its secret never crosses the wire (ADR 0069).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceConnection {
+    pub name: String,
+    /// On for every Task and Routine of the Workspace.
+    pub default: bool,
+}
+
+/// A Routine's id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineRef {
+    pub workspace: String,
+    pub name: String,
 }
 
 /// What changed in a followed conversation (plan F4).
@@ -617,6 +724,12 @@ pub struct InboxItem {
     pub created: i64,
     /// `capture`, `task`, or `routine`.
     pub source: String,
+    /// The Task agent terminal that made the item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<String>,
+    /// The Routine that made the item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine: Option<RoutineRef>,
 }
 
 /// The whole Inbox: open items in the user's order, then recent done ones.
@@ -724,6 +837,8 @@ pub enum ErrorCode {
     Closed,
     /// The thing is busy: a Routine already runs.
     Conflict,
+    /// Closing a Task would lose uncommitted or unmerged work; nothing changed.
+    WouldLoseWork,
 }
 
 /// Server → client on channel 0.
@@ -830,6 +945,9 @@ pub enum Reply {
     Chat {
         chat: u32,
         update: ChatUpdate,
+    },
+    Workspaces {
+        workspaces: Vec<Workspace>,
     },
     Empty {},
 }
@@ -976,5 +1094,60 @@ mod tests {
             serde_json::to_value(&err).unwrap()["code"],
             json!("not-found")
         );
+    }
+
+    #[test]
+    fn task_actions_and_workspaces_match_the_spec() {
+        let approve: ClientMsg = serde_json::from_value(
+            json!({"type": "inbox-approve", "id": 1, "item": "i3", "worktree": "force"}),
+        )
+        .unwrap();
+        assert!(matches!(
+            approve,
+            ClientMsg::InboxApprove {
+                worktree: Some(WorktreeMode::Force),
+                ..
+            }
+        ));
+        let plain: ClientMsg =
+            serde_json::from_value(json!({"type": "inbox-approve", "id": 1, "item": "i3"}))
+                .unwrap();
+        assert!(matches!(
+            plain,
+            ClientMsg::InboxApprove { worktree: None, .. }
+        ));
+        let ws = Workspace {
+            name: "app".into(),
+            root: "/src".into(),
+            repos: vec!["app".into()],
+            agent: Some("claude".into()),
+            task_loop: Some(WorkspaceLoop {
+                checks: LoopChecks::Any,
+            }),
+            connections: vec![WorkspaceConnection {
+                name: "github".into(),
+                default: true,
+            }],
+        };
+        let wire = serde_json::to_value(&ws).unwrap();
+        assert_eq!(wire["loop"], json!({"checks": "any"}));
+        assert_eq!(serde_json::from_value::<Workspace>(wire).unwrap(), ws);
+        let none = Workspace {
+            task_loop: None,
+            ..ws.clone()
+        };
+        assert_eq!(serde_json::to_value(&none).unwrap()["loop"], json!(null));
+        let list: WorkspaceLoop = serde_json::from_value(json!({"checks": ["make test"]})).unwrap();
+        assert_eq!(list.checks, LoopChecks::List(vec!["make test".into()]));
+        assert!(serde_json::from_value::<WorkspaceLoop>(json!({"checks": "all"})).is_err());
+        assert_eq!(
+            serde_json::to_value(ErrorCode::WouldLoseWork).unwrap(),
+            json!("would-lose-work")
+        );
+        // An item stored before items linked what made them still loads.
+        let old: InboxItem = serde_json::from_value(json!({"id": "i1", "kind": "failed",
+            "title": "x", "created": 1, "source": "routine"}))
+        .unwrap();
+        assert_eq!((old.terminal, old.routine), (None, None));
     }
 }

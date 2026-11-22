@@ -120,6 +120,8 @@ mod tests {
             source: "capture".into(),
             key: Some("k".into()),
             once: false,
+            terminal: None,
+            routine: None,
         };
         b.add(new, 7).unwrap();
         save(&path, &b).unwrap();
@@ -129,6 +131,22 @@ mod tests {
             std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
             0o600
         );
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn items_saved_before_they_linked_their_maker_still_load() {
+        let d = dir("old");
+        fs::create_dir_all(&d).unwrap();
+        let path = d.join("inbox.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"revision":1,"next_id":2,"items":[{"id":"i1","kind":"review",
+                "title":"Review fix","created":5,"source":"task","key":"review:t1"}],"done":[]}"#,
+        )
+        .unwrap();
+        let item = &load(&path).unwrap().view().items[0];
+        assert_eq!((&item.terminal, &item.routine), (&None, &None));
         fs::remove_dir_all(&d).unwrap();
     }
 

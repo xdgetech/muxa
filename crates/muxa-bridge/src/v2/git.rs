@@ -167,7 +167,10 @@ pub async fn main_checkout(dir: &Path) -> Result<PathBuf, GitError> {
         .ok_or_else(|| GitError::Failed(format!("unexpected git directory {common}")))
 }
 
-async fn existing_worktree(main: &Path, branch: &str) -> Result<Option<PathBuf>, GitError> {
+pub(super) async fn existing_worktree(
+    main: &Path,
+    branch: &str,
+) -> Result<Option<PathBuf>, GitError> {
     let out = run(
         git(main).args(["worktree", "list", "--porcelain"]),
         "git worktree list",
@@ -196,7 +199,7 @@ fn find_worktree(porcelain: &str, main: &Path, branch: &str) -> Option<PathBuf> 
     None
 }
 
-async fn current_branch(dir: &Path) -> Option<String> {
+pub(super) async fn current_branch(dir: &Path) -> Option<String> {
     let out = run(git(dir).args(["branch", "--show-current"]), "git branch")
         .await
         .ok()?;
@@ -213,7 +216,7 @@ async fn has_ref(dir: &Path, name: &str) -> bool {
 }
 
 /// `origin/HEAD`, else the main checkout's branch.
-async fn default_base(main: &Path) -> Result<String, GitError> {
+pub(super) async fn default_base(main: &Path) -> Result<String, GitError> {
     for args in [
         &["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"][..],
         &["rev-parse", "--abbrev-ref", "HEAD"][..],
@@ -228,7 +231,7 @@ async fn default_base(main: &Path) -> Result<String, GitError> {
     ))
 }
 
-fn git(dir: &Path) -> Command {
+pub(super) fn git(dir: &Path) -> Command {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(dir)
@@ -242,7 +245,7 @@ fn git(dir: &Path) -> Command {
 }
 
 /// Runs `cmd` to the end, or kills it after [`GIT_TIMEOUT`].
-async fn run(cmd: &mut Command, what: &str) -> Result<Output, GitError> {
+pub(super) async fn run(cmd: &mut Command, what: &str) -> Result<Output, GitError> {
     match tokio::time::timeout(GIT_TIMEOUT, cmd.output()).await {
         Ok(Ok(out)) => Ok(out),
         Ok(Err(e)) => Err(GitError::Failed(format!("cannot run {what}: {e}"))),
@@ -254,7 +257,7 @@ async fn run(cmd: &mut Command, what: &str) -> Result<Output, GitError> {
 }
 
 /// The last non-empty line of a command's output, shortened for a message.
-fn last_line(bytes: &[u8]) -> Option<String> {
+pub(super) fn last_line(bytes: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(bytes);
     let line = text.lines().map(str::trim).rfind(|l| !l.is_empty())?;
     Some(line.chars().take(MAX_MESSAGE).collect())

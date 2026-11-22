@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use muxa_protocol::v2::{self, InboxItem, ItemKind};
+use muxa_protocol::v2::{self, InboxItem, ItemKind, RoutineRef};
 use serde::{Deserialize, Serialize};
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -40,6 +40,10 @@ pub struct NewItem {
     /// The key never makes a second item, also after this one is done or
     /// deleted: a Routine entry or a crash is reported once.
     pub once: bool,
+    /// The Task agent terminal that made the item.
+    pub terminal: Option<String>,
+    /// The Routine that made the item.
+    pub routine: Option<RoutineRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,10 +131,17 @@ impl Book {
             later_until: None,
             created: now,
             source: new.source,
+            terminal: new.terminal,
+            routine: new.routine,
         };
         self.items.insert(0, Stored { item, key: new.key });
         self.revision += 1;
         Ok(Some(id))
+    }
+
+    /// The open item `id`.
+    pub fn item(&self, id: &str) -> Result<&InboxItem, InboxError> {
+        self.open(id).map(|at| &self.items[at].item)
     }
 
     pub fn cursor(&self, source: &str) -> Option<i64> {
@@ -282,6 +293,8 @@ mod tests {
             source: "capture".into(),
             key: None,
             once: false,
+            terminal: None,
+            routine: None,
         }
     }
 

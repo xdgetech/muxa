@@ -51,6 +51,7 @@ impl Host for WorkTasks {
             argv: vec!["agent".into()],
             env: Default::default(),
             places: Vec::new(),
+            connections: spec.connections.clone(),
         })
     }
 

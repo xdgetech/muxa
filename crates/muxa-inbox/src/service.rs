@@ -48,6 +48,11 @@ impl Inbox {
         self.lock().view()
     }
 
+    /// The open item `id`, as it is now.
+    pub fn item(&self, id: &str) -> Result<v2::InboxItem, InboxError> {
+        self.lock().item(id).cloned()
+    }
+
     /// Fires on each new revision.
     pub fn subscribe(&self) -> watch::Receiver<u64> {
         self.revision.subscribe()
@@ -135,6 +140,8 @@ mod tests {
             source: "capture".into(),
             key: None,
             once: false,
+            terminal: None,
+            routine: None,
         }
     }
 

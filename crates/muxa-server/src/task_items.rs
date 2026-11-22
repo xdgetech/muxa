@@ -78,6 +78,8 @@ fn report(inbox: &Inbox, t: &TerminalInfo) {
         source: "task".into(),
         key: Some(format!("failed:{}", t.id)),
         once: true,
+        terminal: Some(t.id.as_str().to_owned()),
+        routine: None,
     };
     if let Err(e) = inbox.change(|b, now| b.add(new, now).map(drop)) {
         tracing::warn!(terminal = %t.id, error = %e, "no Failed item");
@@ -113,6 +115,8 @@ pub(crate) async fn review<B: SessionBackend>(
         source: "task".into(),
         key: Some(format!("review:{terminal}")),
         once: false,
+        terminal: Some(terminal.to_owned()),
+        routine: None,
     };
     inbox
         .change(|b, now| b.add(new, now).map(drop))

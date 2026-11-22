@@ -3,6 +3,7 @@
 //! relays an SSH client's stdin and stdout to it.
 
 pub mod chat;
+mod close;
 pub mod feed;
 mod git;
 mod mcp;
@@ -12,6 +13,7 @@ mod routines;
 pub mod runner;
 pub mod task_loop;
 mod tasks;
+mod workspaces;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

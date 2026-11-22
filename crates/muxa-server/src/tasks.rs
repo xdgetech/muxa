@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
 use muxa_protocol::v2::{
     ChatUpdate, LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList,
-    Routine, RoutineProblem,
+    Routine, RoutineProblem, Workspace, WorktreeMode,
 };
 use tokio::sync::watch;
 
@@ -26,6 +26,9 @@ pub const BRANCH: &str = "muxa.branch";
 pub const WORKSPACE: &str = "muxa.workspace";
 /// A JSON list of [`Place`], the working place first.
 pub const PLACES: &str = "muxa.places";
+/// A JSON list of the connections the Task named (ADR 0069), so a restart
+/// gives the agent the same ones. Names only.
+pub const CONNECTIONS: &str = "muxa.connections";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
@@ -63,6 +66,8 @@ pub struct Prepared {
     pub branch: Option<String>,
     /// Every place, the working place first.
     pub places: Vec<Place>,
+    /// The connections the Task named, besides the default ones.
+    pub connections: Vec<String>,
     pub argv: Vec<String>,
     pub env: BTreeMap<String, String>,
 }
@@ -77,6 +82,9 @@ pub enum TaskError {
     Busy(String),
     #[error("{0}")]
     Failed(String),
+    /// Closing a Task would lose work; the message says which.
+    #[error("{0}")]
+    WouldLoseWork(String),
 }
 
 /// The host's Routines, and the Workspaces whose Routines cannot be read.
@@ -94,6 +102,41 @@ pub trait Host: Send + Sync {
     /// The Workspace names, for Capture's `#name`.
     fn workspaces(&self) -> impl Future<Output = Vec<String>> + Send {
         async { Vec::new() }
+    }
+
+    /// The Workspaces as `workspaces` shows them. Nothing secret.
+    fn workspace_list(&self) -> impl Future<Output = Result<Vec<Workspace>, TaskError>> + Send {
+        async { Ok(Vec::new()) }
+    }
+
+    /// Whether closing a Task with `places` may go on: with
+    /// [`WorktreeMode::Remove`], [`TaskError::WouldLoseWork`] when a branch
+    /// worktree has uncommitted or unmerged work. Changes nothing.
+    fn check_close(
+        &self,
+        _places: &[Place],
+        _mode: WorktreeMode,
+    ) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Removes the branch worktrees of a closed Task (ADR 0068 §7, ADR 0043).
+    /// Never a read-only place or the folder.
+    fn close_places(
+        &self,
+        _places: &[Place],
+        _mode: WorktreeMode,
+    ) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// How to run the agent of `ended`, a Task's agent terminal, again in its
+    /// working place, with the same places and connections.
+    fn restart(
+        &self,
+        _ended: &TerminalInfo,
+    ) -> impl Future<Output = Result<Prepared, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host cannot restart Tasks".into())) }
     }
 
     fn routines(&self) -> impl Future<Output = Result<RoutineList, TaskError>> + Send {
@@ -231,6 +274,11 @@ fn labels(p: &Prepared) -> Labels {
     }
     if let Ok(places) = serde_json::to_string(&p.places) {
         labels.insert(PLACES.to_owned(), places);
+    }
+    if !p.connections.is_empty()
+        && let Ok(names) = serde_json::to_string(&p.connections)
+    {
+        labels.insert(CONNECTIONS.to_owned(), names);
     }
     labels
 }

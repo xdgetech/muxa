@@ -1,9 +1,12 @@
 //! The host's side of the v2 server: a Task's places (`places.rs`, ADR 0068),
 //! the Workspace's agent command and environment (ADR 0016), and the
-//! Workspace names for Capture.
+//! Workspaces for Capture and Start Task, and closing or restarting a Task.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use muxa_protocol::v2::{Place, PlaceKind};
+use muxa_server::tasks::{BRANCH, CONNECTIONS, DIR, PLACES, REPO, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::chat::Chats;
@@ -11,6 +14,8 @@ use super::mcp;
 use super::places;
 use super::runner::Runner;
 use super::task_loop::TaskLoops;
+use crate::records::Workspace;
+use crate::records::mcp::McpServer;
 use crate::records::workers::LaunchCommand;
 use crate::routines::runs::{StartError, When};
 
@@ -61,6 +66,151 @@ impl BridgeHost {
             ..self
         }
     }
+
+    async fn workspace(&self, name: &str) -> Result<Workspace, TaskError> {
+        let (records, wanted) = (Arc::clone(&self.records), name.to_owned());
+        blocking(move || Ok(records.load_workspaces()?.get(&wanted).cloned()))
+            .await?
+            .ok_or_else(|| TaskError::Invalid(format!("no Workspace named {name:?}")))
+    }
+
+    fn agent_command(&self, ws: &Workspace) -> String {
+        ws.agent
+            .as_ref()
+            .and_then(|a| a.command.clone())
+            .unwrap_or_else(|| self.command.clone())
+    }
+
+    /// The Workspace's agent command line for `made`, with Claude Code's
+    /// settings for the other places and, in a workspace that lists MCP
+    /// servers, its `.muxa/mcp.json` written beside `TASK.md`. `servers`
+    /// is `None` on a restart: the file the Task started with is kept.
+    async fn agent_line(
+        &self,
+        ws: &Workspace,
+        made: places::Made,
+        servers: Option<Vec<McpServer>>,
+    ) -> Result<(places::Made, String), TaskError> {
+        let command = self.agent_command(ws);
+        let claude = crate::launch::is_claude_code(&LaunchCommand::Shell(command.clone()));
+        let (managed, known) = (mcp::managed(ws), ws.connections.clone());
+        let (made, flags) = blocking(move || {
+            let mut flags = Vec::new();
+            if claude {
+                flags.extend(places::claude_settings(&made)?);
+                if managed {
+                    let existing = made.working().join(".muxa").join("mcp.json");
+                    let config = match servers {
+                        None if existing.is_file() => existing,
+                        servers => {
+                            let servers = servers.unwrap_or_default();
+                            let names: Vec<&str> =
+                                servers.iter().map(|s| s.name.as_str()).collect();
+                            tracing::info!(mcp = ?names, "mcp servers given");
+                            mcp::write(made.working(), &servers, &known)?
+                        }
+                    };
+                    flags.push(mcp::shell_flags(&config));
+                }
+            }
+            Ok((made, flags))
+        })
+        .await?;
+        let line = std::iter::once(command)
+            .chain(flags)
+            .collect::<Vec<_>>()
+            .join(" ");
+        Ok((made, line))
+    }
+}
+
+/// The places of an ended agent from its labels; its working place must
+/// still be there.
+fn made_of(ended: &muxa_backend::TerminalInfo, dir: &str) -> Result<places::Made, TaskError> {
+    if !std::path::Path::new(dir).is_dir() {
+        return Err(TaskError::Invalid(format!(
+            "the working place {dir} is gone; start the Task again"
+        )));
+    }
+    let places: Vec<Place> = ended
+        .labels
+        .get(PLACES)
+        .and_then(|p| serde_json::from_str(p).ok())
+        .unwrap_or_default();
+    let branch = ended.labels.get(BRANCH).cloned();
+    let places = match places.first() {
+        Some(first) if first.path == dir => places,
+        Some(_) => {
+            return Err(TaskError::Invalid(format!(
+                "{} works in {dir}, which its places do not start with",
+                ended.id
+            )));
+        }
+        // An agent started before `muxa.places`: its working place only.
+        None => vec![Place {
+            kind: if branch.is_some() {
+                PlaceKind::Branch
+            } else {
+                PlaceKind::Folder
+            },
+            path: dir.to_owned(),
+            branch: branch.clone(),
+        }],
+    };
+    Ok(places::Made {
+        places,
+        repo: ended.labels.get(REPO).map(PathBuf::from),
+        branch,
+    })
+}
+
+/// The secrets of the connections `named` and the default ones, from the
+/// Keychain. A missing or locked one fails.
+async fn connection_env(
+    ws: &Workspace,
+    named: &[String],
+) -> Result<Vec<(String, String)>, TaskError> {
+    crate::connections::chosen(ws, named).map_err(TaskError::Invalid)?;
+    let (ws, named) = (ws.clone(), named.to_vec());
+    blocking(move || crate::connections::env(&ws, &named)).await
+}
+
+fn prepared(
+    ws: Workspace,
+    title: &str,
+    made: places::Made,
+    connections: Vec<String>,
+    line: String,
+    given: Vec<(String, String)>,
+) -> Prepared {
+    if let Some(a) = &ws.agent {
+        // Keys only: values may be tokens.
+        tracing::info!(keys = ?a.keys(), "agent environment");
+    }
+    Prepared {
+        dir: made.working().to_owned(),
+        workspace: ws.name.clone(),
+        title: title.to_owned(),
+        repo: made.repo.clone(),
+        branch: made.branch.clone(),
+        places: made.places,
+        connections,
+        argv: shell_line(line),
+        env: {
+            let mut env = ws.agent.map(|a| a.env).unwrap_or_default();
+            crate::connections::merge(&mut env, given);
+            env.into_iter().collect()
+        },
+    }
+}
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, TaskError> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| TaskError::Failed(e.to_string()))?
+        .map_err(TaskError::Failed)
 }
 
 impl Host for BridgeHost {
@@ -69,84 +219,86 @@ impl Host for BridgeHost {
         if title.is_empty() {
             return Err(TaskError::Invalid("a Task needs a title".into()));
         }
-        let records = Arc::clone(&self.records);
-        let ws = tokio::task::spawn_blocking(move || records.load_workspaces())
-            .await
-            .map_err(|e| TaskError::Failed(e.to_string()))?
-            .map_err(TaskError::Failed)?
-            .get(&spec.workspace)
-            .cloned()
-            .ok_or_else(|| {
-                TaskError::Invalid(format!("no Workspace named {:?}", spec.workspace))
-            })?;
+        let ws = self.workspace(&spec.workspace).await?;
         let checked = places::check(&ws, &spec.places).await?;
-        let command = ws
-            .agent
-            .as_ref()
-            .and_then(|a| a.command.clone())
-            .unwrap_or_else(|| self.command.clone());
-        let launch = LaunchCommand::Shell(command.clone());
-        let claude = crate::launch::is_claude_code(&launch);
         let servers = mcp::chosen(&ws, &spec.mcp).map_err(TaskError::Invalid)?;
-        if !claude {
+        let launch = LaunchCommand::Shell(self.agent_command(&ws));
+        if !crate::launch::is_claude_code(&launch) {
             mcp::only_claude(crate::launch::program(&launch), &servers)
                 .map_err(TaskError::Invalid)?;
         }
-        let managed = mcp::managed(&ws);
-        let named = mcp::with_connections(&spec.connections, &servers);
-        crate::connections::chosen(&ws, &named).map_err(TaskError::Invalid)?;
+        // The servers' connections too, so a restart gives them again.
+        let connections = mcp::with_connections(&spec.connections, &servers);
         // Before any place is made: a missing secret stops the start.
-        let ws_owned = ws.clone();
-        let given = tokio::task::spawn_blocking(move || crate::connections::env(&ws_owned, &named))
-            .await
-            .map_err(|e| TaskError::Failed(e.to_string()))?
-            .map_err(TaskError::Failed)?;
+        let given = connection_env(&ws, &connections).await?;
         let made = places::make(&ws, title, checked).await?;
-        let (title_owned, goal, known) =
-            (title.to_owned(), spec.goal.clone(), ws.connections.clone());
-        let (made, flags) = tokio::task::spawn_blocking(move || {
+        let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
+        let made = blocking(move || {
             places::brief(&made, &title_owned, goal.as_deref())?;
-            let mut flags = Vec::new();
-            if claude {
-                flags.extend(places::claude_settings(&made)?);
-                if managed {
-                    let config = mcp::write(made.working(), &servers, &known)?;
-                    flags.push(mcp::shell_flags(&config));
-                    let names: Vec<&str> = servers.iter().map(|s| s.name.as_str()).collect();
-                    tracing::info!(mcp = ?names, "mcp servers given");
-                }
-            }
-            Ok::<_, String>((made, flags))
+            Ok(made)
         })
-        .await
-        .map_err(|e| TaskError::Failed(e.to_string()))?
-        .map_err(TaskError::Failed)?;
-        let mut line = std::iter::once(command)
-            .chain(flags)
-            .collect::<Vec<_>>()
-            .join(" ");
+        .await?;
+        let (made, mut line) = self.agent_line(&ws, made, Some(servers)).await?;
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
-        if let Some(a) = &ws.agent {
-            // Keys only: values may be tokens.
-            tracing::info!(keys = ?a.keys(), "agent environment");
-        }
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
-        Ok(Prepared {
-            dir: made.working().to_owned(),
-            workspace: ws.name.clone(),
-            title: title.to_owned(),
-            repo: made.repo.clone(),
-            branch: made.branch.clone(),
-            places: made.places,
-            argv: shell_line(line),
-            env: {
-                let mut env = ws.agent.map(|a| a.env).unwrap_or_default();
-                crate::connections::merge(&mut env, given);
-                env.into_iter().collect()
-            },
+        Ok(prepared(ws, title, made, connections, line, given))
+    }
+
+    async fn restart(&self, ended: &muxa_backend::TerminalInfo) -> Result<Prepared, TaskError> {
+        let label = |key: &str| {
+            ended.labels.get(key).cloned().ok_or_else(|| {
+                TaskError::Invalid(format!(
+                    "{} has no {key} label; start the Task again",
+                    ended.id
+                ))
+            })
+        };
+        let ws = self.workspace(&label(WORKSPACE)?).await?;
+        let made = made_of(ended, &label(DIR)?)?;
+        let connections: Vec<String> = ended
+            .labels
+            .get(CONNECTIONS)
+            .and_then(|c| serde_json::from_str(c).ok())
+            .unwrap_or_default();
+        let given = connection_env(&ws, &connections).await?;
+        let (made, line) = self.agent_line(&ws, made, None).await?;
+        let title = ended
+            .name
+            .clone()
+            .or_else(|| made.branch.clone())
+            .unwrap_or_else(|| "Task".into());
+        Ok(prepared(ws, &title, made, connections, line, given))
+    }
+
+    async fn workspace_list(&self) -> Result<Vec<muxa_protocol::v2::Workspace>, TaskError> {
+        let (records, command) = (Arc::clone(&self.records), self.command.clone());
+        blocking(move || {
+            let all = records.load_workspaces()?;
+            Ok(all
+                .all()
+                .iter()
+                .map(|w| super::workspaces::to_v2(w, &command))
+                .collect())
         })
+        .await
+    }
+
+    async fn check_close(
+        &self,
+        places: &[muxa_protocol::v2::Place],
+        mode: muxa_protocol::v2::WorktreeMode,
+    ) -> Result<(), TaskError> {
+        super::close::check(places, mode).await
+    }
+
+    async fn close_places(
+        &self,
+        places: &[muxa_protocol::v2::Place],
+        mode: muxa_protocol::v2::WorktreeMode,
+    ) -> Result<(), TaskError> {
+        super::close::remove(places, mode).await
     }
 
     async fn routines(&self) -> Result<RoutineList, TaskError> {
@@ -372,6 +524,80 @@ mod tests {
         let ready = host.prepare(&spec(&[])).await.unwrap();
         assert_eq!(ready.argv[2], "codex");
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A Workspace `w` whose agent is `claude --x`, with one Task folder.
+    fn host_with_task(name: &str) -> (BridgeHost, PathBuf) {
+        let base = std::env::temp_dir().join(format!("muxa-tasks-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("root/tasks/fix-t-1")).unwrap();
+        let base = base.canonicalize().unwrap();
+        std::fs::write(
+            base.join("workspaces.toml"),
+            format!(
+                "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n[workspace.agent]\ncommand = \"claude --x\"\n",
+                base.join("root").display()
+            ),
+        )
+        .unwrap();
+        let config = crate::config::Config {
+            state_dir: None,
+            workspaces: Some(base.join("workspaces.toml")),
+            home: None,
+        };
+        (BridgeHost::new("codex".into(), Arc::new(config)), base)
+    }
+
+    #[tokio::test]
+    async fn an_ended_agent_restarts_where_it_worked_with_its_places() {
+        let (host, base) = host_with_task("restart");
+        let dir = base.join("root/tasks/fix-t-1");
+        let read = base.join("root");
+        let places = serde_json::json!([
+            {"kind": "folder", "path": dir},
+            {"kind": "read", "path": read},
+        ]);
+        let ended = muxa_backend::TerminalInfo {
+            id: muxa_backend::TerminalId::new("t9"),
+            name: Some("Fix login".into()),
+            live: false,
+            labels: muxa_backend::Labels::from([
+                (WORKSPACE.to_owned(), "w".to_owned()),
+                (DIR.to_owned(), dir.display().to_string()),
+                (PLACES.to_owned(), places.to_string()),
+            ]),
+            status: None,
+            size: muxa_backend::Size { cols: 80, rows: 24 },
+            exit: None,
+        };
+        let p = host.restart(&ended).await.unwrap();
+        assert_eq!(
+            (p.dir.as_path(), p.title.as_str()),
+            (dir.as_path(), "Fix login")
+        );
+        assert_eq!(p.places.len(), 2);
+        let line = &p.argv[2];
+        assert!(line.starts_with("claude --x --settings "), "{line}");
+        assert!(dir.join(".muxa/claude-settings.json").is_file());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(matches!(
+            host.restart(&ended).await,
+            Err(TaskError::Invalid(m)) if m.contains("is gone")
+        ));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[tokio::test]
+    async fn workspaces_are_listed_from_the_records() {
+        let (host, base) = host_with_task("list");
+        let list = host.workspace_list().await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(
+            (list[0].name.as_str(), list[0].agent.as_deref()),
+            ("w", Some("claude"))
+        );
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

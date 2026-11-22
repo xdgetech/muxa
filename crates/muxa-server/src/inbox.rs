@@ -36,6 +36,8 @@ pub(crate) async fn handle<H: Host>(msg: ClientMsg, inbox: &Inbox, host: &H) -> 
                 source: "capture".into(),
                 key: None,
                 once: false,
+                terminal: None,
+                routine: None,
             };
             (id, inbox.change(|b, now| b.add(new, now).map(drop)))
         }

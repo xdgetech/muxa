@@ -8,6 +8,7 @@ pub mod reader;
 mod ring;
 mod session;
 mod sessions;
+mod task_actions;
 mod task_items;
 pub mod tasks;
 mod wire;

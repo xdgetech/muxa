@@ -10,8 +10,24 @@ pub enum Action {
     Done(String),
     Reopen(String),
     Delete(String),
-    Move { item: String, index: usize },
-    Later { item: String, minutes: u32 },
+    Move {
+        item: String,
+        index: usize,
+    },
+    Later {
+        item: String,
+        minutes: u32,
+    },
+    /// Closes the Task of a Review item; `force` removes worktrees that hold work.
+    Approve {
+        item: String,
+        force: bool,
+    },
+    RequestChanges {
+        item: String,
+        comment: String,
+    },
+    Retry(String),
 }
 
 /// The request for `action`; a Capture first needs [`capture_add`].
@@ -27,6 +43,14 @@ pub fn request(action: &Action, now: i64) -> Value {
         Action::Later { item, minutes } => {
             json!({"type": "inbox-later", "item": item, "until": now + i64::from(*minutes) * 60})
         }
+        Action::Approve { item, force } => {
+            let worktree = if *force { "force" } else { "remove" };
+            json!({"type": "inbox-approve", "item": item, "worktree": worktree})
+        }
+        Action::RequestChanges { item, comment } => {
+            json!({"type": "inbox-request-changes", "item": item, "comment": comment})
+        }
+        Action::Retry(item) => json!({"type": "inbox-retry", "item": item}),
     }
 }
 

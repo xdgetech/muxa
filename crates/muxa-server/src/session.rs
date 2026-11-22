@@ -21,7 +21,7 @@ use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::wire::{self, Incoming};
-use crate::{inbox, task_items};
+use crate::{inbox, task_actions, task_items};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -261,7 +261,7 @@ fn to_wire(t: TerminalInfo) -> v2::Terminal {
     }
 }
 
-fn code_of(e: &BackendError) -> ErrorCode {
+pub(crate) fn code_of(e: &BackendError) -> ErrorCode {
     match e {
         BackendError::NotFound(_) => ErrorCode::NotFound,
         BackendError::Closed => ErrorCode::Closed,
@@ -468,6 +468,25 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Some(_) => self.reply(id, Reply::Empty {}),
                 None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
             },
+            ClientMsg::Workspaces { id } => match self.host.workspace_list().await {
+                Ok(workspaces) => self.reply(id, Reply::Workspaces { workspaces }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
+            ClientMsg::InboxApprove { id, item, worktree } => {
+                let mode = worktree.unwrap_or_default();
+                let done =
+                    task_actions::approve(self.backend, self.host, self.inbox, &item, mode).await;
+                self.inbox_reply(id, done);
+            }
+            ClientMsg::InboxRequestChanges { id, item, comment } => {
+                let done =
+                    task_actions::request_changes(self.backend, self.inbox, &item, &comment).await;
+                self.inbox_reply(id, done);
+            }
+            ClientMsg::InboxRetry { id, item } => {
+                let done = task_actions::retry(self.backend, self.host, self.inbox, &item).await;
+                self.inbox_reply(id, done);
+            }
             other => match inbox::handle(other, self.inbox, self.host).await {
                 Some((id, Ok(body))) => self.reply(id, body),
                 Some((id, Err((code, message)))) => self.error(Some(id), code, message),
@@ -824,6 +843,19 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         }
     }
 
+    /// The whole Inbox after a change, or why it did not happen.
+    fn inbox_reply(&self, id: u64, done: Result<(), (ErrorCode, String)>) {
+        match done {
+            Ok(()) => self.reply(
+                id,
+                Reply::Inbox {
+                    inbox: self.inbox.view(),
+                },
+            ),
+            Err((code, message)) => self.error(Some(id), code, message),
+        }
+    }
+
     fn reply(&self, id: u64, body: Reply) {
         send(&self.out, &ServerMsg::Reply { id, body });
     }
@@ -862,10 +894,11 @@ async fn next_revision(revisions: &mut Option<watch::Receiver<u64>>) {
     }
 }
 
-fn task_code(e: &TaskError) -> ErrorCode {
+pub(crate) fn task_code(e: &TaskError) -> ErrorCode {
     match e {
         TaskError::Invalid(_) => ErrorCode::BadRequest,
         TaskError::Busy(_) => ErrorCode::Conflict,
         TaskError::Failed(_) => ErrorCode::Backend,
+        TaskError::WouldLoseWork(_) => ErrorCode::WouldLoseWork,
     }
 }

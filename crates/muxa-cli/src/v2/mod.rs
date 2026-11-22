@@ -31,6 +31,10 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] inbox move ITEM INDEX
        muxa-cli v2 [--bridge CMD] inbox later ITEM --minutes N
        muxa-cli v2 [--bridge CMD] review [TERMINAL] [--note TEXT]
+       muxa-cli v2 [--bridge CMD] approve ITEM [--force]
+       muxa-cli v2 [--bridge CMD] request-changes ITEM COMMENT...
+       muxa-cli v2 [--bridge CMD] retry ITEM
+       muxa-cli v2 [--bridge CMD] workspaces [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] run-routine WORKSPACE NAME
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
@@ -48,6 +52,11 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   attach         Ctrl-] leaves. A lost connection is resumed.
   review         the Task is ready for review; TERMINAL defaults to
                  $HC_TERMINAL_ID, so its agent can say so itself
+  approve        closes the Task of a Review item: ends its agent and removes its
+                 branch worktrees when clean and merged; --force removes them anyway
+  request-changes  types COMMENT into the Task's agent and resolves the item
+  retry          runs again what made a Failed item: its Routine, its Task Loop,
+                 or its agent
   --loop         a Task Loop: after each finished turn the host runs the check;
                  without --check, the Workspace's only allowed one
   chat           the conversation of a Task's agent, from its own records
@@ -65,6 +74,9 @@ const SIZE_EVERY: Duration = Duration::from_millis(500);
 #[derive(Debug, PartialEq, Eq)]
 enum Cmd {
     Terminals {
+        json: bool,
+    },
+    Workspaces {
         json: bool,
     },
     Inbox {
@@ -159,6 +171,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut words = Vec::new();
     let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
+    let mut force = false;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -202,6 +215,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             }),
             Long("minutes") => minutes = Some(p.value()?.parse()?),
             Long("note") => note = Some(p.value()?.string()?),
+            Long("force") => force = true,
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
@@ -210,6 +224,25 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let words: Vec<&str> = words.iter().map(String::as_str).collect();
     let cmd = match words.as_slice() {
         ["terminals"] => Cmd::Terminals { json },
+        ["workspaces"] => Cmd::Workspaces { json },
+        ["approve", i] => Cmd::Inbox {
+            action: inbox::Action::Approve {
+                item: (*i).to_owned(),
+                force,
+            },
+            json,
+        },
+        ["request-changes", i, comment @ ..] if !comment.is_empty() => Cmd::Inbox {
+            action: inbox::Action::RequestChanges {
+                item: (*i).to_owned(),
+                comment: comment.join(" "),
+            },
+            json,
+        },
+        ["retry", i] => Cmd::Inbox {
+            action: inbox::Action::Retry((*i).to_owned()),
+            json,
+        },
         ["start-task"] => Cmd::StartTask {
             workspace: workspace.ok_or("start-task needs --workspace")?,
             title: title.ok_or("start-task needs --title")?,
@@ -411,6 +444,18 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             json,
         } => reader::list(bridge, &terminal, &kind, html, json).await,
         Cmd::Read(r) => reader::read(bridge, &r).await,
+        Cmd::Workspaces { json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c.request(json!({"type": "workspaces"})).await?;
+            if json {
+                println!("{}", reply["workspaces"]);
+            } else {
+                for w in reply["workspaces"].as_array().into_iter().flatten() {
+                    println!("{}", workspace_row(w));
+                }
+            }
+            Ok(())
+        }
         Cmd::Routines { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "routines"})).await?;
@@ -468,6 +513,36 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
         }
         Cmd::Attach { terminal, seconds } => attach(bridge, &terminal, seconds).await,
     }
+}
+
+/// `name  root  agent  repos  loop  connections`, one line per Workspace.
+fn workspace_row(w: &Value) -> String {
+    let words = |v: &Value, field: Option<&str>| {
+        let list: Vec<String> = v
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| field.map_or(x, |f| &x[f]).as_str().map(str::to_owned))
+            .collect();
+        if list.is_empty() {
+            "-".to_owned()
+        } else {
+            list.join(",")
+        }
+    };
+    let checks = match &w["loop"]["checks"] {
+        Value::String(s) => s.clone(),
+        Value::Array(_) => words(&w["loop"]["checks"], None),
+        _ => "-".to_owned(),
+    };
+    format!(
+        "{}\t{}\t{}\trepos {}\tloop {checks}\tconnections {}",
+        w["name"].as_str().unwrap_or("?"),
+        w["root"].as_str().unwrap_or("?"),
+        w["agent"].as_str().unwrap_or("-"),
+        words(&w["repos"], None),
+        words(&w["connections"], Some("name")),
+    )
 }
 
 /// `workspace/name  when  last`, one line per Routine.
@@ -657,6 +732,48 @@ mod tests {
 
     fn args(s: &[&str]) -> Vec<OsString> {
         s.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn task_actions_parse_into_inbox_requests() {
+        let action = |words: &[&str]| match parse(args(words)).unwrap() {
+            Some((_, Cmd::Inbox { action, .. })) => inbox::request(&action, 0),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            action(&["approve", "i3", "--force"]),
+            json!({"type": "inbox-approve", "item": "i3", "worktree": "force"})
+        );
+        assert_eq!(action(&["approve", "i3"])["worktree"], "remove");
+        assert_eq!(
+            action(&["request-changes", "i3", "Add", "a", "test"]),
+            json!({"type": "inbox-request-changes", "item": "i3", "comment": "Add a test"})
+        );
+        assert_eq!(
+            action(&["retry", "i4"]),
+            json!({"type": "inbox-retry", "item": "i4"})
+        );
+        assert_eq!(parse(args(&["request-changes", "i3"])).unwrap(), None);
+        assert_eq!(
+            parse(args(&["workspaces", "--json"])).unwrap(),
+            Some(("muxa-bridge connect".into(), Cmd::Workspaces { json: true }))
+        );
+    }
+
+    #[test]
+    fn a_workspace_row_shows_its_choices() {
+        let w = json!({"name": "app", "root": "/src", "repos": ["app", "group/lib"],
+                       "agent": "claude", "loop": {"checks": "any"},
+                       "connections": [{"name": "github", "default": true}]});
+        assert_eq!(
+            workspace_row(&w),
+            "app\t/src\tclaude\trepos app,group/lib\tloop any\tconnections github"
+        );
+        let bare = json!({"name": "p", "root": "/p", "repos": [], "loop": null, "connections": []});
+        assert_eq!(
+            workspace_row(&bare),
+            "p\t/p\t-\trepos -\tloop -\tconnections -"
+        );
     }
 
     #[test]

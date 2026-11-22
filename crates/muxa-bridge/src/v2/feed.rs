@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use muxa_inbox::{Inbox, NewItem};
-use muxa_protocol::v2::ItemKind;
+use muxa_protocol::v2::{ItemKind, RoutineRef};
 use muxa_protocol::{InboxEntryKind, RoutineFailure};
 
 use crate::routines::store::{RoutineState, RoutineStore};
@@ -84,6 +84,8 @@ fn collect(states: &[RoutineState], since: i64) -> (Vec<NewItem>, Option<i64>) {
                 source: "routine".into(),
                 key: Some(format!("routine:{}", e.id)),
                 once: true,
+                terminal: None,
+                routine: Some(routine_of(s)),
             });
         }
         if let Some(f) = s.last_failure.as_ref().filter(|f| at(f.at) >= since) {
@@ -107,6 +109,15 @@ fn failed(s: &RoutineState, f: &RoutineFailure) -> NewItem {
             s.workspace, s.name, f.at
         )),
         once: true,
+        terminal: None,
+        routine: Some(routine_of(s)),
+    }
+}
+
+fn routine_of(s: &RoutineState) -> RoutineRef {
+    RoutineRef {
+        workspace: s.workspace.clone(),
+        name: s.name.clone(),
     }
 }
 
@@ -159,6 +170,11 @@ mod tests {
         assert_eq!(newest, Some(130));
         assert_eq!(items[2].note.as_deref(), Some("gh login expired"));
         assert_eq!(items[0].workspace.as_deref(), Some("lisk"));
+        let digest = RoutineRef {
+            workspace: "lisk".into(),
+            name: "digest".into(),
+        };
+        assert!(items.iter().all(|i| i.routine.as_ref() == Some(&digest)));
     }
 
     #[test]

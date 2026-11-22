@@ -6,9 +6,11 @@ use std::time::{Duration, Instant};
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
+use muxa_inbox::NewItem;
 use muxa_protocol::v2::{
-    ChatUpdate, Frame, INITIAL_CREDIT, Kind, LoopInfo, LoopSpec, ReaderContent, ReaderEntry,
-    ReaderKind, ReaderList,
+    ChatUpdate, Frame, INITIAL_CREDIT, ItemKind, Kind, LoopChecks, LoopInfo, LoopSpec, Place,
+    PlaceKind, ReaderContent, ReaderEntry, ReaderKind, ReaderList, RoutineRef, Workspace,
+    WorkspaceConnection, WorkspaceLoop, WorktreeMode,
 };
 use muxa_server::{
     Config, Host, Inbox, Prepared, ReaderOpen, RoutineList, ServeError, Services, Sessions,
@@ -40,11 +42,55 @@ impl Host for FakeTasks {
             argv,
             env: [("K".to_owned(), "v".to_owned())].into(),
             places: Vec::new(),
+            connections: spec.connections.clone(),
         })
     }
 
     async fn workspaces(&self) -> Vec<String> {
         vec!["Personal".into()]
+    }
+
+    async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
+        Ok(vec![Workspace {
+            name: "Personal".into(),
+            root: "/work".into(),
+            repos: vec!["app".into()],
+            agent: Some("claude".into()),
+            task_loop: Some(WorkspaceLoop {
+                checks: LoopChecks::Any,
+            }),
+            connections: vec![WorkspaceConnection {
+                name: "github".into(),
+                default: false,
+            }],
+        }])
+    }
+
+    /// A place under `/work/dirty` holds work.
+    async fn check_close(&self, places: &[Place], mode: WorktreeMode) -> Result<(), TaskError> {
+        let dirty = places.iter().any(|p| p.path.starts_with("/work/dirty"));
+        if dirty && mode == WorktreeMode::Remove {
+            return Err(TaskError::WouldLoseWork(
+                "dirty has uncommitted changes".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn close_places(&self, places: &[Place], mode: WorktreeMode) -> Result<(), TaskError> {
+        CLOSED.with(|c| c.borrow_mut().push((places.to_vec(), mode)));
+        Ok(())
+    }
+
+    async fn restart(&self, ended: &TerminalInfo) -> Result<Prepared, TaskError> {
+        let dir = ended.labels.get("muxa.dir").cloned().unwrap_or_default();
+        Ok(Prepared {
+            dir: dir.into(),
+            workspace: "w".into(),
+            title: ended.name.clone().unwrap_or_default(),
+            argv: vec!["agent".into(), "--again".into()],
+            ..Prepared::default()
+        })
     }
 
     async fn routines(&self) -> Result<RoutineList, TaskError> {
@@ -180,6 +226,9 @@ fn chat_update() -> ChatUpdate {
 thread_local! {
     /// Per test: each test's runtime, server included, runs on its own thread.
     static LOOP_CHANGES: tokio::sync::watch::Sender<u64> = tokio::sync::watch::channel(0).0;
+    /// What `close_places` was asked to remove.
+    static CLOSED: std::cell::RefCell<Vec<(Vec<Place>, WorktreeMode)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn bump_loops() {
@@ -1231,4 +1280,229 @@ async fn a_chat_opens_with_the_conversation_and_ends_with_the_agent() {
     )
     .await;
     assert_eq!(refused["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn workspaces_list_what_a_task_may_use() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let reply = request(&mut client, json!({"type": "workspaces", "id": 1})).await;
+    assert_eq!(
+        reply["workspaces"],
+        json!([{"name": "Personal", "root": "/work", "repos": ["app"], "agent": "claude",
+                "loop": {"checks": "any"}, "connections": [{"name": "github", "default": false}]}])
+    );
+}
+
+/// A live Task agent working in `dir`, with a branch place there and a
+/// read-only one.
+async fn task_agent(backend: &FakeBackend, dir: &str) -> TerminalId {
+    let places = json!([{"kind": "branch", "path": dir, "branch": "fix"},
+                        {"kind": "read", "path": "/src/docs"}]);
+    let launch = Launch {
+        name: Some("fix".into()),
+        labels: [
+            ("muxa.kind".to_owned(), "task".to_owned()),
+            ("muxa.role".to_owned(), "agent".to_owned()),
+            ("muxa.dir".to_owned(), dir.to_owned()),
+            ("muxa.branch".to_owned(), "fix".to_owned()),
+            ("muxa.places".to_owned(), places.to_string()),
+        ]
+        .into(),
+        ..Launch::default()
+    };
+    backend.run(&launch).await.unwrap().id
+}
+
+/// A Review item for `agent`; its id.
+async fn review_item(client: &mut Client, agent: &TerminalId) -> String {
+    let reply = request(
+        client,
+        json!({"type": "task-review", "id": 90, "terminal": agent.as_str()}),
+    )
+    .await;
+    let item = &reply["inbox"]["items"][0];
+    assert_eq!(item["terminal"], agent.as_str(), "{reply}");
+    item["id"].as_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn approve_closes_the_task_unless_it_would_lose_work() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let agent = task_agent(&backend, "/work/dirty-fix").await;
+    let item = review_item(&mut client, &agent).await;
+
+    let refused = request(
+        &mut client,
+        json!({"type": "inbox-approve", "id": 1, "item": item}),
+    )
+    .await;
+    assert_eq!(
+        (refused["code"].as_str(), refused["message"].as_str()),
+        (
+            Some("would-lose-work"),
+            Some("dirty has uncommitted changes")
+        )
+    );
+    assert!(backend.get(&agent).await.unwrap().live, "nothing changed");
+    assert!(CLOSED.with(|c| c.borrow().is_empty()));
+
+    let forced = request(
+        &mut client,
+        json!({"type": "inbox-approve", "id": 2, "item": item, "worktree": "force"}),
+    )
+    .await;
+    assert_eq!(forced["inbox"]["done"][0]["id"], item.as_str(), "{forced}");
+    assert!(forced["inbox"]["items"].as_array().unwrap().is_empty());
+    assert!(
+        backend.get(&agent).await.is_err(),
+        "the agent's terminal is gone"
+    );
+    let closed = CLOSED.with(|c| c.borrow().clone());
+    assert_eq!(closed.len(), 1);
+    assert_eq!(closed[0].1, WorktreeMode::Force);
+    let kinds: Vec<PlaceKind> = closed[0].0.iter().map(|p| p.kind).collect();
+    assert_eq!(kinds, [PlaceKind::Branch, PlaceKind::Read]);
+
+    // A clean Task closes without force; a Todo has no Task to close.
+    let clean = task_agent(&backend, "/work/fix").await;
+    let item = review_item(&mut client, &clean).await;
+    let ok = request(
+        &mut client,
+        json!({"type": "inbox-approve", "id": 3, "item": item}),
+    )
+    .await;
+    assert_eq!(ok["type"], "reply", "{ok}");
+    let todo = request(
+        &mut client,
+        json!({"type": "inbox-add", "id": 4, "kind": "todo", "title": "milk"}),
+    )
+    .await["inbox"]["items"][0]["id"]
+        .clone();
+    let wrong = request(
+        &mut client,
+        json!({"type": "inbox-approve", "id": 5, "item": todo}),
+    )
+    .await;
+    assert_eq!(wrong["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn request_changes_types_the_comment_into_the_agent() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let agent = task_agent(&backend, "/work/fix").await;
+    let item = review_item(&mut client, &agent).await;
+    let bad = request(
+        &mut client,
+        json!({"type": "inbox-request-changes", "id": 1, "item": item, "comment": "no\u{1b}[201~"}),
+    )
+    .await;
+    assert_eq!(bad["code"], "bad-request");
+    let sent = request(
+        &mut client,
+        json!({"type": "inbox-request-changes", "id": 2, "item": item,
+               "comment": "Rename it.\nAnd add a test."}),
+    )
+    .await;
+    assert_eq!(sent["inbox"]["done"][0]["id"], item.as_str(), "{sent}");
+    let typed: Vec<u8> = backend.inputs(&agent).concat();
+    assert_eq!(typed, b"\x1b[200~Rename it.\nAnd add a test.\x1b[201~\r");
+
+    let item = review_item(&mut client, &agent).await;
+    request(
+        &mut client,
+        json!({"type": "inbox-request-changes", "id": 3, "item": item, "comment": "One more"}),
+    )
+    .await;
+    assert!(backend.inputs(&agent).concat().ends_with(b"One more\r"));
+}
+
+#[tokio::test]
+async fn retry_runs_again_what_made_the_failed_item() {
+    let backend = FakeBackend::new();
+    let inbox = Arc::new(Inbox::memory());
+    let failed = |title: &str, terminal: Option<String>, routine: Option<&str>| NewItem {
+        kind: ItemKind::Failed,
+        title: title.into(),
+        note: None,
+        workspace: None,
+        due: None,
+        source: "task".into(),
+        key: None,
+        once: false,
+        terminal,
+        routine: routine.map(|name| RoutineRef {
+            workspace: "Personal".into(),
+            name: name.into(),
+        }),
+    };
+    let add = |new| inbox.change(|b, now| b.add(new, now)).unwrap().unwrap();
+    let busy = add(failed("digest failed", None, Some("digest")));
+    let audit = add(failed("audit failed", None, Some("audit")));
+    let agent = task_agent(&backend, "/work/fix").await;
+    backend
+        .end(
+            &agent,
+            Exit {
+                reason: "exited".into(),
+                code: Some(1),
+                signal: None,
+            },
+        )
+        .unwrap();
+    let stopped = add(failed(
+        "The agent of fix stopped",
+        Some(agent.as_str().into()),
+        None,
+    ));
+    let capture = add(failed("odd", None, None));
+    let sessions = Arc::new(Sessions::new());
+    let mut client = Client::connect_with(&backend, &sessions, &inbox, PARK, hello(None)).await;
+    client.welcome().await;
+
+    let conflict = request(
+        &mut client,
+        json!({"type": "inbox-retry", "id": 1, "item": busy}),
+    )
+    .await;
+    assert_eq!(conflict["code"], "conflict");
+    let ran = request(
+        &mut client,
+        json!({"type": "inbox-retry", "id": 2, "item": audit}),
+    )
+    .await;
+    assert_eq!(ran["inbox"]["done"][0]["id"], audit.as_str(), "{ran}");
+
+    let restarted = request(
+        &mut client,
+        json!({"type": "inbox-retry", "id": 3, "item": stopped}),
+    )
+    .await;
+    assert_eq!(
+        restarted["inbox"]["done"][0]["id"],
+        stopped.as_str(),
+        "{restarted}"
+    );
+    let launch = backend.launches().last().cloned().unwrap();
+    assert_eq!(launch.argv, ["agent", "--again"]);
+    assert_eq!(
+        launch.labels.get("muxa.dir").map(String::as_str),
+        Some("/work/fix")
+    );
+    assert!(
+        backend.get(&agent).await.is_err(),
+        "the ended terminal is removed"
+    );
+
+    let nothing = request(
+        &mut client,
+        json!({"type": "inbox-retry", "id": 4, "item": capture}),
+    )
+    .await;
+    assert_eq!(nothing["code"], "bad-request");
 }

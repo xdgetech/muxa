@@ -478,6 +478,8 @@ fn review(id: &TerminalId, agent: &Agent) -> NewItem {
         source: "task".into(),
         key: Some(format!("review:{id}")),
         once: false,
+        terminal: Some(id.as_str().to_owned()),
+        routine: None,
     }
 }
 
@@ -491,6 +493,8 @@ fn failed(id: &TerminalId, agent: &Agent, note: &str) -> NewItem {
         source: "task".into(),
         key: Some(format!("loop:{id}:{}", now())),
         once: true,
+        terminal: Some(id.as_str().to_owned()),
+        routine: None,
     }
 }
 

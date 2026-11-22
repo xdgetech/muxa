@@ -3,7 +3,8 @@
 //! `hello ` and echoes input as `echo:<bytes>`. Its folder's Reader has one
 //! document, one changed file and one image, all fixed. A Task Loop with the
 //! check `make test` starts and stops, and runs nothing. A Task agent's Chat
-//! has one fixed exchange and waits on a permission.
+//! has one fixed exchange and waits on a permission. `workspaces` lists one
+//! fixed Workspace, `Personal`. Approve closes a Task with no worktree check.
 //!
 //! Usage: `fake_server SOCKET`. It runs until killed.
 
@@ -15,7 +16,8 @@ use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
 use muxa_protocol::v2::{
-    ChatUpdate, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
+    ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
+    Workspace, WorkspaceConnection, WorkspaceLoop,
 };
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
@@ -37,11 +39,28 @@ impl Host for FakeHost {
             argv: vec!["agent".into()],
             env: Default::default(),
             places: Vec::new(),
+            connections: spec.connections.clone(),
         })
     }
 
     async fn workspaces(&self) -> Vec<String> {
         vec!["Personal".into()]
+    }
+
+    async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
+        Ok(vec![Workspace {
+            name: "Personal".into(),
+            root: "/work".into(),
+            repos: vec!["app".into(), "docs".into()],
+            agent: Some("claude".into()),
+            task_loop: Some(WorkspaceLoop {
+                checks: LoopChecks::List(vec!["make test".into()]),
+            }),
+            connections: vec![WorkspaceConnection {
+                name: "github".into(),
+                default: true,
+            }],
+        }])
     }
 
     async fn routines(&self) -> Result<RoutineList, TaskError> {
