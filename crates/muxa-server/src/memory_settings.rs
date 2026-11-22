@@ -94,6 +94,8 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 name,
                 root,
                 repos,
+                found_repos: Vec::new(),
+                hidden_repos: Vec::new(),
                 park_after: None,
                 agent: SettingsAgent::default(),
                 task_loop: None,
@@ -110,10 +112,14 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             workspace: name,
             root,
             repos,
+            hidden_repos,
             agent_command,
             park_after,
         } => {
             let w = workspace(s, &name)?;
+            if let Some(hidden) = hidden_repos {
+                w.hidden_repos = hidden;
+            }
             if let Some(root) = root {
                 w.root = root;
             }

@@ -36,10 +36,17 @@ impl Workspace {
     /// Blocking: it scans the root.
     pub fn repo_list(&self) -> Vec<PathBuf> {
         let mut all = discover(&self.root);
+        all.retain(|r| !self.hides(r));
         all.extend(self.repos.iter().cloned());
         all.sort();
         all.dedup();
         all
+    }
+
+    /// Whether `repo`, found under the root, is one the developer hid.
+    fn hides(&self, repo: &Path) -> bool {
+        repo.strip_prefix(&self.root)
+            .is_ok_and(|under| self.hidden_repos.iter().any(|h| Path::new(h) == under))
     }
 
     /// Whether `main`, a canonical main checkout, is one of this workspace's

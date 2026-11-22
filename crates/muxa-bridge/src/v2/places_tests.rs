@@ -50,6 +50,7 @@ fn workspace(name: &str) -> Workspace {
         root: root.clone(),
         repos: Vec::new(),
         missing_repos: Vec::new(),
+        hidden_repos: Vec::new(),
         agent: None,
         loop_checks: None,
         park_after: None,

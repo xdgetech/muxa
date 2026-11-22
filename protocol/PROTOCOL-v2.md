@@ -281,7 +281,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 - `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
 - Paths and schedules are shown as written in the files, `~/` included.
 
-`SettingsWorkspace`: `{"name","root","repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"routines_problem"}`.
+`SettingsWorkspace`: `{"name","root","repos":[...],"found_repos":[...],"hidden_repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"routines_problem"}`. `repos` are the listed ones; `found_repos` are the repos the scan finds under the root (ADR 0031), hidden ones too, as named under it; `hidden_repos` are found repos the Workspace leaves out of its repo list, so `workspaces`, Start Task and `all-read` skip them. A listed repo is never hidden.
 - `park_after`: `"30m"`, `"12h"`, `"2d"`, or `null` (ADR 0034). `agent.command`: `null` means the daemon's `--task-command`.
 - `agent.env` lists the keys of `[workspace.agent] env` with `"set": true`. A value never crosses the wire from the server.
 - `loop`: `null` (no Task Loops), else `{"checks":"any"}` or `{"checks":["make test",...]}`.
@@ -305,7 +305,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `op` | Fields | Effect |
 |---|---|---|
 | `workspace-add` | `name`, `root`, `repos`? | A new `[[workspace]]` at the end |
-| `workspace-update` | `workspace`, `root`?, `repos`?, `agent_command`?, `park_after`? | Sets the fields that are present; `null` removes `agent_command` or `park_after` |
+| `workspace-update` | `workspace`, `root`?, `repos`?, `hidden_repos`?, `agent_command`?, `park_after`? | Sets the fields that are present; `null` removes `agent_command` or `park_after` |
 | `workspace-remove` | `workspace` | Removes the Workspace and the Keychain secrets of its connections. Its folder and `.muxa/` stay |
 | `env-set` | `workspace`, `key`, `value` | Sets one `[workspace.agent] env` variable |
 | `env-unset` | `workspace`, `key` | Removes it |

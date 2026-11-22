@@ -30,6 +30,10 @@ data class SettingsWorkspace(
     val name: String,
     val root: String,
     val repos: List<String> = emptyList(),
+    /** Repos the host found under the root, hidden ones too (ADR 0031). */
+    @SerialName("found_repos") val foundRepos: List<String> = emptyList(),
+    /** Found repos the Workspace leaves out of its repo list. */
+    @SerialName("hidden_repos") val hiddenRepos: List<String> = emptyList(),
     /** `30m`, `12h`, `2d`; null: never parked (ADR 0034). */
     @SerialName("park_after") val parkAfter: String? = null,
     val agent: SettingsAgent = SettingsAgent(),

@@ -118,6 +118,7 @@ mod tests {
             root: root.to_owned(),
             repos: vec![PathBuf::from("/elsewhere/tools")],
             missing_repos: Vec::new(),
+            hidden_repos: Vec::new(),
             agent: Some(AgentSettings {
                 command: Some("FOO=1 /opt/bin/claude --model x".into()),
                 env: vec![("TOKEN".into(), "secret".into())],

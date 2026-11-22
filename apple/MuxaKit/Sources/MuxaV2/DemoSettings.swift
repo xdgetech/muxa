@@ -32,10 +32,11 @@ extension Settings {
         case let .workspaceAdd(name, root, repos):
             guard !workspaces.contains(where: { $0.name == name }) else { throw refusal("\(name) exists") }
             workspaces.append(SettingsWorkspace(name: name, root: root, repos: repos))
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos):
             try edit(workspace) { w in
                 if let root { w.root = root }
                 if let repos { w.repos = repos }
+                if let hiddenRepos { w.hiddenRepos = hiddenRepos }
                 w.agent.command = agentCommand.applied(to: w.agent.command)
                 w.parkAfter = parkAfter.applied(to: w.parkAfter)
             }

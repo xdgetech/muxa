@@ -58,6 +58,9 @@ pub struct Workspace {
     /// Listed repos that do not exist, as written with `~/` expanded. They
     /// are skipped so the rest of the host keeps working.
     pub missing_repos: Vec<PathBuf>,
+    /// Repos under `root` the developer hid, as named under it (`group/lib`):
+    /// the Workspace leaves them out of its repo list.
+    pub hidden_repos: Vec<String>,
     /// How its agents start; None means as `--task-command` (ADR 0016).
     pub agent: Option<AgentSettings>,
     /// The checks a loop may run; None means no loops here (ADR 0019).
@@ -113,6 +116,8 @@ struct RawWorkspace {
     root: String,
     #[serde(default)]
     repos: Vec<String>,
+    #[serde(default)]
+    hidden_repos: Vec<String>,
     agent: Option<RawAgent>,
     #[serde(rename = "loop")]
     loop_table: Option<RawLoop>,
@@ -253,6 +258,7 @@ impl Workspaces {
                 root,
                 repos,
                 missing_repos,
+                hidden_repos: w.hidden_repos,
                 agent,
                 loop_checks,
                 park_after,

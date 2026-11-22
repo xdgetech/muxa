@@ -63,6 +63,7 @@ internal class DemoSettings(initial: Settings) {
         is SettingsOp.WorkspaceUpdate -> w.copy(
             root = op.root ?: w.root,
             repos = op.repos ?: w.repos,
+            hiddenRepos = op.hiddenRepos ?: w.hiddenRepos,
             parkAfter = patched(w.parkAfter, op.parkAfter),
             agent = w.agent.copy(command = patched(w.agent.command, op.agentCommand)),
         )

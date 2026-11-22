@@ -39,6 +39,8 @@ sealed class SettingsOp(val op: String) {
         val agentCommand: Patch<String> = Patch.Keep,
         /** Cleared: never parked. */
         val parkAfter: Patch<String> = Patch.Keep,
+        /** Found repos to leave out of the Workspace's list; null keeps them. */
+        val hiddenRepos: List<String>? = null,
     ) : SettingsOp("workspace-update")
 
     /** Also removes the Keychain secrets of its connections; its folder and `.muxa/` stay. */
@@ -123,6 +125,7 @@ sealed class SettingsOp(val op: String) {
                 put("workspace", o.workspace)
                 o.root?.let { put("root", it) }
                 o.repos?.let { put("repos", enc(it)) }
+                o.hiddenRepos?.let { put("hidden_repos", enc(it)) }
                 patch("agent_command", o.agentCommand)
                 patch("park_after", o.parkAfter)
             }
@@ -168,7 +171,9 @@ sealed class SettingsOp(val op: String) {
             val ws = { req("workspace") }
             return when (s("op")) {
                 "workspace-add" -> WorkspaceAdd(req("name"), req("root"), strings("repos").orEmpty())
-                "workspace-update" -> WorkspaceUpdate(ws(), s("root"), strings("repos"), patch("agent_command"), patch("park_after"))
+                "workspace-update" -> WorkspaceUpdate(
+                    ws(), s("root"), strings("repos"), patch("agent_command"), patch("park_after"), strings("hidden_repos"),
+                )
                 "workspace-remove" -> WorkspaceRemove(ws())
                 "env-set" -> EnvSet(ws(), req("key"), req("value"))
                 "env-unset" -> EnvUnset(ws(), req("key"))

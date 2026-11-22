@@ -45,6 +45,13 @@ pub struct SettingsWorkspace {
     pub root: String,
     #[serde(default)]
     pub repos: Vec<String>,
+    /// Repos under the root, found by the scan (ADR 0031), hidden ones too,
+    /// as named under the root. Not in the file.
+    #[serde(default)]
+    pub found_repos: Vec<String>,
+    /// Found repos the Workspace leaves out of its repo list.
+    #[serde(default)]
+    pub hidden_repos: Vec<String>,
     #[serde(default)]
     pub park_after: Option<String>,
     pub agent: SettingsAgent,
@@ -225,6 +232,8 @@ pub enum SettingsOp {
         root: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         repos: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hidden_repos: Option<Vec<String>>,
         #[serde(
             default,
             deserialize_with = "present",

@@ -44,6 +44,10 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     /// As written in the file, `~/` included.
     public var root: String
     public var repos: [String]
+    /// Repos the host found under the root, hidden ones too (ADR 0031).
+    public var foundRepos: [String]
+    /// Found repos the Workspace leaves out of its repo list.
+    public var hiddenRepos: [String]
     /// `30m`, `12h`, `2d`; nil: never parked (ADR 0034).
     public var parkAfter: String?
     public var agent: SettingsAgent
@@ -63,10 +67,12 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public init(name: String, root: String, repos: [String] = [], parkAfter: String? = nil, agent: SettingsAgent = SettingsAgent(),
                 loop: WorkspaceLoop? = nil, routinesEnabled: Bool = false, directWrites: Bool = false,
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
-                routinesProblem: String? = nil) {
+                routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = []) {
         self.name = name
         self.root = root
         self.repos = repos
+        self.foundRepos = foundRepos
+        self.hiddenRepos = hiddenRepos
         self.parkAfter = parkAfter
         self.agent = agent
         self.loop = loop
@@ -84,6 +90,8 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         case routinesEnabled = "routines_enabled"
         case directWrites = "direct_writes"
         case routinesProblem = "routines_problem"
+        case foundRepos = "found_repos"
+        case hiddenRepos = "hidden_repos"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -91,6 +99,8 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         root = try c.decode(String.self, forKey: .root)
         repos = try c.decode(.repos, or: [])
+        foundRepos = try c.decode(.foundRepos, or: [])
+        hiddenRepos = try c.decode(.hiddenRepos, or: [])
         parkAfter = try c.decodeIfPresent(String.self, forKey: .parkAfter)
         agent = try c.decode(.agent, or: SettingsAgent())
         loop = try c.decodeIfPresent(WorkspaceLoop.self, forKey: .loop)

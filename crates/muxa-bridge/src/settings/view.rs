@@ -31,6 +31,8 @@ pub struct FileWorkspace {
     pub root: String,
     #[serde(default)]
     repos: Vec<String>,
+    #[serde(default)]
+    hidden_repos: Vec<String>,
     park_after: Option<String>,
     agent: Option<FileAgent>,
     #[serde(rename = "loop")]
@@ -215,9 +217,12 @@ pub fn workspace(
         enabled: false,
         direct_writes: false,
     });
+    let found_repos = found_repos(&w.root, home);
     SettingsWorkspace {
+        found_repos,
         name: w.name,
         root: w.root,
+        hidden_repos: w.hidden_repos,
         repos: w.repos,
         park_after: w.park_after,
         agent,
@@ -229,4 +234,17 @@ pub fn workspace(
         routines: list,
         routines_problem: problem,
     }
+}
+
+/// The repos the scan finds under `root`, as named under it. Blocking.
+fn found_repos(root: &str, home: Option<&Path>) -> Vec<String> {
+    let Ok(root) = expand(root, home) else {
+        return Vec::new();
+    };
+    let root = root.canonicalize().unwrap_or(root);
+    crate::records::repos::discover(&root)
+        .iter()
+        .filter_map(|r| r.strip_prefix(&root).ok())
+        .map(|r| r.to_string_lossy().into_owned())
+        .collect()
 }

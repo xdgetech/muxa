@@ -55,6 +55,7 @@ fn ws(root: &Path) -> Workspace {
         root: root.to_owned(),
         repos: Vec::new(),
         missing_repos: Vec::new(),
+        hidden_repos: Vec::new(),
         agent: None,
         loop_checks: None,
         park_after: None,

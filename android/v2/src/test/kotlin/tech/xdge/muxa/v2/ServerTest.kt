@@ -227,7 +227,8 @@ class ServerTest {
                 "1", readOnly = false, problem = null,
                 workspaces = listOf(
                     SettingsWorkspace(
-                        "Personal", "~/personal", listOf("~/src/app"), parkAfter = null,
+                        "Personal", "~/personal", listOf("~/src/app"),
+                        foundRepos = listOf("app", "docs"), hiddenRepos = listOf("docs"), parkAfter = null,
                         agent = SettingsAgent("claude", listOf(EnvKey("CLAUDE_CONFIG_DIR", true))),
                         loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
                         routinesEnabled = true, directWrites = false,

@@ -52,10 +52,14 @@ pub fn apply(
             workspace,
             root,
             repos,
+            hidden_repos,
             agent_command,
             park_after,
         } => {
             let t = find_ws(workspaces, &workspace)?;
+            if let Some(hidden) = hidden_repos {
+                set_list(t, "hidden_repos", &hidden);
+            }
             if let Some(root) = root {
                 set_str(t, "root", Some(&root));
             }

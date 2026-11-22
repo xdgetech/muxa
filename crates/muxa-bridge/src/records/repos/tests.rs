@@ -22,6 +22,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         root: root.to_owned(),
         repos,
         missing_repos: Vec::new(),
+        hidden_repos: Vec::new(),
         agent: None,
         loop_checks: None,
         park_after: None,
@@ -116,6 +117,20 @@ fn the_repo_list_merges_the_root_and_the_listed_repos() {
     assert!(ws.has_repo(&shared));
     assert!(ws.has_repo(&root.join("group/plan")));
     assert!(!ws.has_repo(&root.join("notes")));
+}
+
+#[test]
+fn a_hidden_repo_leaves_the_list_unless_it_is_listed() {
+    let root = entity("hidden");
+    let mut ws = workspace(&root, Vec::new());
+    ws.hidden_repos = vec!["group/plan".into(), "app".into()];
+    assert_eq!(ws.repo_list(), Vec::<PathBuf>::new());
+    ws.repos = vec![root.join("app")];
+    assert_eq!(
+        ws.repo_list(),
+        [root.join("app")],
+        "a listed repo always shows"
+    );
 }
 
 #[test]

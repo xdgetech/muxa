@@ -142,7 +142,8 @@ struct ServerTests {
                     routines: [SettingsRoutine(
                         spec: RoutineSpec(name: "digest", at: "08:00", timezone: "Europe/Berlin",
                                           instructions: "routines/digest.md"),
-                        instructionsText: "Summarize the day.\n")]),
+                        instructionsText: "Summarize the day.\n")],
+                    foundRepos: ["app", "docs"], hiddenRepos: ["docs"]),
             ],
             workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")]))
         await c.close()

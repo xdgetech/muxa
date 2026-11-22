@@ -109,6 +109,7 @@ mod tests {
             root: "/w".into(),
             repos: Vec::new(),
             missing_repos: Vec::new(),
+            hidden_repos: Vec::new(),
             agent: None,
             loop_checks: None,
             park_after: None,

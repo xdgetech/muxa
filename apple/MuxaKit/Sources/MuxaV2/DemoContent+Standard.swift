@@ -138,7 +138,8 @@ extension DemoContent {
                         spec: RoutineSpec(name: "dependency-digest", at: "09:00", timezone: "Europe/Berlin",
                                           instructions: "routines/dependency-digest.md"),
                         instructionsText: "List the dependency updates of the week, security fixes first.\n"),
-                ]),
+                ],
+                foundRepos: ["app", "docs", "legacy"], hiddenRepos: ["legacy"]),
             SettingsWorkspace(
                 name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude"),
                 routines: [

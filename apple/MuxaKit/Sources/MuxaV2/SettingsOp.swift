@@ -13,7 +13,8 @@ public enum FieldChange<Value: Codable & Equatable & Sendable>: Equatable, Senda
 public enum SettingsOp: Equatable, Sendable {
     case workspaceAdd(name: String, root: String, repos: [String] = [])
     case workspaceUpdate(workspace: String, root: String? = nil, repos: [String]? = nil,
-                         agentCommand: FieldChange<String> = .keep, parkAfter: FieldChange<String> = .keep)
+                         agentCommand: FieldChange<String> = .keep, parkAfter: FieldChange<String> = .keep,
+                         hiddenRepos: [String]? = nil)
     /// Also removes the Keychain secrets of its connections; its folder stays.
     case workspaceRemove(workspace: String)
     case envSet(workspace: String, key: String, value: String)
@@ -77,6 +78,7 @@ extension SettingsOp: Codable {
         case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker
         case agentCommand = "agent_command"
         case parkAfter = "park_after"
+        case hiddenRepos = "hidden_repos"
         case directWrites = "direct_writes"
         case instructionsText = "instructions_text"
     }
@@ -89,10 +91,11 @@ extension SettingsOp: Codable {
             try c.encode(name, forKey: .name)
             try c.encode(root, forKey: .root)
             try c.encode(repos, forKey: .repos)
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos):
             try c.encode(workspace, forKey: .workspace)
             try c.encodeIfPresent(root, forKey: .root)
             try c.encodeIfPresent(repos, forKey: .repos)
+            try c.encodeIfPresent(hiddenRepos, forKey: .hiddenRepos)
             try c.encode(agentCommand, forKey: .agentCommand)
             try c.encode(parkAfter, forKey: .parkAfter)
         case let .workspaceRemove(workspace):
@@ -148,7 +151,8 @@ extension SettingsOp: Codable {
             self = .workspaceUpdate(
                 workspace: try ws(), root: try c.decodeIfPresent(String.self, forKey: .root),
                 repos: try c.decodeIfPresent([String].self, forKey: .repos),
-                agentCommand: try FieldChange(c, .agentCommand), parkAfter: try FieldChange(c, .parkAfter))
+                agentCommand: try FieldChange(c, .agentCommand), parkAfter: try FieldChange(c, .parkAfter),
+                hiddenRepos: try c.decodeIfPresent([String].self, forKey: .hiddenRepos))
         case "workspace-remove": self = .workspaceRemove(workspace: try ws())
         case "env-set": self = .envSet(workspace: try ws(), key: try s(.key), value: try s(.value))
         case "env-unset": self = .envUnset(workspace: try ws(), key: try s(.key))
@@ -213,9 +217,10 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
     public var description: String {
         switch self {
         case let .workspaceAdd(name, root, repos): "\(self.name)(\(name), root: \(root), repos: \(repos))"
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos):
             "\(name)(\(workspace), root: \(root ?? "keep"), repos: \(repos.map { "\($0)" } ?? "keep"), "
-                + "agent_command: \(agentCommand), park_after: \(parkAfter))"
+                + "agent_command: \(agentCommand), park_after: \(parkAfter), "
+                + "hidden_repos: \(hiddenRepos.map { "\($0)" } ?? "keep"))"
         case let .workspaceRemove(workspace): "\(name)(\(workspace))"
         case let .envSet(workspace, key, _): "\(name)(\(workspace), \(key)=\(Self.hidden))"
         case let .envUnset(workspace, key): "\(name)(\(workspace), \(key))"

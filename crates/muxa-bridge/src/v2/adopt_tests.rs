@@ -50,6 +50,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         root: root.to_owned(),
         repos,
         missing_repos: Vec::new(),
+        hidden_repos: Vec::new(),
         agent: None,
         loop_checks: None,
         park_after: None,

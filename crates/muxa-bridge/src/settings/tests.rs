@@ -188,6 +188,33 @@ fn an_update_edits_in_place_keeps_comments_and_a_backup() {
 }
 
 #[test]
+fn found_repos_show_and_a_hidden_one_is_saved() {
+    let h = host("hidden");
+    for repo in ["app", "group/lib"] {
+        fs::create_dir_all(h.dir.join("home").join(repo).join(".git")).unwrap();
+    }
+    let s = h.store.view().unwrap();
+    assert_eq!(s.workspaces[1].found_repos, ["app", "group/lib"]);
+    assert!(s.workspaces[1].hidden_repos.is_empty());
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(json!({"op": "workspace-update", "workspace": "Home", "hidden_repos": ["group/lib"]}))],
+        )
+        .unwrap();
+    assert_eq!(s.workspaces[1].hidden_repos, ["group/lib"]);
+    assert_eq!(
+        s.workspaces[1].found_repos,
+        ["app", "group/lib"],
+        "a hidden repo is still found"
+    );
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    let home = loaded.all().iter().find(|w| w.name == "Home").unwrap();
+    assert_eq!(home.repo_list(), [h.dir.join("home/app")]);
+}
+
+#[test]
 fn a_connection_lands_in_its_own_workspace_and_its_secret_in_the_keychain() {
     let h = host("conn");
     let rev = h.store.view().unwrap().revision;

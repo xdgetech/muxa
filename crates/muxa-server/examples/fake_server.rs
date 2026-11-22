@@ -294,6 +294,8 @@ fn start_settings() -> Settings {
             name: "Personal".into(),
             root: "~/personal".into(),
             repos: vec!["~/src/app".into()],
+            found_repos: vec!["app".into(), "docs".into()],
+            hidden_repos: vec!["docs".into()],
             park_after: None,
             agent: SettingsAgent {
                 command: Some("claude".into()),
