@@ -1,128 +1,67 @@
 import MuxaV2
 import SwiftUI
 
-/// The Mac's Focus (ADR 0066 decision 1, ADR 0070): the Tasks' panes, with
-/// Needs you and the Tasks on the left. The Inbox is a panel, closed by default.
+/// The Mac's Focus (ADR 0066 decision 1, ADR 0070), as the `Main` desktop
+/// mock: a header with the Workspace's Tasks as tabs, the sidebar, the panes
+/// with their key legend, and one panel (Inbox, Reader or Chat) on the right.
 struct FocusView: View {
     @Environment(NextModel.self) private var model
+    @Environment(NextNavigation.self) private var nav
     @Binding var selected: String?
     var showHome: () -> Void
 
-    @Environment(NextNavigation.self) private var nav
     /// The Task whose loop sheet is open.
     @State private var loopFor: MuxaV2.Terminal?
-    /// The other terminals start closed: Tasks are what Focus is for.
-    @State private var showOthers = false
+
+    private var active: MuxaV2.Terminal? {
+        model.terminals.first { $0.id == selected }
+    }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: Bindable(nav).sidebar) {
-            List(selection: $selected) {
-                if !model.needsYou.isEmpty {
-                    Section("Needs you") { rows(model.needsYou) }
+        VStack(spacing: 0) {
+            FocusHeader(active: active, onHome: showHome)
+            HStack(spacing: 0) {
+                if nav.sidebar != .detailOnly {
+                    FocusSidebar(selected: $selected)
                 }
-                Section("Tasks") { rows(tasks) }
-                if !model.otherTerminals.isEmpty {
-                    Section(isExpanded: $showOthers) {
-                        rows(model.otherTerminals)
-                    } header: {
-                        Button(OtherTerminals.title) { showOthers.toggle() }
-                            .buttonStyle(.plain)
-                            .otherTerminalsToggle(open: showOthers)
+                VStack(spacing: 0) {
+                    if active != nil {
+                        PaneSplit { loopFor = $0 }
+                    } else {
+                        ContentUnavailableView("Select a Task", systemImage: "terminal")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                    KeyLegend(items: Self.legend)
+                }
+                .frame(maxWidth: .infinity)
+                .background(Palette.ground)
+                if FocusSidePanel.isShown(nav: nav, terminal: active) {
+                    FocusSidePanel(terminal: active)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Palette.surface)
-            .navigationTitle("Focus")
-            .toolbar {
-                ToolbarItem(placement: .leadingBar) {
-                    Button("Home", systemImage: "tray", action: showHome).accessibilityIdentifier("mode.home")
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    NewTaskButton(id: "focus.newtask")
-                }
-            }
-        } detail: {
-            Group {
-                if let t = model.terminals.first(where: { $0.id == selected }) {
-                    PaneSplit()
-                        .navigationTitle(t.title)
-                        .toolbar {
-                            Button(LoopText.title(model.loops[t.id]), systemImage: "arrow.triangle.2.circlepath") {
-                                loopFor = t
-                            }
-                            .disabled(!t.isTaskAgent)
-                            .accessibilityIdentifier("focus.loop")
-                            Button("Chat", systemImage: "bubble.left.and.text.bubble.right") { nav.showChat.toggle() }
-                                .disabled(!t.isTaskAgent)
-                                .accessibilityIdentifier("focus.chat")
-                            Button("Reader", systemImage: "doc.text.magnifyingglass") { nav.showReader.toggle() }
-                                .disabled(t.taskDir == nil)
-                                .accessibilityIdentifier("focus.reader")
-                            Button("Inbox", systemImage: "tray.full") { nav.showInbox.toggle() }
-                                .accessibilityIdentifier("focus.inbox")
-                        }
-                        .inspector(isPresented: panel) {
-                            Group {
-                                if nav.showReader {
-                                    ReaderPanel(terminal: t).id(t.id)
-                                } else if nav.showChat {
-                                    ChatPanel(terminal: t).id(t.id)
-                                } else {
-                                    InboxPanel()
-                                }
-                            }
-                            .inspectorColumnWidth(min: 300, ideal: 460, max: 900)
-                        }
-                } else {
-                    ContentUnavailableView("Select a Task", systemImage: "terminal")
-                }
-            }
-            .background(Palette.ground)
         }
-        .navigationSplitViewStyle(.balanced)
+        .font(.system(size: 13))
+        .foregroundStyle(Palette.text)
+        .background(Palette.ground)
+        .toolbar(.hidden, for: .windowToolbar)
         .sheet(item: $loopFor) { t in LoopSheet(terminal: t) }
+        .onAppear(perform: openFirstTask)
     }
 
-    /// The panel beside the terminal: the Inbox, the Reader or Chat.
-    private var panel: Binding<Bool> {
-        Binding(
-            get: { nav.showInbox || nav.showReader || nav.showChat },
-            set: { shown in
-                if !shown {
-                    nav.showInbox = false
-                    nav.showReader = false
-                    nav.showChat = false
-                }
-            })
+    /// Focus always shows a Task when there is one: the first that needs the
+    /// user, else the first live one.
+    private func openFirstTask() {
+        guard selected == nil, let first = (model.needsYou + model.liveTasks).first else { return }
+        selected = first.id
     }
 
-    private var tasks: [Terminal] {
-        model.liveTasks.filter { !model.needsYou.contains($0) }
-    }
-
-    private func rows(_ list: [Terminal]) -> some View {
-        ForEach(list) { t in
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    StateDot(color: t.state.color, size: 8)
-                    Text(t.title)
-                    Spacer()
-                    if let state = t.status?.state {
-                        Text(state).font(.caption).foregroundStyle(t.state.color)
-                    }
-                }
-                if let dir = t.taskDir {
-                    Text(dir).font(.caption2).foregroundStyle(Palette.textTertiary).lineLimit(1)
-                }
-                if let lp = model.loops[t.id] {
-                    Text(LoopText.badge(lp)).font(.caption2)
-                        .foregroundStyle(lp.reason == "limit" ? Theme.attention : Palette.textTertiary)
-                }
-            }
-            .tag(t.id)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("terminal.\(t.id)")
-        }
-    }
+    private static let legend: [(key: String, label: String)] = [
+        (Shortcut.goToTask.display, "go to Task"),
+        (Shortcut.split.display, "split"),
+        (Shortcut.pane.display, "pane"),
+        (Shortcut.nextTask.display, "next Task"),
+        (Shortcut.nextNeedsYou.display, "next waiting"),
+        (Shortcut.sidebar.display, "sidebar"),
+        (Shortcut.capture.display, "capture"),
+    ]
 }

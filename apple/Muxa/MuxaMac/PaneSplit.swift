@@ -1,11 +1,15 @@
 import MuxaV2
 import SwiftUI
 
-/// Focus's panes side by side (ADR 0070 decision 1). The active one has the
-/// keyboard and an accent edge; `⌘\` adds a pane and `⌘1`…`⌘9` pick one.
+/// Focus's panes side by side (ADR 0070 decision 1). Each has a 30 pt header
+/// with its state; the active one has the keyboard, the Task's actions and,
+/// beside other panes, an outline in its state color. `⌘\` adds a pane and
+/// `⌘1`…`⌘9` pick one.
 struct PaneSplit: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
+    /// Opens the loop sheet of a Task.
+    let onLoop: (MuxaV2.Terminal) -> Void
 
     var body: some View {
         HSplitView {
@@ -21,23 +25,95 @@ struct PaneSplit: View {
     private func pane(_ t: MuxaV2.Terminal, index: Int) -> some View {
         let active = index == nav.active
         return VStack(spacing: 0) {
-            if nav.panes.count > 1 {
-                HStack {
-                    Text("\(index + 1)  \(t.branch ?? t.name ?? t.id)")
-                        .font(.caption.weight(active ? .semibold : .regular))
-                        .foregroundStyle(active ? Theme.accent : Palette.textSecondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .accessibilityIdentifier("pane.\(index + 1)")
-            }
+            header(t, index: index, active: active)
             TerminalPane(terminal: t, active: active, focusRequest: nav.focusRequest) { nav.activate(index) }
                 .id(t.id)
         }
         .frame(minWidth: 240)
-        .overlay(alignment: .top) {
-            if nav.panes.count > 1, active { Rectangle().fill(Theme.accent).frame(height: 2) }
+        .background(Palette.ground)
+        .overlay {
+            if nav.panes.count > 1, active {
+                Rectangle().strokeBorder(t.state.color, lineWidth: 1).allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func header(_ t: MuxaV2.Terminal, index: Int, active: Bool) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                StateDot(color: t.state.color, size: 8)
+                if let app = t.status?.app, !app.isEmpty {
+                    Text(app).fontWeight(.semibold)
+                }
+                if let state = t.status?.state {
+                    Text(TaskState(state).title.lowercased()).foregroundStyle(t.state.color)
+                }
+                Text(t.title).foregroundStyle(Palette.textSecondary).lineLimit(1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("pane.\(index + 1)")
+            Spacer(minLength: 8)
+            if active { PaneActions(terminal: t, onLoop: onLoop) }
+        }
+        .font(.system(size: 12))
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1) }
+    }
+}
+
+/// The active pane's Task actions: its loop, and the Chat and Reader panels.
+private struct PaneActions: View {
+    @Environment(NextModel.self) private var model
+    @Environment(NextNavigation.self) private var nav
+    let terminal: MuxaV2.Terminal
+    let onLoop: (MuxaV2.Terminal) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button(LoopText.title(model.loops[terminal.id]), systemImage: "arrow.triangle.2.circlepath") {
+                onLoop(terminal)
+            }
+            .buttonStyle(PaneActionStyle(on: false))
+            .disabled(!terminal.isTaskAgent)
+            .accessibilityIdentifier("focus.loop")
+            Button("Chat", systemImage: "bubble.left.and.text.bubble.right") { nav.showChat.toggle() }
+                .buttonStyle(PaneActionStyle(on: nav.showChat))
+                .disabled(!terminal.isTaskAgent)
+                .help("Chat (\(Shortcut.chatPanel.display))")
+                .accessibilityIdentifier("focus.chat")
+            Button("Reader", systemImage: "doc.text.magnifyingglass") { nav.showReader.toggle() }
+                .buttonStyle(PaneActionStyle(on: nav.showReader))
+                .disabled(terminal.taskDir == nil)
+                .help("Reader (\(Shortcut.readerPanel.display))")
+                .accessibilityIdentifier("focus.reader")
+        }
+    }
+}
+
+/// A small icon-and-text button in a pane header; filled while its panel is open.
+private struct PaneActionStyle: ButtonStyle {
+    let on: Bool
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .labelStyle(PaneActionLabel())
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(on ? Palette.text : Palette.textSecondary)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(on ? Palette.rowSelected : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+            .opacity(enabled ? (configuration.isPressed ? 0.6 : 1) : 0.35)
+    }
+}
+
+private struct PaneActionLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.font(.system(size: 11, weight: .semibold))
+            configuration.title
         }
     }
 }
