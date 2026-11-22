@@ -27,7 +27,7 @@ targets:
     sources: [Muxa]
     dependencies:
       - package: MuxaKit
-        products: [MuxaProtocol, MuxaTransport, MuxaSession, MuxaUI, MuxaV2]
+        products: [MuxaTransport, MuxaSession, MuxaUI, MuxaV2]
       - package: MarkdownUI
     settings:
       base:
@@ -65,7 +65,7 @@ targets:
       - MuxaMac
     dependencies:
       - package: MuxaKit
-        products: [MuxaProtocol, MuxaTransport, MuxaSession, MuxaV2]
+        products: [MuxaTransport, MuxaSession, MuxaV2]
       - package: SwiftTerm
     settings:
       base:

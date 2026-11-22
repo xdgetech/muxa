@@ -42,7 +42,7 @@ public enum KeySetup {
     }
 
     /// Logs in to `target` with `password` and adds `line`. The host key must already
-    /// be pinned; otherwise this fails with `hostKeyMismatch` like `SSHBridge.connect`.
+    /// be pinned; otherwise this fails with `hostKeyMismatch` like `SSHExec.connect`.
     public static func install(_ line: String, on target: SSHTarget, password: String) async throws -> Outcome {
         let check = HostKeyCheck(pinned: target.hostKey)
         let client: SSHClient

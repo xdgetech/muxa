@@ -1,4 +1,3 @@
-import MuxaProtocol
 import Testing
 
 @testable import MuxaSession
@@ -45,90 +44,5 @@ struct KeyMapTests {
         #expect(KeyMap.map(special: nil, characters: "k", modifiers: [.command]) == KeyMap.Output.none)
         #expect(KeyMap.map(special: .function(13), characters: "", modifiers: []) == KeyMap.Output.none)
         #expect(KeyMap.map(special: nil, characters: "é", modifiers: [.control]) == KeyMap.Output.none)
-    }
-}
-
-struct PaneChoiceTests {
-    func pane(_ id: String, _ role: Role, window: String = "@1", shell: Bool = false) -> Pane {
-        Pane(id: id, window: window, index: 0, role: role, cols: 80, rows: 24,
-             command: shell ? "zsh" : "claude", path: "/", dead: false, shellForeground: shell)
-    }
-
-    @Test func taggedRolesToggle() {
-        let s = Session(id: "$1", name: "s", panes: [
-            pane("%1", .hidden, shell: true), pane("%2", .agent), pane("%3", .shell, shell: true),
-        ])
-        #expect(s.defaultPane?.id == "%2")
-        #expect(s.counterpart(of: "%2")?.id == "%3")
-        #expect(s.counterpart(of: "%3")?.id == "%2")
-    }
-
-    @Test func untaggedPanesUseTheShellInTheSameWindow() {
-        let s = Session(id: "$1", name: "s", panes: [
-            pane("%1", .unknown), pane("%2", .unknown, shell: true), pane("%3", .unknown, window: "@2", shell: true),
-        ])
-        #expect(s.counterpart(of: "%1")?.id == "%2")
-        #expect(s.counterpart(of: "%2")?.id == "%1")
-    }
-
-    @Test func noCounterpartDisablesTheToggle() {
-        let s = Session(id: "$1", name: "s", panes: [pane("%1", .agent)])
-        #expect(s.counterpart(of: "%1") == nil)
-    }
-
-    @Test func theLastPaneIsReopenedWhileItsSessionIsThere() {
-        let sessions = [
-            Session(id: "$1", name: "a", panes: [pane("%1", .agent), pane("%2", .shell, shell: true)]),
-            Session(id: "$2", name: "b", panes: [pane("%3", .agent), pane("%4", .hidden)]),
-        ]
-        #expect(sessions.resuming(LastPane(session: "a", pane: "%2"))?.id == "%2")
-        // Gone or hidden: the session's default pane.
-        #expect(sessions.resuming(LastPane(session: "a", pane: "%9"))?.id == "%1")
-        #expect(sessions.resuming(LastPane(session: "b", pane: "%4"))?.id == "%3")
-        // After a server restart the id can be another session's pane.
-        #expect(sessions.resuming(LastPane(session: "b", pane: "%2"))?.id == "%3")
-        #expect(sessions.resuming(LastPane(session: "gone", pane: "%1")) == nil)
-    }
-}
-
-struct RepoGroupTests {
-    func session(_ name: String, repo: String?) -> Session {
-        Session(id: "$\(name)", name: name, repo: repo, panes: [])
-    }
-
-    @Test func groupsByRepoInFirstSeenOrderWithUntaggedLast() {
-        let sessions = [
-            session("a1", repo: "app"), session("x", repo: nil), session("b1", repo: "api"),
-            session("a2", repo: "app"), session("y", repo: ""), session("b2", repo: "api"),
-        ]
-        let groups = sessions.groupedByRepo()
-        #expect(groups.map(\.repo) == ["app", "api", nil])
-        #expect(groups.map { $0.sessions.map(\.name) } == [["a1", "a2"], ["b1", "b2"], ["x", "y"]])
-    }
-}
-
-struct ManualSessionsTests {
-    func session(_ name: String, taskId: String?, command: String, agent: AgentState?) -> Session {
-        Session(id: "$\(name)", name: name, taskId: taskId, panes: [
-            Pane(id: "%\(name)", window: "@1", index: 0, role: agent == nil ? .shell : .agent, cols: 80, rows: 24,
-                 command: command, path: "/", dead: false, shellForeground: agent == nil,
-                 agent: agent.map { Agent(state: $0) }),
-        ])
-    }
-
-    @Test func manualKeepsOnlySessionsWithoutATaskInOrder() {
-        let sessions = [
-            session("task", taskId: "t-1", command: "claude", agent: .waiting),
-            session("mine", taskId: nil, command: "zsh", agent: nil),
-            session("other", taskId: "t-2", command: "zsh", agent: nil),
-            session("blank", taskId: "", command: "vim", agent: nil),
-        ]
-        #expect(sessions.manual.map(\.name) == ["mine", "blank"])
-    }
-
-    /// An agent started by hand stays manual; a person at a Task's shell keeps the Task.
-    @Test func onlyTheTaskAssociationClassifies() {
-        #expect(!session("hand", taskId: nil, command: "claude", agent: .waiting).runsTask)
-        #expect(session("typed", taskId: "t-1", command: "zsh", agent: nil).runsTask)
     }
 }

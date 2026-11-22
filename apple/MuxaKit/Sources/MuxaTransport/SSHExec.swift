@@ -24,8 +24,8 @@ public struct SSHTarget: Codable, Hashable, Sendable {
     }
 }
 
-/// An SSH exec channel as raw bytes both ways. No PTY: bytes pass through
-/// unchanged. Protocol v2 uses it directly; `SSHBridge` splits it into lines.
+/// An SSH exec channel as raw bytes both ways: protocol v2's transport.
+/// No PTY: bytes pass through unchanged.
 public final class SSHExec: ByteChannel {
     public let bytes: AsyncThrowingStream<Data, any Error>
     private let writer: Writer
@@ -89,47 +89,6 @@ public final class SSHExec: ByteChannel {
     public func close() async {
         task.cancel()
         await writer.close()
-    }
-}
-
-/// The v1 bridge over SSH: an `SSHExec` split into protocol lines.
-public final class SSHBridge: BridgeChannel {
-    public let lines: AsyncThrowingStream<Data, any Error>
-    private let exec: SSHExec
-
-    /// Connects and starts the bridge; see `SSHExec.connect` for host keys.
-    public static func connect(to target: SSHTarget, key: ClientKey) async throws -> SSHBridge {
-        SSHBridge(exec: try await SSHExec.connect(to: target, key: key))
-    }
-
-    private init(exec: SSHExec) {
-        self.exec = exec
-        lines = Self.split(exec.bytes)
-    }
-
-    static func split(_ bytes: AsyncThrowingStream<Data, any Error>) -> AsyncThrowingStream<Data, any Error> {
-        let (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        let task = Task {
-            var framer = LineFramer()
-            do {
-                for try await chunk in bytes {
-                    for line in try framer.push(chunk) { out.yield(line) }
-                }
-                out.finish()
-            } catch {
-                out.finish(throwing: error)
-            }
-        }
-        out.onTermination = { _ in task.cancel() }
-        return lines
-    }
-
-    public func send(_ line: Data) async throws {
-        try await exec.send(line + Data([UInt8(ascii: "\n")]))
-    }
-
-    public func close() async {
-        await exec.close()
     }
 }
 

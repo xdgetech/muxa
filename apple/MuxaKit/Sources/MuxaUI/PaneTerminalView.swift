@@ -7,7 +7,7 @@ import UIKit
 /// It may tell the bridge which grid it would like (`viewportGrid`, ADR 0020),
 /// but it always renders the grid the pane has.
 @MainActor
-public final class PaneTerminalView: UIView, PaneRenderer {
+public final class PaneTerminalView: UIView {
     public typealias FitMode = PaneFit
 
     public let terminalView: TerminalView

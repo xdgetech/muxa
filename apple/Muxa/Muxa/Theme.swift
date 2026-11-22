@@ -1,4 +1,3 @@
-import MuxaProtocol
 import SwiftUI
 
 /// The app's colors by meaning. Views use these names only; the light and dark
@@ -22,16 +21,6 @@ enum Theme {
     /// Lines a change adds and removes.
     static let added = Color.green
     static let removed = Color.red
-
-    static func state(_ s: AgentState) -> Color {
-        switch s {
-        case .running: .blue
-        case .waiting: attention
-        case .idle: .gray
-        case .done: .green
-        case .error: failure
-        }
-    }
 }
 
 /// One SF Symbol per concept, used everywhere that concept appears.

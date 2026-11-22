@@ -7,7 +7,6 @@ let package = Package(
     // macOS 15: Citadel's exec channel needs it, and `swift test` runs on macOS.
     platforms: [.iOS(.v17), .macOS(.v15)],
     products: [
-        .library(name: "MuxaProtocol", targets: ["MuxaProtocol"]),
         .library(name: "MuxaTransport", targets: ["MuxaTransport"]),
         .library(name: "MuxaSession", targets: ["MuxaSession"]),
         .library(name: "MuxaUI", targets: ["MuxaUI"]),
@@ -21,7 +20,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),
     ],
     targets: [
-        .target(name: "MuxaProtocol"),
         .target(
             name: "MuxaTransport",
             dependencies: [
@@ -32,7 +30,7 @@ let package = Package(
         ),
         .target(
             name: "MuxaSession",
-            dependencies: ["MuxaProtocol", "MuxaTransport", .product(name: "SwiftTerm", package: "SwiftTerm")]
+            dependencies: ["MuxaTransport"]
         ),
         // UIKit views for the app; empty on macOS.
         .target(
@@ -46,16 +44,12 @@ let package = Package(
             dependencies: ["MuxaV2", "MuxaTransport"]
         ),
         .testTarget(
-            name: "MuxaProtocolTests",
-            dependencies: ["MuxaProtocol"]
-        ),
-        .testTarget(
             name: "MuxaTransportTests",
             dependencies: ["MuxaTransport"]
         ),
         .testTarget(
             name: "MuxaSessionTests",
-            dependencies: ["MuxaSession", "MuxaTransport", "MuxaProtocol"]
+            dependencies: ["MuxaSession", "MuxaTransport"]
         ),
     ]
 )
