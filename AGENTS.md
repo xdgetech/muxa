@@ -54,7 +54,6 @@ muxa lets you run and follow coding agents from an iPad, an iPhone, an Android p
 | `make lint-store` | the store listings fit each store's limits and never say "demo" or "trial" (part of `make check`). |
 | `make bundle-android` | the signed Play bundle into `build/release/muxa.aab`, with the upload key from `~/.gradle/gradle.properties` (`store/RELEASE.md`). |
 | `make archive-ios` | **humans only**: a signed release archive and the `.ipa` for App Store Connect, in `build/release/`. It signs with the developer's Apple account. |
-| `TEST_RUNNER_MUXA_SCREENSHOT_DIR=<dir> make test-app` | also keeps the UI test's portrait and landscape screenshots. |
 | `muxa-cli --bridge 'ssh host ~/.local/bin/muxa-bridge connect' terminals` | the reference client against a host's daemon. |
 
 ## Invariants

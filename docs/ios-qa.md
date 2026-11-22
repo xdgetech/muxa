@@ -25,10 +25,9 @@ An ignored `mise.local.toml` can set `IOS_QA_CONFIG` for another project.
 mise run qa:ios:check
 mise run qa:ios:ipad-mini
 mise run qa:ios:iphone
-mise run screenshots:ios
 ```
 
-`make test-app`, `make test-app-iphone` and `make screenshots` use the same
+`make test-app` and `make test-app-iphone` use the same
 wrapper, without requiring mise. `MUXA_SIM` and `MUXA_SIM_IPHONE` still accept
 an existing device's name or UDID; its configured runtime and role's device
 type must match, and name resolution must be unambiguous.
