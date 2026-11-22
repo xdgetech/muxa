@@ -121,6 +121,7 @@ If the Task's agent is still running in that working place, the reply has it wit
 - `muxa.repo` (the main checkout) and `muxa.branch`, when the working place is a branch;
 - `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
 - `muxa.connections`: a JSON list of the connection names `start-task` named, when it named any. Names only.
+- `muxa.mcp`: a JSON list of every MCP server the agent got, the default ones too, when it got any. Names only.
 
 `connections` names the Workspace's connections the agent gets as environment variables, besides the ones on by default (ADR 0069). Their secrets come from the host's Keychain and never cross the wire. A missing or locked secret fails the start before any place is made.
 
@@ -216,11 +217,19 @@ Items the server makes:
 
 ADR 0072. The actions of a Review or Failed item, and the Workspaces a client offers when it starts a Task.
 
-`Workspace`: `{"name","root","repos":[...],"agent"?,"loop","connections":[{"name","default"}],"mcp":[{"name","default"}]}`.
+`Workspace`: `{"name","root","repos":[...],"agent"?,"loop","connections":[Use...],"mcp":[Use...]}`.
 - `repos`: the Workspace's repos as `start-task` takes them, relative to the root, or a listed repo's folder name.
 - `agent`: the program name of the Workspace's agent, such as `claude` or `codex`. Never its arguments or environment.
 - `loop`: `null` when the Workspace runs no Task Loops, else `{"checks":"any"}` or `{"checks":["make test",...]}`.
 - `connections`: names only, and whether each is on by default. A connection's variable, account and secret never cross the wire.
+- `mcp`: the `[[workspace.mcp]]` servers, by name only. Their command, URL and variables never cross the wire.
+
+`Use` says who uses a connection or an MCP server (ADR 0069 §7): `{"name","default","used_by":{"routines":[...],"tasks":[...]},"last_used"}`.
+- `used_by.routines`: the names of the Workspace's Routines in `routines.toml` that get it: they list it, or, for a connection, they get an MCP server that needs it.
+- `used_by.tasks`: the ids of the live Task agent terminals that got it, from their `muxa.connections` and `muxa.mcp` labels.
+- A `default` one counts for every Routine and every live Task agent of the Workspace.
+- `last_used`: Unix seconds when the daemon last started an agent with it (a Task, a restart or a Routine run), or `null`. The host keeps the times in `<state dir>/usage.json`, names only.
+- A server before ADR 0069 §7 sends only `name` and `default`; clients read the rest as empty and `null`.
 
 `inbox-approve` closes the Task of an open Review item that has `terminal` (ADR 0068 §7, ADR 0043):
 1. With `worktree: "remove"`, the host checks each branch worktree on the agent's `muxa.places`. Uncommitted changes, or a branch whose commits are not in the default base (`origin/HEAD`, else the main checkout's branch) or the main checkout's branch, is `would-lose-work`. Its message says which. Nothing changes.

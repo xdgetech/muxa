@@ -95,17 +95,64 @@ public struct WorkspaceMcp: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     /// On for every Task and Routine of the Workspace.
     public var isDefault: Bool
+    /// Who gets it now (ADR 0069 §7).
+    public var usedBy: UsedBy
+    /// Unix seconds when an agent last started with it; nil: never.
+    public var lastUsed: Int64?
 
     public var id: String { name }
 
-    public init(name: String, isDefault: Bool) {
+    public init(name: String, isDefault: Bool, usedBy: UsedBy = UsedBy(), lastUsed: Int64? = nil) {
         self.name = name
         self.isDefault = isDefault
+        self.usedBy = usedBy
+        self.lastUsed = lastUsed
     }
 
     enum CodingKeys: String, CodingKey {
         case name
         case isDefault = "default"
+        case usedBy
+        case lastUsed
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        isDefault = try c.decode(Bool.self, forKey: .isDefault)
+        // Servers before ADR 0069 §7 send neither.
+        usedBy = try c.decodeIfPresent(UsedBy.self, forKey: .usedBy) ?? UsedBy()
+        lastUsed = try c.decodeIfPresent(Int64.self, forKey: .lastUsed)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(isDefault, forKey: .isDefault)
+        try c.encode(usedBy, forKey: .usedBy)
+        try c.encode(lastUsed, forKey: .lastUsed)
+    }
+}
+
+/// Who gets a connection or MCP server now: a default one counts for every
+/// Task and Routine of the Workspace.
+public struct UsedBy: Codable, Equatable, Sendable {
+    /// The names of the Routines in `routines.toml` that get it.
+    public var routines: [String]
+    /// The ids of the live Task agent terminals that got it.
+    public var tasks: [String]
+
+    public init(routines: [String] = [], tasks: [String] = []) {
+        self.routines = routines
+        self.tasks = tasks
+    }
+
+    enum CodingKeys: String, CodingKey { case routines, tasks }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        routines = try c.decodeIfPresent([String].self, forKey: .routines) ?? []
+        tasks = try c.decodeIfPresent([String].self, forKey: .tasks) ?? []
     }
 }
 
@@ -147,17 +194,42 @@ public struct WorkspaceConnection: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     /// On for every Task and Routine of the Workspace.
     public var isDefault: Bool
+    /// Who gets it now (ADR 0069 §7).
+    public var usedBy: UsedBy
+    /// Unix seconds when an agent last started with it; nil: never.
+    public var lastUsed: Int64?
 
     public var id: String { name }
 
-    public init(name: String, isDefault: Bool) {
+    public init(name: String, isDefault: Bool, usedBy: UsedBy = UsedBy(), lastUsed: Int64? = nil) {
         self.name = name
         self.isDefault = isDefault
+        self.usedBy = usedBy
+        self.lastUsed = lastUsed
     }
 
     enum CodingKeys: String, CodingKey {
         case name
         case isDefault = "default"
+        case usedBy
+        case lastUsed
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        isDefault = try c.decode(Bool.self, forKey: .isDefault)
+        // Servers before ADR 0069 §7 send neither.
+        usedBy = try c.decodeIfPresent(UsedBy.self, forKey: .usedBy) ?? UsedBy()
+        lastUsed = try c.decodeIfPresent(Int64.self, forKey: .lastUsed)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(isDefault, forKey: .isDefault)
+        try c.encode(usedBy, forKey: .usedBy)
+        try c.encode(lastUsed, forKey: .lastUsed)
     }
 }
 

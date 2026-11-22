@@ -381,6 +381,7 @@ dependencies = [
  "jiff",
  "lexopt",
  "muxa-backend",
+ "muxa-inbox",
  "muxa-protocol",
  "muxa-server",
  "serde_json",

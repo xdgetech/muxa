@@ -20,5 +20,6 @@ tokio = { version = "1.54.1", features = ["rt", "macros", "io-util", "io-std", "
 
 [dev-dependencies]
 muxa-backend = { path = "../muxa-backend", features = ["fake"] }
+muxa-inbox = { path = "../muxa-inbox" }
 muxa-server = { path = "../muxa-server" }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

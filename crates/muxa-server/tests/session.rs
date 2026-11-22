@@ -9,8 +9,8 @@ use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
 use muxa_inbox::NewItem;
 use muxa_protocol::v2::{
     ChatUpdate, Frame, INITIAL_CREDIT, ItemKind, Kind, LoopChecks, LoopInfo, LoopSpec, Place,
-    PlaceKind, ReaderContent, ReaderEntry, ReaderKind, ReaderList, RoutineRef, Workspace,
-    WorkspaceConnection, WorkspaceLoop, WorktreeMode,
+    PlaceKind, ReaderContent, ReaderEntry, ReaderKind, ReaderList, RoutineRef, UsedBy, Workspace,
+    WorkspaceConnection, WorkspaceLoop, WorkspaceMcp, WorktreeMode,
 };
 use muxa_server::{
     Config, Host, Inbox, Prepared, ReaderOpen, RoutineList, ServeError, Services, Sessions,
@@ -43,7 +43,12 @@ impl Host for FakeTasks {
             env: [("K".to_owned(), "v".to_owned())].into(),
             places: Vec::new(),
             connections: spec.connections.clone(),
+            mcp: spec.mcp.clone(),
         })
+    }
+
+    async fn agent_started(&self, prepared: &Prepared) {
+        STARTED.with(|s| s.borrow_mut().push(prepared.title.clone()));
     }
 
     async fn workspaces(&self) -> Vec<String> {
@@ -62,8 +67,18 @@ impl Host for FakeTasks {
             connections: vec![WorkspaceConnection {
                 name: "github".into(),
                 default: false,
+                used_by: UsedBy {
+                    routines: vec!["digest".into()],
+                    tasks: Vec::new(),
+                },
+                last_used: Some(1_700_000_000),
             }],
-            mcp: Vec::new(),
+            mcp: vec![WorkspaceMcp {
+                name: "docs".into(),
+                default: false,
+                used_by: UsedBy::default(),
+                last_used: None,
+            }],
         }])
     }
 
@@ -131,23 +146,32 @@ impl Host for FakeTasks {
         }
     }
 
+    /// Keeps the loop by the agent's own id, so `loops` finds it again.
     async fn loop_start(
         &self,
         agent: &TerminalInfo,
         spec: &LoopSpec,
-        _reset: bool,
+        reset: bool,
     ) -> Result<LoopInfo, TaskError> {
         self.loop_check("", spec).await?;
+        let id = agent.id.as_str().to_owned();
+        let info = loop_info(&id, "armed");
+        LOOPS.with(|l| l.borrow_mut().insert(id.clone(), info.clone()));
+        if reset {
+            RESETS.with(|r| r.borrow_mut().push(id));
+        }
         bump_loops();
-        Ok(loop_info(agent.id.as_str(), "armed"))
+        Ok(info)
     }
 
     async fn loop_stop(&self, terminal: &str) -> Result<LoopInfo, TaskError> {
-        Ok(loop_info(terminal, "stopped"))
+        let info = loop_info(terminal, "stopped");
+        LOOPS.with(|l| l.borrow_mut().insert(terminal.to_owned(), info.clone()));
+        Ok(info)
     }
 
     async fn loops(&self) -> Vec<LoopInfo> {
-        vec![loop_info("t1", "armed")]
+        LOOPS.with(|l| l.borrow().values().cloned().collect())
     }
 
     fn loop_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
@@ -230,6 +254,13 @@ thread_local! {
     /// What `close_places` was asked to remove.
     static CLOSED: std::cell::RefCell<Vec<(Vec<Place>, WorktreeMode)>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// The loops `loop_start` made, by agent terminal id.
+    static LOOPS: std::cell::RefCell<std::collections::BTreeMap<String, LoopInfo>> =
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+    /// The agents whose loop `loop_start` started over.
+    static RESETS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// The titles of the agents `agent_started` heard of.
+    static STARTED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn bump_loops() {
@@ -1292,7 +1323,85 @@ async fn workspaces_list_what_a_task_may_use() {
     assert_eq!(
         reply["workspaces"],
         json!([{"name": "Personal", "root": "/work", "repos": ["app"], "agent": "claude",
-                "loop": {"checks": "any"}, "connections": [{"name": "github", "default": false}], "mcp": []}])
+                "loop": {"checks": "any"},
+                "connections": [{"name": "github", "default": false,
+                    "used_by": {"routines": ["digest"], "tasks": []}, "last_used": 1_700_000_000}],
+                "mcp": [{"name": "docs", "default": false,
+                    "used_by": {"routines": [], "tasks": []}, "last_used": null}]}])
+    );
+}
+
+#[tokio::test]
+async fn workspaces_show_the_live_tasks_that_got_each_connection_and_server() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let start = |id: u64, title: &str, extra: Value| {
+        let mut msg =
+            json!({"type": "start-task", "id": id, "workspace": "Personal", "title": title});
+        if let (Some(m), Some(e)) = (msg.as_object_mut(), extra.as_object()) {
+            m.extend(e.clone());
+        }
+        msg
+    };
+    let both = request(
+        &mut client,
+        start(
+            1,
+            "both",
+            json!({"connections": ["github"], "mcp": ["docs"]}),
+        ),
+    )
+    .await;
+    let both = both["terminal"]["id"].as_str().unwrap().to_owned();
+    let plain = request(&mut client, start(2, "plain", json!({}))).await;
+    assert_eq!(plain["existing"], false, "{plain}");
+    let again = request(
+        &mut client,
+        start(
+            3,
+            "both",
+            json!({"connections": ["github"], "mcp": ["docs"]}),
+        ),
+    )
+    .await;
+    assert_eq!(again["existing"], true, "{again}");
+    // Only a new agent counts as a start.
+    assert_eq!(STARTED.with(|s| s.borrow().clone()), ["both", "plain"]);
+
+    let launch = &backend.launches()[0];
+    assert_eq!(
+        launch.labels.get("muxa.mcp").map(String::as_str),
+        Some(r#"["docs"]"#)
+    );
+    assert_eq!(
+        backend.launches()[1].labels.get("muxa.mcp"),
+        None,
+        "no servers, no label"
+    );
+    let reply = request(&mut client, json!({"type": "workspaces", "id": 4})).await;
+    let ws = &reply["workspaces"][0];
+    assert_eq!(
+        ws["connections"][0]["used_by"],
+        json!({"routines": ["digest"], "tasks": [both]})
+    );
+    assert_eq!(ws["mcp"][0]["used_by"]["tasks"], json!([both]));
+
+    backend
+        .end(
+            &TerminalId::new(&both),
+            Exit {
+                reason: "exited".into(),
+                code: Some(0),
+                signal: None,
+            },
+        )
+        .unwrap();
+    let reply = request(&mut client, json!({"type": "workspaces", "id": 5})).await;
+    assert_eq!(
+        reply["workspaces"][0]["connections"][0]["used_by"]["tasks"],
+        json!([]),
+        "an ended agent uses nothing"
     );
 }
 
@@ -1491,6 +1600,7 @@ async fn retry_runs_again_what_made_the_failed_item() {
     );
     let launch = backend.launches().last().cloned().unwrap();
     assert_eq!(launch.argv, ["agent", "--again"]);
+    assert_eq!(STARTED.with(|s| s.borrow().clone()), ["fix"]);
     assert_eq!(
         launch.labels.get("muxa.dir").map(String::as_str),
         Some("/work/fix")
@@ -1506,4 +1616,64 @@ async fn retry_runs_again_what_made_the_failed_item() {
     )
     .await;
     assert_eq!(nothing["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn retry_starts_a_live_agents_task_loop_over() {
+    let backend = FakeBackend::new();
+    let inbox = Arc::new(Inbox::memory());
+    let sessions = Arc::new(Sessions::new());
+    let mut client = Client::connect_with(&backend, &sessions, &inbox, PARK, hello(None)).await;
+    client.welcome().await;
+    let started = request(
+        &mut client,
+        json!({"type": "start-task", "id": 1, "workspace": "Personal", "title": "fix",
+               "loop": {"check": "make test"}}),
+    )
+    .await;
+    let agent = started["terminal"]["id"].as_str().unwrap().to_owned();
+    assert!(RESETS.with(|r| r.borrow().is_empty()));
+    let item = |terminal: &str| NewItem {
+        kind: ItemKind::Failed,
+        title: "The loop of fix gave up".into(),
+        note: None,
+        workspace: None,
+        due: None,
+        source: "task".into(),
+        key: None,
+        once: false,
+        terminal: Some(terminal.to_owned()),
+        routine: None,
+    };
+    let failed = inbox
+        .change(|b, now| b.add(item(&agent), now))
+        .unwrap()
+        .unwrap();
+
+    let retried = request(
+        &mut client,
+        json!({"type": "inbox-retry", "id": 2, "item": failed}),
+    )
+    .await;
+    assert_eq!(
+        retried["inbox"]["done"][0]["id"],
+        failed.as_str(),
+        "{retried}"
+    );
+    assert_eq!(RESETS.with(|r| r.borrow().clone()), [agent.as_str()]);
+    assert_eq!(backend.launches().len(), 1, "the live agent keeps running");
+    assert!(backend.get(&TerminalId::new(&agent)).await.unwrap().live);
+
+    // A live agent without a loop has nothing to retry.
+    let bare = task_agent(&backend, "/work/bare").await;
+    let failed = inbox
+        .change(|b, now| b.add(item(bare.as_str()), now))
+        .unwrap()
+        .unwrap();
+    let refused = request(
+        &mut client,
+        json!({"type": "inbox-retry", "id": 3, "item": failed}),
+    )
+    .await;
+    assert_eq!(refused["code"], "bad-request", "{refused}");
 }

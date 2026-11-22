@@ -296,4 +296,10 @@ async fn a_run_gets_only_the_mcp_servers_its_routine_names() {
         serde_json::from_str::<serde_json::Value>(&config).unwrap(),
         json!({"mcpServers": {"docs": {"type": "stdio", "command": "docs-mcp", "args": [], "env": {}}}})
     );
+    let usage = crate::usage::read(&h.base.join("state")).unwrap().of("w");
+    assert_eq!(
+        usage.mcp.keys().collect::<Vec<_>>(),
+        ["docs"],
+        "the run's start is noted for the servers it got"
+    );
 }

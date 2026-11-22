@@ -2,6 +2,7 @@ import Foundation
 
 extension DemoContent {
     /// Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines.
+    /// Approving `d8` needs force: its worktree holds work.
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
             Terminal(
@@ -19,6 +20,7 @@ extension DemoContent {
             Routine(workspace: "app", name: name, enabled: true, at: at, timezone: at.map { _ in "Europe/Berlin" },
                     schedule: nil, nextDue: nil, runningSince: nil, last: last)
         }
+        let everyRoutine = ["dependency-digest", "nightly-backup", "release-notes"]
         return DemoContent(
             terminals: [
                 agent("t1", "fix-login", "working"),
@@ -41,6 +43,7 @@ extension DemoContent {
                 item("d6", .todo, "Renew the domain", workspace: "Personal", due: "2026-12-01", source: "capture"),
                 item("d7", .failed, "The agent of docs-audit stopped", note: "It exited with code 1.", source: "task",
                      terminal: "t2"),
+                item("d8", .review, "Review docs-audit", note: "Two links still to check.", source: "task", terminal: "t2"),
             ],
             routines: [
                 routine("dependency-digest", at: "09:00", last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 1)),
@@ -51,9 +54,14 @@ extension DemoContent {
             taskWorkspaces: [
                 Workspace(name: "app", root: "/demo", repos: ["app", "docs"], agent: "claude",
                           loop: WorkspaceLoop(checks: .list(["make test", "make lint"])),
-                          connections: [WorkspaceConnection(name: "github", isDefault: true),
-                                        WorkspaceConnection(name: "linear", isDefault: false)],
-                          mcp: [WorkspaceMcp(name: "docs", isDefault: true)]),
+                          connections: [
+                              WorkspaceConnection(name: "github", isDefault: true, usedBy: UsedBy(routines: everyRoutine),
+                                                  lastUsed: 1_764_000_000),
+                              WorkspaceConnection(name: "linear", isDefault: false,
+                                                  usedBy: UsedBy(routines: ["dependency-digest"]), lastUsed: 1_763_990_000),
+                          ],
+                          mcp: [WorkspaceMcp(name: "docs", isDefault: true, usedBy: UsedBy(routines: everyRoutine),
+                                             lastUsed: 1_764_000_000)]),
                 Workspace(name: "Personal", root: "/demo/personal", agent: "claude"),
             ],
             files: [
@@ -89,7 +97,8 @@ extension DemoContent {
                         ChatOption(label: "Allow", input: "y"),
                         ChatOption(label: "Deny", input: "n", cancel: true),
                     ])),
-            ])
+            ],
+            losesWork: ["d8": "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"])
     }()
 
     private static let plan = """

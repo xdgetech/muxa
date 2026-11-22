@@ -21,7 +21,7 @@ use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::wire::{self, Incoming};
-use crate::{inbox, task_actions, task_items};
+use crate::{inbox, task_actions, task_items, usage};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -468,10 +468,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Some(_) => self.reply(id, Reply::Empty {}),
                 None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
             },
-            ClientMsg::Workspaces { id } => match self.host.workspace_list().await {
-                Ok(workspaces) => self.reply(id, Reply::Workspaces { workspaces }),
-                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
-            },
+            ClientMsg::Workspaces { id } => self.workspaces(id).await,
             ClientMsg::InboxApprove { id, item, worktree } => {
                 let mode = worktree.unwrap_or_default();
                 let done =
@@ -594,6 +591,22 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         }
     }
 
+    /// The host's Workspaces, with the live Task agents that use each
+    /// connection and MCP server.
+    async fn workspaces(&mut self, id: u64) {
+        let workspaces = match self.host.workspace_list().await {
+            Ok(w) => w,
+            Err(e) => return self.error(Some(id), task_code(&e), e.to_string()),
+        };
+        match self.backend.list().await {
+            Ok(terminals) => {
+                let workspaces = usage::with_tasks(workspaces, &terminals);
+                self.reply(id, Reply::Workspaces { workspaces });
+            }
+            Err(e) => self.error(Some(id), code_of(&e), e.to_string()),
+        }
+    }
+
     async fn start_task(&mut self, id: u64, spec: &TaskSpec, task_loop: Option<v2::LoopSpec>) {
         if let Some(l) = &task_loop
             && let Err(e) = self.host.loop_check(&spec.workspace, l).await
@@ -608,7 +621,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 return;
             }
         };
-        match tasks::start(self.backend, prepared).await {
+        match tasks::start(self.backend, self.host, prepared).await {
             Ok((terminal, existing)) => {
                 tracing::info!(terminal = %terminal.id, existing, "task agent");
                 if let Some(l) = &task_loop

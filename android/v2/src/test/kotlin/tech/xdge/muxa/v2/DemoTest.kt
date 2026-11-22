@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -174,6 +175,45 @@ class DemoTest {
             assertEquals(V2Event.InboxChanged(inbox), c.events.receive())
             assertEquals(review.id, inbox.done.first().id)
             assertEquals(false, c.terminals().any { it.id == "t1" })
+            c.close()
+        }
+    }
+
+    @Test
+    fun approveAsksForForceWhenTheWorktreeHoldsWork() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            try {
+                c.inbox(V2Request.InboxApprove("d8"))
+                fail("d8's worktree holds work")
+            } catch (e: V2Error.Refused) {
+                assertEquals("would-lose-work", e.code)
+                assertTrue(e.message.orEmpty().contains("uncommitted changes"))
+            }
+            assertTrue("nothing closed", c.terminals().any { it.id == "t2" })
+            assertTrue(c.inbox().items.any { it.id == "d8" })
+            val forced = c.inbox(V2Request.InboxApprove("d8", WorktreeChoice.FORCE))
+            assertEquals("d8", forced.done.first().id)
+            assertTrue(c.terminals().none { it.id == "t2" })
+            c.close()
+        }
+    }
+
+    @Test
+    fun workspacesSayWhoUsesEachConnectionAndServer() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val app = c.workspaces().first()
+            val every = listOf("dependency-digest", "nightly-backup", "release-notes")
+            assertEquals(UsedBy(every, listOf("t1", "t2")), app.connections[0].usedBy)
+            assertEquals(1_764_000_000L, app.connections[0].lastUsed)
+            assertEquals(UsedBy(listOf("dependency-digest")), app.connections[1].usedBy)
+            val (t, _) = c.startTask("app", "Triage", connections = listOf("linear"))
+            assertEquals("""["linear"]""", t.labels["muxa.connections"])
+            assertEquals("a default server counts", """["docs"]""", t.labels["muxa.mcp"])
+            val after = c.workspaces().first()
+            assertEquals(listOf(t.id), after.connections[1].usedBy.tasks)
+            assertEquals(listOf("t1", "t2", t.id), after.mcp[0].usedBy.tasks)
             c.close()
         }
     }

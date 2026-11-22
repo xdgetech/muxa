@@ -34,9 +34,13 @@ public struct DemoContent: Sendable {
     public var files: [ReaderKind: [DemoFile]]
     /// Each Task agent's conversation, by terminal id.
     public var chats: [String: ChatUpdate]
+    /// Review items whose Approve without force is refused with
+    /// `would-lose-work`, and the message, by item id.
+    public var losesWork: [String: String]
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
-                taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:]) {
+                taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:],
+                losesWork: [String: String] = [:]) {
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
@@ -45,6 +49,7 @@ public struct DemoContent: Sendable {
         self.taskWorkspaces = taskWorkspaces
         self.files = files
         self.chats = chats
+        self.losesWork = losesWork
     }
 }
 
@@ -190,6 +195,9 @@ actor DemoServer {
             change(id) { $0.items.insert(review, at: 0) }
         case "inbox-approve":
             guard let review = reviewItem(id, item), let terminal = review.terminal else { return }
+            if m["worktree"] as? String != WorktreeChoice.force.rawValue, let why = content.losesWork[item] {
+                return send(["type": "error", "id": id, "code": "would-lose-work", "message": why])
+            }
             close(terminal)
             resolve(id, item)
         case "inbox-request-changes":
@@ -203,7 +211,7 @@ actor DemoServer {
         case "inbox-retry":
             retry(id, item)
         case "workspaces":
-            reply(id, ["workspaces": json(content.taskWorkspaces)])
+            reply(id, ["workspaces": json(content.taskWorkspaces.map(withTasks))])
         case "routines":
             reply(id, ["routines": json(content.routines), "problems": []])
         case "run-routine":
@@ -407,6 +415,10 @@ actor DemoServer {
         var labels = ["muxa.kind": "task", "muxa.role": "agent", "muxa.dir": dir, "muxa.workspace": workspace.name]
         if let branch { labels["muxa.branch"] = branch }
         if let repo { labels["muxa.repo"] = repo }
+        let named = m["connections"] as? [String] ?? []
+        if !named.isEmpty { labels["muxa.connections"] = jsonText(named) }
+        let servers = workspace.mcp.filter { $0.isDefault || (m["mcp"] as? [String] ?? []).contains($0.name) }.map(\.name)
+        if !servers.isEmpty { labels["muxa.mcp"] = jsonText(servers) }
         let t = Terminal(
             id: newTerminalID(), name: title, live: true,
             status: TerminalStatus(state: "working", app: "claude-code"),
@@ -416,6 +428,32 @@ actor DemoServer {
         if let loopSpec { setLoop(newLoop(t.id, loopSpec, previous: nil)) }
         reply(id, ["terminal": json(t), "existing": false])
         if watching { send(["type": "changed", "terminal": json(t)]) }
+    }
+
+    /// `ws` with the live Task agents that got each connection and MCP server,
+    /// from their labels, as the server answers `workspaces`.
+    private func withTasks(_ ws: Workspace) -> Workspace {
+        let agents = content.terminals.filter { $0.live && $0.isTaskAgent && $0.labels["muxa.workspace"] == ws.name }
+        func users(_ label: String, _ name: String, _ isDefault: Bool) -> [String] {
+            agents.filter { t in
+                let names = t.labels[label].flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) }
+                return isDefault || (names ?? []).contains(name)
+            }.map(\.id)
+        }
+        var out = ws
+        for i in out.connections.indices {
+            let c = out.connections[i]
+            out.connections[i].usedBy.tasks = users("muxa.connections", c.name, c.isDefault)
+        }
+        for i in out.mcp.indices {
+            let m = out.mcp[i]
+            out.mcp[i].usedBy.tasks = users("muxa.mcp", m.name, m.isDefault)
+        }
+        return out
+    }
+
+    private func jsonText(_ names: [String]) -> String {
+        (try? JSONEncoder().encode(names)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
     }
 
     /// Why the Workspace refuses this loop, or nil.

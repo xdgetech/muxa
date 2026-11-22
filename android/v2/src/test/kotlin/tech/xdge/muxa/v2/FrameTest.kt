@@ -55,4 +55,20 @@ class FrameTest {
         assertEquals(200L, inbox.items[0].laterUntil)
         assertTrue(inbox.items[0].isLater(100))
     }
+
+    @Test
+    fun connectionsAndServersSayWhoUsesThem() {
+        val wire = """{"workspaces":[{"name":"a","root":"/a","repos":[],"loop":null,
+            "connections":[{"name":"github","default":false,"used_by":{"routines":["digest"],"tasks":["t4"]},"last_used":1700000000}],
+            "mcp":[{"name":"docs","default":true,"used_by":{"routines":[],"tasks":[]},"last_used":null}]},
+            {"name":"old","root":"/o","repos":[],"connections":[{"name":"gh","default":true}]}]}"""
+        val ws = field<List<Workspace>>("workspaces", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals(
+            WorkspaceConnection("github", isDefault = false, usedBy = UsedBy(listOf("digest"), listOf("t4")), lastUsed = 1_700_000_000),
+            ws[0].connections.single(),
+        )
+        assertEquals(WorkspaceMcp("docs", isDefault = true), ws[0].mcp.single())
+        // A server before ADR 0069 §7 sends neither.
+        assertEquals(WorkspaceConnection("gh", isDefault = true), ws[1].connections.single())
+    }
 }

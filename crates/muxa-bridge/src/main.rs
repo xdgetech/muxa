@@ -13,6 +13,7 @@ mod launch;
 mod loops;
 mod records;
 mod routines;
+mod usage;
 mod utc;
 mod v2;
 

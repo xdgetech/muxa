@@ -4,16 +4,26 @@
 
 use std::path::Path;
 
-use muxa_protocol::v2::{self, LoopChecks, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp};
+use muxa_protocol::v2::{
+    self, LoopChecks, UsedBy, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
+};
 
 use crate::launch::program;
 use crate::records::Workspace;
 use crate::records::loops::Checks;
+use crate::records::routines::Routine;
 use crate::records::workers::LaunchCommand;
+use crate::usage::WorkspaceUsage;
 
 /// `default_command` is the agent of a Workspace that names none. Blocking:
-/// it scans the root for repos.
-pub fn to_v2(ws: &Workspace, default_command: &str) -> v2::Workspace {
+/// it scans the root for repos. `routines` are the Workspace's, and `usage`
+/// its last starts; the server adds the live Tasks to `used_by`.
+pub fn to_v2(
+    ws: &Workspace,
+    default_command: &str,
+    routines: &[&Routine],
+    usage: &WorkspaceUsage,
+) -> v2::Workspace {
     let command = ws
         .agent
         .as_ref()
@@ -43,6 +53,13 @@ pub fn to_v2(ws: &Workspace, default_command: &str) -> v2::Workspace {
             .map(|c| WorkspaceConnection {
                 name: c.name.clone(),
                 default: c.default,
+                used_by: UsedBy {
+                    routines: routine_names(routines, |r| {
+                        c.default || gets_connection(ws, r, &c.name)
+                    }),
+                    tasks: Vec::new(),
+                },
+                last_used: usage.connections.get(&c.name).copied(),
             })
             .collect(),
         mcp: ws
@@ -51,9 +68,32 @@ pub fn to_v2(ws: &Workspace, default_command: &str) -> v2::Workspace {
             .map(|m| WorkspaceMcp {
                 name: m.name.clone(),
                 default: m.default,
+                used_by: UsedBy {
+                    routines: routine_names(routines, |r| m.default || r.mcp.contains(&m.name)),
+                    tasks: Vec::new(),
+                },
+                last_used: usage.mcp.get(&m.name).copied(),
             })
             .collect(),
     }
+}
+
+fn routine_names(routines: &[&Routine], uses: impl Fn(&Routine) -> bool) -> Vec<String> {
+    routines
+        .iter()
+        .filter(|r| uses(r))
+        .map(|r| r.name.clone())
+        .collect()
+}
+
+/// Whether `r` names the connection, or gets an MCP server that needs it.
+fn gets_connection(ws: &Workspace, r: &Routine, name: &String) -> bool {
+    r.connections.contains(name)
+        || ws
+            .mcp
+            .iter()
+            .filter(|m| m.default || r.mcp.contains(&m.name))
+            .any(|m| m.connections.contains(name))
 }
 
 /// What `start-task` takes for `repo`: the path under the root, else the
@@ -117,7 +157,7 @@ mod tests {
             std::fs::create_dir_all(root.join(repo).join(".git")).unwrap();
         }
         let root = root.canonicalize().unwrap();
-        let shown = to_v2(&workspace(&root), "codex");
+        let shown = to_v2(&workspace(&root), "codex", &[], &WorkspaceUsage::default());
         assert_eq!(shown.repos, ["app", "group/lib", "tools"]);
         assert_eq!(shown.agent.as_deref(), Some("claude"));
         assert_eq!(
@@ -131,7 +171,9 @@ mod tests {
             shown.mcp,
             [WorkspaceMcp {
                 name: "docs".into(),
-                default: false
+                default: false,
+                used_by: UsedBy::default(),
+                last_used: None,
             }]
         );
         for secret in [
@@ -151,11 +193,61 @@ mod tests {
             loop_checks: None,
             ..workspace(&root)
         };
-        let shown = to_v2(&plain, "codex --full-auto");
+        let shown = to_v2(&plain, "codex --full-auto", &[], &WorkspaceUsage::default());
         assert_eq!(
             (shown.agent.as_deref(), shown.task_loop),
             (Some("codex"), None)
         );
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn routine(name: &str, connections: &[&str], mcp: &[&str]) -> Routine {
+        let names = |n: &[&str]| n.iter().map(|s| (*s).to_owned()).collect();
+        Routine {
+            workspace: "app".into(),
+            name: name.into(),
+            trigger: None,
+            worker: None,
+            instructions: "/i.md".into(),
+            dir: "/".into(),
+            items: 5,
+            direct_writes: false,
+            project: None,
+            enabled: true,
+            connections: names(connections),
+            mcp: names(mcp),
+        }
+    }
+
+    #[test]
+    fn each_connection_and_server_lists_its_routines_and_last_use() {
+        let mut ws = workspace(Path::new("/nonexistent"));
+        ws.connections[0].default = false;
+        ws.connections.push(Connection {
+            name: "sentry".into(),
+            env: "SENTRY_TOKEN".into(),
+            account: None,
+            access: Access::default(),
+            default: true,
+        });
+        let (triage, digest, plain) = (
+            routine("triage", &[], &["docs"]),
+            routine("digest", &["github"], &[]),
+            routine("plain", &[], &[]),
+        );
+        let usage = WorkspaceUsage {
+            connections: [("github".into(), 20)].into(),
+            mcp: [("docs".into(), 10)].into(),
+        };
+        let shown = to_v2(&ws, "claude", &[&triage, &digest, &plain], &usage);
+        let used = |i: usize| &shown.connections[i];
+        // triage gets github through docs, which needs it.
+        assert_eq!(used(0).used_by.routines, ["triage", "digest"]);
+        assert_eq!(used(0).last_used, Some(20));
+        assert_eq!(used(1).used_by.routines, ["triage", "digest", "plain"]);
+        assert_eq!(used(1).last_used, None);
+        assert_eq!(shown.mcp[0].used_by.routines, ["triage"]);
+        assert_eq!(shown.mcp[0].last_used, Some(10));
+        assert!(shown.mcp[0].used_by.tasks.is_empty());
     }
 }

@@ -477,6 +477,23 @@ pub struct WorkspaceMcp {
     pub name: String,
     /// On for every Task and Routine of the Workspace.
     pub default: bool,
+    #[serde(default)]
+    pub used_by: UsedBy,
+    /// Unix seconds when an agent last started with it; `null`: never.
+    #[serde(default)]
+    pub last_used: Option<u64>,
+}
+
+/// Who gets a connection or MCP server now (ADR 0069 §7): the default ones
+/// count for every Task and Routine of the Workspace.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsedBy {
+    /// The names of the Routines in `routines.toml` that get it.
+    #[serde(default)]
+    pub routines: Vec<String>,
+    /// The ids of the live Task agent terminals that got it.
+    #[serde(default)]
+    pub tasks: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -524,6 +541,11 @@ pub struct WorkspaceConnection {
     pub name: String,
     /// On for every Task and Routine of the Workspace.
     pub default: bool,
+    #[serde(default)]
+    pub used_by: UsedBy,
+    /// Unix seconds when an agent last started with it; `null`: never.
+    #[serde(default)]
+    pub last_used: Option<u64>,
 }
 
 /// A Routine's id.
@@ -1138,14 +1160,34 @@ mod tests {
             connections: vec![WorkspaceConnection {
                 name: "github".into(),
                 default: true,
+                used_by: UsedBy {
+                    routines: vec!["triage".into()],
+                    tasks: vec!["t7".into()],
+                },
+                last_used: Some(1_700_000_000),
             }],
             mcp: vec![WorkspaceMcp {
                 name: "docs".into(),
                 default: false,
+                used_by: UsedBy::default(),
+                last_used: None,
             }],
         };
         let wire = serde_json::to_value(&ws).unwrap();
-        assert_eq!(wire["mcp"], json!([{"name": "docs", "default": false}]));
+        assert_eq!(
+            wire["mcp"],
+            json!([{"name": "docs", "default": false,
+                "used_by": {"routines": [], "tasks": []}, "last_used": null}])
+        );
+        assert_eq!(
+            wire["connections"][0],
+            json!({"name": "github", "default": true,
+                "used_by": {"routines": ["triage"], "tasks": ["t7"]}, "last_used": 1_700_000_000})
+        );
+        // A reply from a daemon before ADR 0069 §7 still reads.
+        let old: WorkspaceMcp =
+            serde_json::from_value(json!({"name": "docs", "default": true})).unwrap();
+        assert_eq!((old.used_by, old.last_used), (UsedBy::default(), None));
         assert_eq!(wire["loop"], json!({"checks": "any"}));
         assert_eq!(serde_json::from_value::<Workspace>(wire).unwrap(), ws);
         let none = Workspace {

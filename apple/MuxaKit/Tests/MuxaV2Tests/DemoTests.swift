@@ -164,6 +164,39 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func approveAsksForForceWhenTheWorktreeHoldsWork() async throws {
+        let c = try await open()
+        do {
+            _ = try await c.inbox(.inboxApprove(item: "d8"))
+            Issue.record("d8's worktree holds work")
+        } catch let V2Error.refused(code, message) {
+            #expect(code == "would-lose-work")
+            #expect(message.contains("uncommitted changes"))
+        }
+        #expect(try await c.terminals().contains { $0.id == "t2" }, "nothing closed")
+        #expect(try await c.inbox().items.contains { $0.id == "d8" })
+        let forced = try await c.inbox(.inboxApprove(item: "d8", worktree: .force))
+        #expect(forced.done.first?.id == "d8")
+        #expect(try await !c.terminals().contains { $0.id == "t2" })
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func workspacesSayWhoUsesEachConnectionAndServer() async throws {
+        let c = try await open()
+        let app = try #require(try await c.workspaces().first)
+        #expect(app.connections[0].usedBy == UsedBy(
+            routines: ["dependency-digest", "nightly-backup", "release-notes"], tasks: ["t1", "t2"]))
+        #expect(app.connections[0].lastUsed == 1_764_000_000)
+        #expect(app.connections[1].usedBy == UsedBy(routines: ["dependency-digest"], tasks: []))
+        let (t, _) = try await c.startTask(workspace: "app", title: "Triage", connections: ["linear"])
+        #expect(t.labels["muxa.connections"] == #"["linear"]"#)
+        #expect(t.labels["muxa.mcp"] == #"["docs"]"#, "a default server counts")
+        let after = try #require(try await c.workspaces().first)
+        #expect(after.connections[1].usedBy.tasks == [t.id])
+        #expect(after.mcp[0].usedBy.tasks == ["t1", "t2", t.id])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func requestChangesTypesTheCommentIntoTheAgent() async throws {
         let c = try await open()
         var events = c.events.makeAsyncIterator()

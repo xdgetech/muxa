@@ -150,13 +150,33 @@ internal object LoopChecksSerializer : KSerializer<LoopChecks> {
         (e as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw SerializationException("a check is a string")
 }
 
-/** A connection of a Workspace; default ones go to every Task (ADR 0069). */
+/**
+ * A connection of a Workspace; default ones go to every Task (ADR 0069). [lastUsed] is the Unix
+ * second an agent last started with it; null: never.
+ */
 @Serializable
-data class WorkspaceConnection(val name: String, @SerialName("default") val isDefault: Boolean)
+data class WorkspaceConnection(
+    val name: String,
+    @SerialName("default") val isDefault: Boolean,
+    @SerialName("used_by") val usedBy: UsedBy = UsedBy(),
+    @SerialName("last_used") val lastUsed: Long? = null,
+)
 
 /** An MCP server of a Workspace, by name only; default ones go to every Task (ADR 0069). */
 @Serializable
-data class WorkspaceMcp(val name: String, @SerialName("default") val isDefault: Boolean)
+data class WorkspaceMcp(
+    val name: String,
+    @SerialName("default") val isDefault: Boolean,
+    @SerialName("used_by") val usedBy: UsedBy = UsedBy(),
+    @SerialName("last_used") val lastUsed: Long? = null,
+)
+
+/**
+ * Who gets a connection or MCP server now (ADR 0069 §7): the [routines] in `routines.toml`, by
+ * name, and the live Task agents, by terminal id. A default one counts for all of them.
+ */
+@Serializable
+data class UsedBy(val routines: List<String> = emptyList(), val tasks: List<String> = emptyList())
 
 /** A place a client asks for (ADR 0068). A repo is absolute, or relative to the Workspace's root. */
 sealed interface PlaceSpec {

@@ -73,6 +73,19 @@ struct FrameTests {
         #expect(throws: (any Error).self) { let _: [Workspace] = try field("workspaces", of: Data(bad.utf8)) }
     }
 
+    @Test func connectionsAndServersSayWhoUsesThem() throws {
+        let wire = #"{"workspaces":[{"name":"a","root":"/a","repos":[],"loop":null,"connections":[{"name":"github","default":false,"used_by":{"routines":["digest"],"tasks":["t4"]},"last_used":1700000000}],"mcp":[{"name":"docs","default":true,"used_by":{"routines":[],"tasks":[]},"last_used":null}]}]}"#
+        let ws: [Workspace] = try field("workspaces", of: Data(wire.utf8))
+        #expect(ws[0].connections == [WorkspaceConnection(
+            name: "github", isDefault: false, usedBy: UsedBy(routines: ["digest"], tasks: ["t4"]), lastUsed: 1_700_000_000)])
+        #expect(ws[0].mcp == [WorkspaceMcp(name: "docs", isDefault: true)])
+        let e = JSONEncoder()
+        e.keyEncodingStrategy = .convertToSnakeCase
+        let back = try JSONSerialization.jsonObject(with: e.encode(ws[0].mcp[0])) as? [String: Any]
+        #expect(back?["last_used"] is NSNull, "never used is null on the wire")
+        #expect(back?["used_by"] != nil)
+    }
+
     @Test func itemsDecodeFromTheWire() throws {
         let wire = #"{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"#
         let inbox: Inbox = try field("inbox", of: Data(wire.utf8))

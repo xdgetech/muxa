@@ -4,7 +4,9 @@
 //! document, one changed file and one image, all fixed. A Task Loop with the
 //! check `make test` starts and stops, and runs nothing. A Task agent's Chat
 //! has one fixed exchange and waits on a permission. `workspaces` lists one
-//! fixed Workspace, `Personal`. Approve closes a Task with no worktree check.
+//! fixed Workspace, `Personal`, whose `github` connection the Routine
+//! `digest` uses and the live Tasks get by default. Approve closes a Task
+//! with no worktree check.
 //!
 //! Usage: `fake_server SOCKET`. It runs until killed.
 
@@ -17,7 +19,7 @@ use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
 use muxa_protocol::v2::{
     ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
-    Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
+    UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
 };
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
@@ -40,6 +42,7 @@ impl Host for FakeHost {
             env: Default::default(),
             places: Vec::new(),
             connections: spec.connections.clone(),
+            mcp: spec.mcp.clone(),
         })
     }
 
@@ -59,10 +62,17 @@ impl Host for FakeHost {
             connections: vec![WorkspaceConnection {
                 name: "github".into(),
                 default: true,
+                used_by: UsedBy {
+                    routines: vec!["digest".into()],
+                    tasks: Vec::new(),
+                },
+                last_used: Some(1_700_000_000),
             }],
             mcp: vec![WorkspaceMcp {
                 name: "docs".into(),
                 default: false,
+                used_by: UsedBy::default(),
+                last_used: None,
             }],
         }])
     }

@@ -281,7 +281,7 @@ async fn restart_agent<B: SessionBackend, H: Host>(
     ended: &TerminalInfo,
 ) -> Result<(), Refusal> {
     let prepared = host.restart(ended).await.map_err(refused)?;
-    let (started, existing) = tasks::start(backend, prepared)
+    let (started, existing) = tasks::start(backend, host, prepared)
         .await
         .map_err(|e| (code_of(&e), e.to_string()))?;
     tracing::info!(ended = %ended.id, terminal = %started.id, existing, "task agent restarted");

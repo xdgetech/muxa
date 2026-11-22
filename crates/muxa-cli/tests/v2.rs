@@ -8,7 +8,12 @@ use std::time::Duration;
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
-use muxa_protocol::v2::{ChatUpdate, ReaderContent, ReaderEntry, ReaderKind, ReaderList};
+use muxa_inbox::NewItem;
+use muxa_protocol::v2::{
+    ChatUpdate, ItemKind, LoopChecks, Place, PlaceKind, ReaderContent, ReaderEntry, ReaderKind,
+    ReaderList, RoutineRef, UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
+    WorktreeMode,
+};
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, Services, Sessions, TaskError, TaskSpec, serve,
 };
@@ -36,7 +41,7 @@ while True:
     sys.stdout.buffer.flush()
 "#;
 
-/// Agents in `/work/<branch>`.
+/// Agents in `/work/<branch>`; a worktree under `/work/dirty` holds work.
 struct WorkTasks;
 
 impl Host for WorkTasks {
@@ -50,9 +55,59 @@ impl Host for WorkTasks {
             branch: Some(branch.to_owned()),
             argv: vec!["agent".into()],
             env: Default::default(),
-            places: Vec::new(),
+            places: vec![Place {
+                kind: PlaceKind::Branch,
+                path: format!("/work/{branch}"),
+                branch: Some(branch.to_owned()),
+            }],
             connections: spec.connections.clone(),
+            mcp: spec.mcp.clone(),
         })
+    }
+
+    async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
+        Ok(vec![Workspace {
+            name: "w".into(),
+            root: "/work".into(),
+            repos: vec!["app".into()],
+            agent: Some("claude".into()),
+            task_loop: Some(WorkspaceLoop {
+                checks: LoopChecks::Any,
+            }),
+            connections: vec![WorkspaceConnection {
+                name: "github".into(),
+                default: false,
+                used_by: UsedBy {
+                    routines: vec!["digest".into()],
+                    tasks: Vec::new(),
+                },
+                last_used: Some(1_700_000_000),
+            }],
+            mcp: vec![WorkspaceMcp {
+                name: "docs".into(),
+                default: true,
+                used_by: UsedBy::default(),
+                last_used: None,
+            }],
+        }])
+    }
+
+    async fn check_close(&self, places: &[Place], mode: WorktreeMode) -> Result<(), TaskError> {
+        if mode == WorktreeMode::Remove && places.iter().any(|p| p.path == "/work/dirty") {
+            return Err(TaskError::WouldLoseWork(
+                "dirty has uncommitted changes".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn run_routine<B: SessionBackend>(
+        &self,
+        _backend: &B,
+        _workspace: &str,
+        _name: &str,
+    ) -> Result<(), TaskError> {
+        Ok(())
     }
 
     async fn chat_open(&self, _dir: &Path) -> Result<(u64, ChatUpdate), TaskError> {
@@ -117,6 +172,7 @@ impl Host for WorkTasks {
 struct TestHost {
     dir: PathBuf,
     backend: FakeBackend,
+    inbox: Arc<Inbox>,
 }
 
 impl TestHost {
@@ -130,6 +186,7 @@ impl TestHost {
         let served = backend.clone();
         let sessions = Arc::new(Sessions::new());
         let inbox = Arc::new(Inbox::memory());
+        let shared = Arc::clone(&inbox);
         tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let (backend, sessions) = (served.clone(), Arc::clone(&sessions));
@@ -151,7 +208,11 @@ impl TestHost {
                 });
             }
         });
-        TestHost { dir, backend }
+        TestHost {
+            dir,
+            backend,
+            inbox: shared,
+        }
     }
 
     /// Runs `muxa-cli v2 <args>` without a terminal; it reads no keys.
@@ -172,6 +233,30 @@ impl TestHost {
 
     async fn terminal(&self) -> TerminalId {
         self.backend.run(&Launch::default()).await.unwrap().id
+    }
+
+    /// A Task's agent on `branch` with a Review item; the agent and the item.
+    async fn review(&self, branch: &str) -> (String, String) {
+        let place = format!("/r:{branch}");
+        let started: Value = serde_json::from_str(&stdout(
+            &self
+                .cli(&[
+                    "start-task",
+                    "--workspace",
+                    "w",
+                    "--title",
+                    branch,
+                    "--branch",
+                    &place,
+                    "--json",
+                ])
+                .await,
+        ))
+        .unwrap();
+        let agent = started["terminal"]["id"].as_str().unwrap().to_owned();
+        let row = stdout(&self.cli(&["review", &agent]).await);
+        let item = row.split('\t').next().unwrap().to_owned();
+        (agent, item)
     }
 }
 
@@ -367,4 +452,101 @@ async fn chat_prints_a_tasks_conversation() {
     let agent = started["terminal"]["id"].as_str().unwrap();
     let out = stdout(&host.cli(&["chat", agent]).await);
     assert_eq!(out, "user: Clean it\nassistant: Done.\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn workspaces_lists_what_a_task_may_use_and_who_uses_it() {
+    let host = TestHost::start("workspaces").await;
+    let rows = stdout(&host.cli(&["workspaces"]).await);
+    assert_eq!(
+        rows,
+        "w\t/work\tclaude\trepos app\tloop any\tconnections github\n"
+    );
+    let started: Value = serde_json::from_str(&stdout(
+        &host
+            .cli(&["start-task", "--workspace", "w", "--title", "fix", "--json"])
+            .await,
+    ))
+    .unwrap();
+    let agent = started["terminal"]["id"].as_str().unwrap();
+    let listed: Value =
+        serde_json::from_str(&stdout(&host.cli(&["workspaces", "--json"]).await)).unwrap();
+    assert_eq!(
+        listed[0]["connections"][0],
+        serde_json::json!({"name": "github", "default": false,
+            "used_by": {"routines": ["digest"], "tasks": []}, "last_used": 1_700_000_000})
+    );
+    // docs is on by default, so the new Task uses it.
+    assert_eq!(
+        listed[0]["mcp"][0]["used_by"],
+        serde_json::json!({"routines": [], "tasks": [agent]})
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn approve_closes_a_task_and_asks_for_force_when_work_would_be_lost() {
+    let host = TestHost::start("approve").await;
+    let (agent, item) = host.review("dirty").await;
+    let refused = host.cli(&["approve", &item]).await;
+    assert!(!refused.status.success());
+    let why = String::from_utf8_lossy(&refused.stderr);
+    assert!(why.contains("dirty has uncommitted changes"), "{why}");
+    let agent = TerminalId::new(&agent);
+    assert!(host.backend.get(&agent).await.unwrap().live);
+
+    let forced: Value = serde_json::from_str(&stdout(
+        &host.cli(&["approve", &item, "--force", "--json"]).await,
+    ))
+    .unwrap();
+    assert_eq!(forced["done"][0]["id"], item.as_str(), "{forced}");
+    assert!(host.backend.get(&agent).await.is_err(), "the agent is gone");
+
+    let (_, clean) = host.review("clean").await;
+    let rows = stdout(&host.cli(&["approve", &clean]).await);
+    assert_eq!(rows, "", "no open item is left");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn request_changes_types_the_comment_into_the_agent() {
+    let host = TestHost::start("changes").await;
+    let (agent, item) = host.review("fix").await;
+    let after: Value = serde_json::from_str(&stdout(
+        &host
+            .cli(&["request-changes", &item, "Rename", "it.", "--json"])
+            .await,
+    ))
+    .unwrap();
+    assert_eq!(after["done"][0]["id"], item.as_str(), "{after}");
+    let typed = host.backend.inputs(&TerminalId::new(&agent)).concat();
+    assert_eq!(typed, b"Rename it.\r");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn retry_runs_a_failed_routine_again() {
+    let host = TestHost::start("retry").await;
+    let failed = NewItem {
+        kind: ItemKind::Failed,
+        title: "digest failed".into(),
+        note: None,
+        workspace: None,
+        due: None,
+        source: "routine".into(),
+        key: None,
+        once: false,
+        terminal: None,
+        routine: Some(RoutineRef {
+            workspace: "w".into(),
+            name: "digest".into(),
+        }),
+    };
+    let item = host
+        .inbox
+        .change(|b, now| b.add(failed, now))
+        .unwrap()
+        .unwrap();
+    let after: Value =
+        serde_json::from_str(&stdout(&host.cli(&["retry", &item, "--json"]).await)).unwrap();
+    assert_eq!(after["done"][0]["id"], item.as_str(), "{after}");
+    let again = host.cli(&["retry", &item]).await;
+    assert!(!again.status.success(), "a done item is not retried twice");
 }

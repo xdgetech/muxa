@@ -55,6 +55,9 @@ struct Ready {
     dir: PathBuf,
     argv: Vec<String>,
     env: BTreeMap<String, String>,
+    /// The names of the connections and MCP servers the agent gets.
+    connections: Vec<String>,
+    mcp: Vec<String>,
 }
 
 impl Runner {
@@ -87,6 +90,14 @@ impl Runner {
         let config = Arc::clone(&self.config);
         let run = started.is_ok().then(|| ready.run.clone());
         let state = tokio::task::spawn_blocking(move || {
+            if run.is_some() {
+                crate::usage::note(
+                    config.state_dir.as_deref(),
+                    &ready.routine.workspace,
+                    &ready.connections,
+                    &ready.mcp,
+                );
+            }
             runs::finish_start(&config, &ready.routine, &ready.occurrence, run, error)
         })
         .await
@@ -388,9 +399,13 @@ fn made(
     let named = mcp::with_connections(&routine.connections, &servers);
     let given = crate::connections::env(ws, &named)?;
     crate::connections::merge(&mut resolved.environment.env, given);
+    let server_names: Vec<String> = servers.iter().map(|s| s.name.clone()).collect();
+    let (connections, mcp) = crate::usage::given(ws, &named, &server_names);
     Ok(Ready {
         argv: argv(&command, START_PROMPT),
         env: resolved.environment.env.into_iter().collect(),
+        connections,
+        mcp,
         routine,
         occurrence,
         run,

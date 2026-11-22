@@ -111,9 +111,15 @@ struct ServerTests {
         #expect(try await c.workspaces() == [
             Workspace(name: "Personal", root: "/work", repos: ["app", "docs"], agent: "claude",
                       loop: WorkspaceLoop(checks: .list(["make test"])),
-                      connections: [WorkspaceConnection(name: "github", isDefault: true)],
+                      connections: [WorkspaceConnection(name: "github", isDefault: true,
+                                                        usedBy: UsedBy(routines: ["digest"]), lastUsed: 1_700_000_000)],
                       mcp: [WorkspaceMcp(name: "docs", isDefault: false)]),
         ])
+        // github is on by default: the new Task's agent uses it.
+        let (agent, _) = try await c.startTask(workspace: "Personal", title: "uses", mcp: ["docs"])
+        let after = try #require(try await c.workspaces().first)
+        #expect(after.connections[0].usedBy.tasks.contains(agent.id))
+        #expect(after.mcp[0].usedBy.tasks == [agent.id])
         await c.close()
     }
 

@@ -163,10 +163,17 @@ class ServerTest {
             val expected = Workspace(
                 "Personal", "/work", listOf("app", "docs"), agent = "claude",
                 loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
-                connections = listOf(WorkspaceConnection("github", isDefault = true)),
+                connections = listOf(
+                    WorkspaceConnection("github", isDefault = true, usedBy = UsedBy(routines = listOf("digest")), lastUsed = 1_700_000_000),
+                ),
                 mcp = listOf(WorkspaceMcp("docs", isDefault = false)),
             )
             assertEquals(listOf(expected), c.workspaces())
+            // github is on by default: the new Task's agent uses it.
+            val (agent, _) = c.startTask("Personal", "uses", mcp = listOf("docs"))
+            val after = c.workspaces().single()
+            assertTrue(agent.id in after.connections[0].usedBy.tasks)
+            assertEquals(listOf(agent.id), after.mcp[0].usedBy.tasks)
             c.close()
         }
     }

@@ -61,9 +61,11 @@ data class DemoContent(
     val files: Map<ReaderKind, List<DemoFile>> = emptyMap(),
     /** Each Task agent's conversation, by terminal id. */
     val chats: Map<String, ChatUpdate> = emptyMap(),
+    /** Review items whose Approve without force is refused with `would-lose-work`, and the message, by item id. */
+    val losesWork: Map<String, String> = emptyMap(),
 ) {
     companion object {
-        /** Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines. */
+        /** Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines. Approving `d8` needs force. */
         val STANDARD: DemoContent = standardContent()
     }
 }
@@ -80,6 +82,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private var nextReader = 1
     private val loops = sortedMapOf<String, LoopInfo>()
     private val chats = content.chats
+    private val losesWork = content.losesWork
     private var nextChat = 1
     private var inbox = Inbox(1, content.inbox, emptyList())
     private var nextItem = 100
@@ -142,7 +145,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 write(Frame(n, FrameKind.CLOSE, ByteArray(0)))
                 reply(id)
             }
-            "start-task" -> startTask(id, m.str("workspace") ?: "app", m.str("title") ?: "Task", (m["places"] as? JsonArray).orEmpty(), m["loop"] as? JsonObject)
+            "start-task" -> startTask(id, m)
             "watch" -> {
                 watching = true
                 reply(id)
@@ -189,10 +192,10 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 )
                 change(id) { it.copy(items = listOf(review) + it.items) }
             }
-            "inbox-approve" -> approve(id, item)
+            "inbox-approve" -> approve(id, item, force = m.str("worktree") == "force")
             "inbox-request-changes" -> requestChanges(id, item, m.str("comment") ?: "")
             "inbox-retry" -> retry(id, item)
-            "workspaces" -> reply(id, "workspaces" to enc(workspaces))
+            "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {})
             "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
             "reader-list" -> {
@@ -263,8 +266,15 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         offsets[n] = screen.size.toLong()
     }
 
-    /** The first branch is the working place; without one, a folder named after the title. [loop] starts its Task Loop. */
-    private fun startTask(id: Long, workspace: String, title: String, places: List<JsonElement>, loop: JsonObject?) {
+    /** The first branch is the working place; without one, a folder named after the title. A `loop` starts its Task Loop. */
+    private fun startTask(id: Long, m: JsonObject) {
+        val title = m.str("title") ?: "Task"
+        val places = (m["places"] as? JsonArray).orEmpty()
+        val loop = m["loop"] as? JsonObject
+        val wsName = m.str("workspace") ?: "app"
+        val workspace = workspaces.firstOrNull { it.name == wsName }
+        val named = m.names("connections")
+        val servers = workspace?.mcp.orEmpty().filter { it.isDefault || it.name in m.names("mcp") }.map { it.name }
         val first = places.mapNotNull { it as? JsonObject }.firstOrNull { it.str("kind") == "branch" }
         val branch = first?.str("branch")
         val repo = first?.str("repo")
@@ -273,9 +283,11 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             return reply(id, "terminal" to enc(it), "existing" to JsonPrimitive(true))
         }
         val labels = buildMap {
-            put("muxa.kind", "task"); put("muxa.role", "agent"); put("muxa.dir", dir); put("muxa.workspace", workspace)
+            put("muxa.kind", "task"); put("muxa.role", "agent"); put("muxa.dir", dir); put("muxa.workspace", wsName)
             if (branch != null) put("muxa.branch", branch)
             if (repo != null) put("muxa.repo", repo)
+            if (named.isNotEmpty()) put("muxa.connections", enc(named).toString())
+            if (servers.isNotEmpty()) put("muxa.mcp", enc(servers).toString())
         }
         val t = Terminal(
             "t${terminals.size + 1}", title, live = true, status = TerminalStatus("working", "claude-code"),
@@ -286,6 +298,18 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
         loop?.let { armLoop(t.id, json.decodeFromJsonElement<LoopSpec>(it), null) }
+    }
+
+    /** [ws] with the live Task agents that got each connection and MCP server, from their labels, as the server answers. */
+    private fun withTasks(ws: Workspace): Workspace {
+        val agents = terminals.filter { it.live && it.isTaskAgent && it.labels["muxa.workspace"] == ws.name }
+        fun users(label: String, name: String, isDefault: Boolean) = agents.filter { t ->
+            isDefault || name in t.labels[label]?.let { runCatching { json.decodeFromString<List<String>>(it) }.getOrNull() }.orEmpty()
+        }.map { it.id }
+        return ws.copy(
+            connections = ws.connections.map { it.copy(usedBy = it.usedBy.copy(tasks = users("muxa.connections", it.name, it.isDefault))) },
+            mcp = ws.mcp.map { it.copy(usedBy = it.usedBy.copy(tasks = users("muxa.mcp", it.name, it.isDefault))) },
+        )
     }
 
     private fun armLoop(terminal: String, spec: LoopSpec, previous: LoopInfo?): LoopInfo {
@@ -306,10 +330,11 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         return true
     }
 
-    /** Closes the Task: its agent terminal goes away. The demo has no unsaved work, so `worktree` is not needed. */
-    private fun approve(id: Long, item: String) {
+    /** Closes the Task: its agent terminal goes away. A worktree that holds work needs [force]. */
+    private fun approve(id: Long, item: String, force: Boolean) {
         val review = openItem(id, item, ItemKind.REVIEW) ?: return
         val terminal = review.terminal ?: return send(error(id, "bad-request", "$item has no Task"))
+        losesWork[item]?.takeIf { !force }?.let { return send(error(id, "would-lose-work", it)) }
         channels.filterValues { it == terminal }.keys.sorted().forEach { n ->
             channels.remove(n)
             write(Frame(n, FrameKind.CLOSE, ByteArray(0)))
@@ -435,6 +460,8 @@ private fun JsonObject.str(key: String) = (this[key] as? JsonPrimitive)?.content
 
 private fun JsonObject.long(key: String) = (this[key] as? JsonPrimitive)?.longOrNull
 
+private fun JsonObject.names(key: String) = (this[key] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+
 internal fun agentLabels(branch: String, repo: String, dir: String) = mapOf(
     "muxa.kind" to "task", "muxa.role" to "agent", "muxa.branch" to branch, "muxa.repo" to repo, "muxa.dir" to dir,
     "muxa.workspace" to "app",
@@ -461,6 +488,7 @@ private fun standardContent(): DemoContent {
     fun routine(name: String, at: String?, last: RoutineLast?) =
         Routine("app", name, enabled = true, at = at, timezone = at?.let { "Europe/Berlin" }, last = last)
 
+    val everyRoutine = listOf("dependency-digest", "nightly-backup", "release-notes")
     return DemoContent(
         terminals = listOf(
             agent("t1", "fix-login", "working"),
@@ -482,6 +510,7 @@ private fun standardContent(): DemoContent {
             item("d4", ItemKind.READ, "Weekly dependency digest", note = "3 updates, 1 security fix.", source = "routine"),
             item("d5", ItemKind.FAILED, "nightly-backup failed", note = "gh login expired.", source = "routine", routine = RoutineRef("app", "nightly-backup")),
             item("d6", ItemKind.TODO, "Renew the domain", workspace = "Personal", due = "2026-12-01", source = "capture"),
+            item("d8", ItemKind.REVIEW, "Review docs-audit", note = "Two links still to check.", source = "task", terminal = "t2"),
         ),
         routines = listOf(
             routine("dependency-digest", "09:00", RoutineLast(1_764_000_000, ok = true, published = 1)),
@@ -492,8 +521,11 @@ private fun standardContent(): DemoContent {
             Workspace(
                 "app", "/demo", listOf("app", "docs"), agent = "claude",
                 loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
-                connections = listOf(WorkspaceConnection("github", isDefault = true), WorkspaceConnection("linear", isDefault = false)),
-                mcp = listOf(WorkspaceMcp("docs", isDefault = true)),
+                connections = listOf(
+                    WorkspaceConnection("github", isDefault = true, usedBy = UsedBy(routines = everyRoutine), lastUsed = 1_764_000_000),
+                    WorkspaceConnection("linear", isDefault = false, usedBy = UsedBy(routines = listOf("dependency-digest")), lastUsed = 1_763_990_000),
+                ),
+                mcp = listOf(WorkspaceMcp("docs", isDefault = true, usedBy = UsedBy(routines = everyRoutine), lastUsed = 1_764_000_000)),
             ),
             Workspace("Personal", "/demo/personal", emptyList(), agent = "claude"),
         ),
@@ -534,6 +566,7 @@ private fun standardContent(): DemoContent {
                 prompt = ChatPrompt("t:1", "permission", options = listOf(ChatOption("Allow", "y"), ChatOption("Deny", "n", cancel = true))),
             ),
         ),
+        losesWork = mapOf("d8" to "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"),
     )
 }
 

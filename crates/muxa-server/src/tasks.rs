@@ -29,6 +29,9 @@ pub const PLACES: &str = "muxa.places";
 /// A JSON list of the connections the Task named (ADR 0069), so a restart
 /// gives the agent the same ones. Names only.
 pub const CONNECTIONS: &str = "muxa.connections";
+/// A JSON list of every MCP server the agent got, the default ones too, so
+/// `workspaces` can say who uses which. Names only.
+pub const MCP: &str = "muxa.mcp";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
@@ -68,6 +71,8 @@ pub struct Prepared {
     pub places: Vec<Place>,
     /// The connections the Task named, besides the default ones.
     pub connections: Vec<String>,
+    /// Every MCP server the agent gets, the default ones too.
+    pub mcp: Vec<String>,
     pub argv: Vec<String>,
     pub env: BTreeMap<String, String>,
 }
@@ -128,6 +133,12 @@ pub trait Host: Send + Sync {
         _mode: WorktreeMode,
     ) -> impl Future<Output = Result<(), TaskError>> + Send {
         async { Ok(()) }
+    }
+
+    /// A new agent runs with `prepared`, after a Task start or a restart.
+    /// The host notes when its connections and MCP servers were last used.
+    fn agent_started(&self, _prepared: &Prepared) -> impl Future<Output = ()> + Send {
+        async {}
     }
 
     /// How to run the agent of `ended`, a Task's agent terminal, again in its
@@ -234,8 +245,9 @@ pub trait Host: Send + Sync {
 }
 
 /// The Task's live agent terminal, or a new one. `true` when it was running.
-pub(crate) async fn start<B: SessionBackend>(
+pub(crate) async fn start<B: SessionBackend, H: Host>(
     backend: &B,
+    host: &H,
     prepared: Prepared,
 ) -> Result<(TerminalInfo, bool), muxa_backend::BackendError> {
     let labels = labels(&prepared);
@@ -248,13 +260,15 @@ pub(crate) async fn start<B: SessionBackend>(
         return Ok((t, true));
     }
     let launch = Launch {
-        argv: prepared.argv,
-        cwd: Some(prepared.dir),
-        name: Some(prepared.title),
+        argv: prepared.argv.clone(),
+        cwd: Some(prepared.dir.clone()),
+        name: Some(prepared.title.clone()),
         labels,
-        env: prepared.env,
+        env: prepared.env.clone(),
     };
-    Ok((backend.run(&launch).await?, false))
+    let started = backend.run(&launch).await?;
+    host.agent_started(&prepared).await;
+    Ok((started, false))
 }
 
 /// What identifies the agent of a Task: its working place. The rest is for
@@ -279,6 +293,11 @@ fn labels(p: &Prepared) -> Labels {
         && let Ok(names) = serde_json::to_string(&p.connections)
     {
         labels.insert(CONNECTIONS.to_owned(), names);
+    }
+    if !p.mcp.is_empty()
+        && let Ok(names) = serde_json::to_string(&p.mcp)
+    {
+        labels.insert(MCP.to_owned(), names);
     }
     labels
 }

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use muxa_protocol::v2::{Place, PlaceKind};
-use muxa_server::tasks::{BRANCH, CONNECTIONS, DIR, PLACES, REPO, WORKSPACE};
+use muxa_server::tasks::{BRANCH, CONNECTIONS, DIR, MCP, PLACES, REPO, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::chat::Chats;
@@ -175,13 +175,29 @@ async fn connection_env(
     blocking(move || crate::connections::env(&ws, &named)).await
 }
 
+/// The names on a JSON list label of `ended`; none when it has none.
+fn label_names(ended: &muxa_backend::TerminalInfo, key: &str) -> Vec<String> {
+    ended
+        .labels
+        .get(key)
+        .and_then(|c| serde_json::from_str(c).ok())
+        .unwrap_or_default()
+}
+
+/// What the agent gets of its Workspace: the connections it names and its
+/// MCP servers, the default ones too.
+struct Given {
+    connections: Vec<String>,
+    mcp: Vec<String>,
+    env: Vec<(String, String)>,
+}
+
 fn prepared(
     ws: Workspace,
     title: &str,
     made: places::Made,
-    connections: Vec<String>,
     line: String,
-    given: Vec<(String, String)>,
+    given: Given,
 ) -> Prepared {
     if let Some(a) = &ws.agent {
         // Keys only: values may be tokens.
@@ -194,11 +210,12 @@ fn prepared(
         repo: made.repo.clone(),
         branch: made.branch.clone(),
         places: made.places,
-        connections,
+        connections: given.connections,
+        mcp: given.mcp,
         argv: shell_line(line),
         env: {
             let mut env = ws.agent.map(|a| a.env).unwrap_or_default();
-            crate::connections::merge(&mut env, given);
+            crate::connections::merge(&mut env, given.env);
             env.into_iter().collect()
         },
     }
@@ -230,7 +247,11 @@ impl Host for BridgeHost {
         // The servers' connections too, so a restart gives them again.
         let connections = mcp::with_connections(&spec.connections, &servers);
         // Before any place is made: a missing secret stops the start.
-        let given = connection_env(&ws, &connections).await?;
+        let given = Given {
+            env: connection_env(&ws, &connections).await?,
+            connections,
+            mcp: servers.iter().map(|s| s.name.clone()).collect(),
+        };
         let made = places::make(&ws, title, checked).await?;
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let made = blocking(move || {
@@ -243,7 +264,7 @@ impl Host for BridgeHost {
             line = crate::launch::plan_line(&line);
         }
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
-        Ok(prepared(ws, title, made, connections, line, given))
+        Ok(prepared(ws, title, made, line, given))
     }
 
     async fn restart(&self, ended: &muxa_backend::TerminalInfo) -> Result<Prepared, TaskError> {
@@ -257,29 +278,63 @@ impl Host for BridgeHost {
         };
         let ws = self.workspace(&label(WORKSPACE)?).await?;
         let made = made_of(ended, &label(DIR)?)?;
-        let connections: Vec<String> = ended
-            .labels
-            .get(CONNECTIONS)
-            .and_then(|c| serde_json::from_str(c).ok())
-            .unwrap_or_default();
-        let given = connection_env(&ws, &connections).await?;
+        let connections = label_names(ended, CONNECTIONS);
+        // The `.muxa/mcp.json` the Task started with stays, so its servers too.
+        let given = Given {
+            env: connection_env(&ws, &connections).await?,
+            connections,
+            mcp: label_names(ended, MCP),
+        };
         let (made, line) = self.agent_line(&ws, made, None).await?;
         let title = ended
             .name
             .clone()
             .or_else(|| made.branch.clone())
             .unwrap_or_else(|| "Task".into());
-        Ok(prepared(ws, &title, made, connections, line, given))
+        Ok(prepared(ws, &title, made, line, given))
+    }
+
+    async fn agent_started(&self, prepared: &Prepared) {
+        let ws = match self.workspace(&prepared.workspace).await {
+            Ok(ws) => ws,
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot note when connections were used");
+                return;
+            }
+        };
+        let (connections, mcp) = crate::usage::given(&ws, &prepared.connections, &prepared.mcp);
+        let state_dir = self.records.state_dir.clone();
+        let noted = tokio::task::spawn_blocking(move || {
+            crate::usage::note(state_dir.as_deref(), &ws.name, &connections, &mcp);
+        })
+        .await;
+        if let Err(e) = noted {
+            tracing::warn!(error = %e, "cannot note when connections were used");
+        }
     }
 
     async fn workspace_list(&self) -> Result<Vec<muxa_protocol::v2::Workspace>, TaskError> {
         let (records, command) = (Arc::clone(&self.records), self.command.clone());
         blocking(move || {
             let all = records.load_workspaces()?;
+            let usage = match &records.state_dir {
+                Some(dir) => crate::usage::read(dir).unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "cannot read when connections were used");
+                    crate::usage::Usage::default()
+                }),
+                None => crate::usage::Usage::default(),
+            };
             Ok(all
                 .all()
                 .iter()
-                .map(|w| super::workspaces::to_v2(w, &command))
+                .map(|w| {
+                    let routines: Vec<_> = all
+                        .routines()
+                        .iter()
+                        .filter(|r| r.workspace == w.name)
+                        .collect();
+                    super::workspaces::to_v2(w, &command, &routines, &usage.of(&w.name))
+                })
                 .collect())
         })
         .await
@@ -470,7 +525,7 @@ mod tests {
         )
         .unwrap();
         let config = crate::config::Config {
-            state_dir: None,
+            state_dir: Some(base.join("state")),
             workspaces: Some(base.join("workspaces.toml")),
             home: None,
         };
@@ -509,6 +564,22 @@ mod tests {
             matches!(&unknown, Err(TaskError::Invalid(m)) if m.contains("no MCP server \"web\"")),
             "{unknown:?}"
         );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn a_started_agent_notes_when_its_mcp_servers_were_used() {
+        let (host, base) = host("usage", "");
+        let ready = host.prepare(&spec(&["docs"])).await.unwrap();
+        assert_eq!(ready.mcp, ["docs"]);
+        let before = host.workspace_list().await.unwrap();
+        assert_eq!(before[0].mcp[0].last_used, None);
+        let at = crate::records::now();
+        host.agent_started(&ready).await;
+        let after = host.workspace_list().await.unwrap();
+        assert!(after[0].mcp[0].last_used.is_some_and(|t| t >= at));
+        let text = std::fs::read_to_string(base.join("state/usage.json")).unwrap();
+        assert!(!text.contains("docs-mcp"), "names only: {text}");
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -565,6 +636,7 @@ mod tests {
                 (WORKSPACE.to_owned(), "w".to_owned()),
                 (DIR.to_owned(), dir.display().to_string()),
                 (PLACES.to_owned(), places.to_string()),
+                (MCP.to_owned(), r#"["docs"]"#.to_owned()),
             ]),
             status: None,
             size: muxa_backend::Size { cols: 80, rows: 24 },
@@ -576,6 +648,7 @@ mod tests {
             (dir.as_path(), "Fix login")
         );
         assert_eq!(p.places.len(), 2);
+        assert_eq!(p.mcp, ["docs"], "the servers it started with");
         let line = &p.argv[2];
         assert!(line.starts_with("claude --x --settings "), "{line}");
         assert!(dir.join(".muxa/claude-settings.json").is_file());
