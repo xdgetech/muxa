@@ -141,6 +141,7 @@ async fn serve(setup: Setup, path: &Path) -> std::io::Result<()> {
     ));
     let chats = Arc::new(crate::v2::chat::Chats::new(Arc::clone(&setup.agents)));
     let host = crate::v2::BridgeHost::new(setup.task_command, Arc::clone(&config))
+        .with_claude_dirs(setup.claude_dirs)
         .with_runner(Arc::clone(&runner))
         .with_loops(Arc::clone(&loops))
         .with_chats(chats)

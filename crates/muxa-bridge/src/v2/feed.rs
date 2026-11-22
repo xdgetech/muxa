@@ -86,6 +86,7 @@ fn collect(states: &[RoutineState], since: i64) -> (Vec<NewItem>, Option<i64>) {
                 once: true,
                 terminal: None,
                 routine: Some(routine_of(s)),
+                place: None,
             });
         }
         if let Some(f) = s.last_failure.as_ref().filter(|f| at(f.at) >= since) {
@@ -111,6 +112,7 @@ fn failed(s: &RoutineState, f: &RoutineFailure) -> NewItem {
         once: true,
         terminal: None,
         routine: Some(routine_of(s)),
+        place: None,
     }
 }
 

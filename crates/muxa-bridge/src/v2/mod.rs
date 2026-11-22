@@ -2,6 +2,7 @@
 //! served by `muxa-server` on herdr-core, and `muxa-bridge connect`, which
 //! relays an SSH client's stdin and stdout to it.
 
+mod adopt;
 pub mod chat;
 mod close;
 pub mod feed;
@@ -13,6 +14,7 @@ mod routines;
 pub mod runner;
 pub mod task_loop;
 mod tasks;
+mod v1;
 mod workspaces;
 
 use std::path::{Path, PathBuf};

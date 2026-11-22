@@ -160,6 +160,7 @@ fn task_md_lists_each_place_with_its_mode() {
         ],
         repo: None,
         branch: None,
+        in_repo: false,
     };
     let text = task_text(&made, "Audit", Some("Find the gaps."));
     assert!(text.starts_with("# Audit\n\n## Goal\n\nFind the gaps.\n\n## Places\n\n"));
@@ -204,6 +205,7 @@ fn a_one_place_task_writes_no_settings_and_paths_are_quoted() {
         }],
         repo: None,
         branch: None,
+        in_repo: false,
     };
     assert_eq!(claude_settings(&made).unwrap(), None);
     assert_eq!(quote("/a b/it's"), "'/a b/it'\\''s'");

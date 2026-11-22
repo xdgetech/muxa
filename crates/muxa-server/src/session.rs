@@ -21,7 +21,7 @@ use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::wire::{self, Incoming};
-use crate::{inbox, task_actions, task_items, usage};
+use crate::{inbox, migrate, task_actions, task_items, usage};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -490,6 +490,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
                 }
             }
+            ClientMsg::MigrateV1 { id, dry_run } => self.migrate_v1(id, dry_run).await,
             ClientMsg::InboxRetry { id, item } => {
                 let done = task_actions::retry(self.backend, self.host, self.inbox, &item).await;
                 self.inbox_reply(id, done);
@@ -617,7 +618,42 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         }
     }
 
+    async fn migrate_v1(&mut self, id: u64, dry_run: bool) {
+        let found = match self.host.v1_tasks().await {
+            Ok(f) => f,
+            Err(e) => return self.error(Some(id), task_code(&e), e.to_string()),
+        };
+        match migrate::migrate(self.inbox, found, dry_run) {
+            Ok((tasks, added)) => {
+                tracing::info!(tasks = tasks.len(), added, dry_run, "v1 tasks migrated");
+                self.reply(id, Reply::Migrated { tasks, added });
+            }
+            Err(e) => self.error(Some(id), ErrorCode::Backend, e.to_string()),
+        }
+    }
+
+    /// The live agent muxa runs in an adopted place: a second Resume finds it
+    /// instead of a refusal for the busy folder.
+    async fn adopted_agent(&self, spec: &TaskSpec) -> Result<Option<TerminalInfo>, BackendError> {
+        let Some(path) = spec.existing() else {
+            return Ok(None);
+        };
+        Ok(self.backend.list().await?.into_iter().find(|t| {
+            t.live
+                && task_items::is_agent(t)
+                && t.labels.get(tasks::DIR).map(String::as_str) == Some(path)
+        }))
+    }
+
     async fn start_task(&mut self, id: u64, spec: &TaskSpec, task_loop: Option<v2::LoopSpec>) {
+        match self.adopted_agent(spec).await {
+            Ok(Some(terminal)) => {
+                let (terminal, existing) = (to_wire(terminal), true);
+                return self.reply(id, Reply::Started { terminal, existing });
+            }
+            Ok(None) => {}
+            Err(e) => return self.error(Some(id), code_of(&e), e.to_string()),
+        }
         if let Some(l) = &task_loop
             && let Err(e) = self.host.loop_check(&spec.workspace, l).await
         {

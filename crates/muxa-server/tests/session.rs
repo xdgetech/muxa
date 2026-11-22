@@ -9,8 +9,8 @@ use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
 use muxa_inbox::NewItem;
 use muxa_protocol::v2::{
     ChatUpdate, Frame, INITIAL_CREDIT, ItemKind, Kind, LoopChecks, LoopInfo, LoopSpec, Place,
-    PlaceKind, ReaderContent, ReaderEntry, ReaderKind, ReaderList, RoutineRef, UsedBy, Workspace,
-    WorkspaceConnection, WorkspaceLoop, WorkspaceMcp, WorktreeMode,
+    PlaceKind, ReaderContent, ReaderEntry, ReaderKind, ReaderList, RoutineRef, UsedBy, V1Status,
+    V1Task, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp, WorktreeMode,
 };
 use muxa_server::{
     Config, Host, Inbox, Prepared, ReaderOpen, RoutineList, ServeError, Services, Sessions,
@@ -27,6 +27,9 @@ impl Host for FakeTasks {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         if spec.branch().is_some_and(|(_, b)| b == "bad") {
             return Err(TaskError::Invalid("bad is not a branch".into()));
+        }
+        if spec.existing() == Some("/work/busy") {
+            return Err(TaskError::Busy("claude already works in /work/busy".into()));
         }
         let mut argv = vec!["agent".to_owned()];
         if spec.plan {
@@ -54,6 +57,22 @@ impl Host for FakeTasks {
 
     async fn workspaces(&self) -> Vec<String> {
         vec!["Personal".into()]
+    }
+
+    async fn v1_tasks(&self) -> Result<Vec<V1Task>, TaskError> {
+        let task = |id: &str, title: &str, status| V1Task {
+            id: id.into(),
+            workspace: "Personal".into(),
+            title: title.into(),
+            path: format!("/work/{title}"),
+            exists: status != V1Status::Missing,
+            status,
+        };
+        Ok(vec![
+            task("t-000001", "Fix login", V1Status::New),
+            task("t-000002", "Lost", V1Status::Missing),
+            task("t-000003", "Away", V1Status::NoWorkspace),
+        ])
     }
 
     async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
@@ -857,6 +876,66 @@ async fn start_task_runs_the_agent_in_its_worktree_once() {
 }
 
 #[tokio::test]
+async fn migrate_v1_adds_each_adoptable_task_once() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let statuses = |reply: &Value| -> Vec<String> {
+        reply["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["status"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let dry = request(
+        &mut client,
+        json!({"type": "migrate-v1", "id": 1, "dry_run": true}),
+    )
+    .await;
+    assert_eq!(statuses(&dry), ["new", "missing", "no-workspace"], "{dry}");
+    assert_eq!(dry["added"], 0);
+    let inbox = request(&mut client, json!({"type": "inbox", "id": 2})).await;
+    assert!(titles(&inbox["inbox"]).is_empty());
+
+    let run = request(&mut client, json!({"type": "migrate-v1", "id": 3})).await;
+    assert_eq!(statuses(&run), ["added", "missing", "no-workspace"]);
+    assert_eq!(run["added"], 1);
+    let inbox = request(&mut client, json!({"type": "inbox", "id": 4})).await;
+    let item = &inbox["inbox"]["items"][0];
+    assert_eq!(item["title"], "Resume: Fix login");
+    assert_eq!(item["source"], "v1");
+    assert_eq!(
+        item["place"],
+        json!({"workspace": "Personal", "path": "/work/Fix login"})
+    );
+
+    let again = request(&mut client, json!({"type": "migrate-v1", "id": 5})).await;
+    assert_eq!(statuses(&again)[0], "in-inbox");
+    assert_eq!(again["added"], 0);
+}
+
+#[tokio::test]
+async fn resume_finds_muxas_agent_in_the_place_before_the_host_refuses_it() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let resume = |id: u64| {
+        json!({"type": "start-task", "id": id, "workspace": "w", "title": "Fix",
+               "places": [{"kind": "existing", "path": "/work/busy"}]})
+    };
+    let refused = request(&mut client, resume(1)).await;
+    assert_eq!(refused["code"], "conflict", "{refused}");
+    let agent = task_agent(&backend, "/work/busy").await;
+    let found = request(&mut client, resume(2)).await;
+    assert_eq!(
+        (found["existing"].clone(), found["terminal"]["id"].clone()),
+        (json!(true), json!(agent.as_str()))
+    );
+    assert_eq!(backend.launches().len(), 1, "only the agent the test ran");
+}
+
+#[tokio::test]
 async fn a_task_the_host_refuses_is_a_bad_request() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;
@@ -1549,6 +1628,7 @@ async fn retry_runs_again_what_made_the_failed_item() {
             workspace: "Personal".into(),
             name: name.into(),
         }),
+        place: None,
     };
     let add = |new| inbox.change(|b, now| b.add(new, now)).unwrap().unwrap();
     let busy = add(failed("digest failed", None, Some("digest")));
@@ -1643,6 +1723,7 @@ async fn retry_starts_a_live_agents_task_loop_over() {
         once: false,
         terminal: Some(terminal.to_owned()),
         routine: None,
+        place: None,
     };
     let failed = inbox
         .change(|b, now| b.add(item(&agent), now))

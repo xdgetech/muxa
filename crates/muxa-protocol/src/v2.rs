@@ -216,6 +216,9 @@ pub enum PlaceSpec {
     },
     /// The repo's main checkout, never written.
     Read { repo: String },
+    /// A folder or worktree that already exists in the Workspace: nothing is
+    /// made. It is the working place.
+    Existing { path: String },
 }
 
 /// A Task's place as it is: the `muxa.places` label of its agent terminal
@@ -446,6 +449,12 @@ pub enum ClientMsg {
         id: u64,
         revision: String,
         ops: Vec<SettingsOp>,
+    },
+    /// Adds one Inbox item per open v1 Task whose place is still there.
+    MigrateV1 {
+        id: u64,
+        #[serde(default)]
+        dry_run: bool,
     },
 }
 
@@ -773,6 +782,45 @@ pub struct InboxItem {
     /// The Routine that made the item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routine: Option<RoutineRef>,
+    /// Where an older Task worked: Resume Task adopts it (`existing`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<ItemPlace>,
+}
+
+/// An existing working place in a Workspace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemPlace {
+    pub workspace: String,
+    pub path: String,
+}
+
+/// A v1 Task record as `migrate-v1` found it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct V1Task {
+    pub id: String,
+    pub workspace: String,
+    pub title: String,
+    pub path: String,
+    /// The place is still there.
+    pub exists: bool,
+    pub status: V1Status,
+}
+
+/// What `migrate-v1` does with a v1 Task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum V1Status {
+    /// A dry run: it would be added.
+    New,
+    Added,
+    /// An earlier run added it.
+    InInbox,
+    /// Its place is gone.
+    Missing,
+    /// Its Workspace is gone.
+    NoWorkspace,
+    /// Its place is no longer in its Workspace.
+    Outside,
 }
 
 /// The whole Inbox: open items in the user's order, then recent done ones.
@@ -996,6 +1044,10 @@ pub enum Reply {
     },
     Settings {
         settings: Settings,
+    },
+    Migrated {
+        tasks: Vec<V1Task>,
+        added: u32,
     },
     Empty {},
 }
@@ -1221,6 +1273,50 @@ mod tests {
         let old: InboxItem = serde_json::from_value(json!({"id": "i1", "kind": "failed",
             "title": "x", "created": 1, "source": "routine"}))
         .unwrap();
-        assert_eq!((old.terminal, old.routine), (None, None));
+        assert_eq!((old.terminal, old.routine, old.place), (None, None, None));
+    }
+
+    #[test]
+    fn adopting_and_migrating_match_the_spec() {
+        let place: PlaceSpec =
+            serde_json::from_value(json!({"kind": "existing", "path": "/w/tasks/a-t-1"})).unwrap();
+        assert_eq!(
+            place,
+            PlaceSpec::Existing {
+                path: "/w/tasks/a-t-1".into()
+            }
+        );
+        let migrate: ClientMsg =
+            serde_json::from_value(json!({"type": "migrate-v1", "id": 4})).unwrap();
+        assert_eq!(
+            migrate,
+            ClientMsg::MigrateV1 {
+                id: 4,
+                dry_run: false
+            }
+        );
+        let item: InboxItem = serde_json::from_value(json!({"id": "i2", "kind": "todo",
+            "title": "Resume: Fix", "created": 1, "source": "v1",
+            "place": {"workspace": "w", "path": "/w/x"}}))
+        .unwrap();
+        assert_eq!(item.place.as_ref().map(|p| p.path.as_str()), Some("/w/x"));
+        let reply = Reply::Migrated {
+            tasks: vec![V1Task {
+                id: "t-000001".into(),
+                workspace: "w".into(),
+                title: "Fix".into(),
+                path: "/w/x".into(),
+                exists: true,
+                status: V1Status::InInbox,
+            }],
+            added: 0,
+        };
+        let wire = serde_json::to_value(&reply).unwrap();
+        assert_eq!(
+            wire,
+            json!({"tasks": [{"id": "t-000001", "workspace": "w", "title": "Fix",
+                "path": "/w/x", "exists": true, "status": "in-inbox"}], "added": 0})
+        );
+        assert_eq!(serde_json::from_value::<Reply>(wire).unwrap(), reply);
     }
 }

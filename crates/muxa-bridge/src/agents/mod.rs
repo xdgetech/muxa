@@ -238,6 +238,32 @@ fn elapsed(s: &str) -> Option<Duration> {
     Some(Duration::from_secs(days * 86_400 + secs))
 }
 
+/// Each pid's working directory ([`process_cwds`]); tests stand in for the host.
+pub type CwdsFn = dyn Fn(&[u32]) -> Result<HashMap<u32, PathBuf>, Error> + Send + Sync;
+
+/// The programs of the coding agents muxa runs, as `ps` names them.
+pub const AGENT_PROGRAMS: [&str; 2] = ["claude", codex::PROCESS];
+
+/// A coding agent whose working directory is `dir`: its program and pid.
+pub fn agent_in(
+    dir: &std::path::Path,
+    procs: &Processes,
+    cwds: &CwdsFn,
+) -> Result<Option<(String, u32)>, Error> {
+    let canonical = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_owned());
+    let want = canonical(dir);
+    let pids: Vec<(u32, &str)> = AGENT_PROGRAMS
+        .iter()
+        .flat_map(|name| procs.named(name).into_iter().map(move |pid| (pid, *name)))
+        .collect();
+    let all: Vec<u32> = pids.iter().map(|(pid, _)| *pid).collect();
+    let cwd = cwds(&all)?;
+    Ok(pids
+        .into_iter()
+        .find(|(pid, _)| cwd.get(pid).is_some_and(|c| canonical(c) == want))
+        .map(|(pid, name)| (name.to_owned(), pid)))
+}
+
 /// The working directory of each of `pids` that still runs and that this
 /// user may inspect. `ps` cannot print it: Linux has `/proc/<pid>/cwd`, macOS
 /// has `lsof`, which ships with the system.

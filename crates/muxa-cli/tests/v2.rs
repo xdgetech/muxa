@@ -583,6 +583,7 @@ async fn retry_runs_a_failed_routine_again() {
             workspace: "w".into(),
             name: "digest".into(),
         }),
+        place: None,
     };
     let item = host
         .inbox

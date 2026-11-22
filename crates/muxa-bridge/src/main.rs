@@ -54,6 +54,9 @@ pub struct Setup {
     pub task_command: String,
     pub config: Arc<config::Config>,
     pub agents: Arc<agents::Registry>,
+    /// Claude Code's config dirs from `--agent-dir` or the default, for
+    /// resuming a conversation in an adopted place (ADR 0076).
+    pub claude_dirs: Vec<PathBuf>,
     /// None when neither `--daemon-dir` nor `HOME` gives one.
     pub daemon_dir: Option<PathBuf>,
     pub settings_read_only: bool,
@@ -92,11 +95,15 @@ impl Setup {
             home.as_deref(),
             |key| records::agent_env::dirs_of(workspace_agents.iter(), key),
         ));
+        let claude_dirs = agents::data_dirs(&args.agent_dirs, home.as_deref(), |_| Vec::new())
+            .remove(agents::claude::ID)
+            .unwrap_or_default();
         Self {
             settings_read_only: args.settings_read_only,
             task_command: args.task_command,
             config: Arc::new(config),
             agents: Arc::new(agents),
+            claude_dirs,
             daemon_dir: args
                 .daemon_dir
                 .or_else(|| daemon::default_dir(xdg_state.as_deref(), home.as_deref())),

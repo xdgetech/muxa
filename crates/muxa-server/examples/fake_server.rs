@@ -53,8 +53,12 @@ impl Host for FakeHost {
 
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         let (repo, branch) = spec.branch().unwrap_or(("", &spec.title));
+        // An adopted place is the working place as it is.
+        let dir = spec
+            .existing()
+            .map_or_else(|| format!("/work/{branch}"), str::to_owned);
         Ok(Prepared {
-            dir: format!("/work/{branch}").into(),
+            dir: dir.into(),
             workspace: spec.workspace.clone(),
             title: spec.title.clone(),
             repo: Some(repo.into()),

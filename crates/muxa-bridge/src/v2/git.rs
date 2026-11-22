@@ -199,6 +199,18 @@ fn find_worktree(porcelain: &str, main: &Path, branch: &str) -> Option<PathBuf> 
     None
 }
 
+/// The top folder of the worktree that holds `dir`; None outside git.
+pub(super) async fn toplevel(dir: &Path) -> Result<Option<PathBuf>, GitError> {
+    let out = run(
+        git(dir).args(["rev-parse", "--show-toplevel"]),
+        "git rev-parse",
+    )
+    .await?;
+    Ok(last_line(&out.stdout)
+        .filter(|_| out.status.success())
+        .map(PathBuf::from))
+}
+
 pub(super) async fn current_branch(dir: &Path) -> Option<String> {
     let out = run(git(dir).args(["branch", "--show-current"]), "git branch")
         .await

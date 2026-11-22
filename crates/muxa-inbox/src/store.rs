@@ -122,6 +122,7 @@ mod tests {
             once: false,
             terminal: None,
             routine: None,
+            place: None,
         };
         b.add(new, 7).unwrap();
         save(&path, &b).unwrap();

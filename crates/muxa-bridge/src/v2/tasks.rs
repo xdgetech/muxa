@@ -2,13 +2,14 @@
 //! the Workspace's agent command and environment (ADR 0016), and the
 //! Workspaces for Capture and Start Task, and closing or restarting a Task.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use muxa_protocol::v2::{Place, PlaceKind};
 use muxa_server::tasks::{BRANCH, DIR, PLACES, REPO, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
+use super::adopt::{self, AgentLookup};
 use super::chat::Chats;
 use super::mcp;
 use super::places;
@@ -29,6 +30,11 @@ pub struct BridgeHost {
     loops: Option<Arc<TaskLoops>>,
     chats: Option<Arc<Chats>>,
     settings: Option<Arc<SettingsStore>>,
+    /// Claude Code's config dirs, for `--continue` in an adopted place.
+    /// Empty: never `--continue`.
+    claude_dirs: Vec<PathBuf>,
+    /// Finds an agent that already works in an adopted place.
+    agents_in: Arc<AgentLookup>,
 }
 
 impl BridgeHost {
@@ -40,7 +46,21 @@ impl BridgeHost {
             loops: None,
             chats: None,
             settings: None,
+            claude_dirs: Vec::new(),
+            agents_in: adopt::host_lookup(),
         }
+    }
+
+    pub fn with_claude_dirs(self, claude_dirs: Vec<PathBuf>) -> Self {
+        BridgeHost {
+            claude_dirs,
+            ..self
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_agent_lookup(self, agents_in: Arc<AgentLookup>) -> Self {
+        BridgeHost { agents_in, ..self }
     }
 
     pub fn with_settings(self, settings: Arc<SettingsStore>) -> Self {
@@ -88,6 +108,15 @@ impl BridgeHost {
         blocking(move || Ok(records.load_workspaces()?.get(&wanted).cloned()))
             .await?
             .ok_or_else(|| TaskError::Invalid(format!("no Workspace named {name:?}")))
+    }
+
+    /// Claude Code kept a conversation for `dir`, so `--continue` resumes it.
+    fn resumes(&self, ws: &Workspace, line: &str, dir: &Path) -> bool {
+        crate::launch::is_claude_code(&LaunchCommand::Shell(line.to_owned()))
+            && crate::agents::claude::has_conversation(
+                &adopt::claude_dirs(ws, &self.claude_dirs),
+                dir,
+            )
     }
 
     fn agent_command(&self, ws: &Workspace) -> String {
@@ -173,9 +202,11 @@ fn made_of(ended: &muxa_backend::TerminalInfo, dir: &str) -> Result<places::Made
             branch: branch.clone(),
         }],
     };
+    let repo = ended.labels.get(REPO).map(PathBuf::from);
     Ok(places::Made {
         places,
-        repo: ended.labels.get(REPO).map(PathBuf::from),
+        in_repo: repo.is_some(),
+        repo,
         branch,
     })
 }
@@ -284,6 +315,9 @@ impl Host for BridgeHost {
         }
         let ws = self.workspace(&spec.workspace).await?;
         let checked = places::check(&ws, &spec.places).await?;
+        if let Some(a) = places::adopted(&checked) {
+            adopt::refuse_if_busy(Arc::clone(&self.agents_in), &a.path).await?;
+        }
         if !spec.connections.is_empty() || !spec.mcp.is_empty() {
             crate::records::ignored_once(
                 &CHOICE_IGNORED,
@@ -306,6 +340,9 @@ impl Host for BridgeHost {
         })
         .await?;
         let (made, mut line) = self.agent_line(&ws, made, Some(servers)).await?;
+        if spec.existing().is_some() && self.resumes(&ws, &line, made.working()) {
+            line.push_str(" --continue");
+        }
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
@@ -333,6 +370,12 @@ impl Host for BridgeHost {
             .or_else(|| made.branch.clone())
             .unwrap_or_else(|| "Task".into());
         Ok(prepared(ws, &title, made, line, given))
+    }
+
+    async fn v1_tasks(&self) -> Result<Vec<muxa_protocol::v2::V1Task>, TaskError> {
+        let records = Arc::clone(&self.records);
+        let workspaces = blocking(move || records.load_workspaces()).await?;
+        super::v1::tasks(self.records.state_dir.as_deref(), &workspaces).await
     }
 
     async fn agent_started(&self, prepared: &Prepared) {
@@ -520,6 +563,10 @@ impl Host for BridgeHost {
 fn shell_line(line: String) -> Vec<String> {
     vec!["/bin/sh".into(), "-c".into(), line]
 }
+
+#[cfg(test)]
+#[path = "resume_tests.rs"]
+mod resume_tests;
 
 #[cfg(test)]
 mod tests {

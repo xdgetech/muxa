@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use muxa_protocol::v2::{self, InboxItem, ItemKind, RoutineRef};
+use muxa_protocol::v2::{self, InboxItem, ItemKind, ItemPlace, RoutineRef};
 use serde::{Deserialize, Serialize};
 
 pub const FORMAT_VERSION: u32 = 1;
@@ -44,6 +44,8 @@ pub struct NewItem {
     pub terminal: Option<String>,
     /// The Routine that made the item.
     pub routine: Option<RoutineRef>,
+    /// Where an older Task worked, for Resume Task.
+    pub place: Option<ItemPlace>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,10 +135,17 @@ impl Book {
             source: new.source,
             terminal: new.terminal,
             routine: new.routine,
+            place: new.place,
         };
         self.items.insert(0, Stored { item, key: new.key });
         self.revision += 1;
         Ok(Some(id))
+    }
+
+    /// An item with `key` is open, or a `once` item had it.
+    pub fn knows(&self, key: &str) -> bool {
+        self.seen.iter().any(|k| k == key)
+            || self.items.iter().any(|s| s.key.as_deref() == Some(key))
     }
 
     /// The open item `id`.
@@ -295,6 +304,7 @@ mod tests {
             once: false,
             terminal: None,
             routine: None,
+            place: None,
         }
     }
 
@@ -380,6 +390,8 @@ mod tests {
         b.delete(&id).unwrap();
         assert_eq!(b.add(once(), 2), Ok(None));
         assert_eq!(b.view().items.len(), 0);
+        assert!(b.knows("routine:e-1"));
+        assert!(!b.knows("routine:e-2"));
     }
 
     #[test]

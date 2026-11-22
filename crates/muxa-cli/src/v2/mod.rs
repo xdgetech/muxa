@@ -23,7 +23,8 @@ use client::{Client, Event, State};
 
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
-                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--plan]
+                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--existing PATH]
+                [--plan]
                 [--loop [--check CMD]] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
@@ -40,6 +41,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
        muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
        muxa-cli v2 [--bridge CMD] run-routine WORKSPACE NAME
+       muxa-cli v2 [--bridge CMD] migrate-v1 [--dry-run] [--json]
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
        muxa-cli v2 [--bridge CMD] chat TERMINAL [--seconds N] [--json]
        muxa-cli v2 [--bridge CMD] loops [--json]
@@ -60,6 +62,11 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   request-changes  types COMMENT into the Task's agent and resolves the item
   retry          runs again what made a Failed item: its Routine, its Task Loop,
                  or its agent
+  --existing     adopts a folder or worktree that is there already as the working
+                 place; nothing is made, and Claude Code continues its conversation
+  migrate-v1     one Inbox item \"Resume: <title>\" per open Task of the old muxa
+                 whose folder is still there; --dry-run only lists them. Running it
+                 again adds nothing twice. It never changes the old records
   --loop         a Task Loop: after each finished turn the host runs the check;
                  without --check, the Workspace's only allowed one
   settings       the host's workspaces.toml and routines files as the apps edit them;
@@ -109,6 +116,10 @@ enum Cmd {
     RunRoutine {
         workspace: String,
         name: String,
+    },
+    MigrateV1 {
+        dry_run: bool,
+        json: bool,
     },
     StartTask {
         workspace: String,
@@ -182,7 +193,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut words = Vec::new();
     let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
-    let mut force = false;
+    let (mut force, mut dry_run) = (false, false);
     let mut revision: Option<String> = None;
     while let Some(arg) = p.next()? {
         match arg {
@@ -232,6 +243,10 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("minutes") => minutes = Some(p.value()?.parse()?),
             Long("note") => note = Some(p.value()?.string()?),
             Long("force") => force = true,
+            Long("dry-run") => dry_run = true,
+            Long("existing") => places.push(PlaceSpec::Existing {
+                path: p.value()?.string()?,
+            }),
             Long("revision") => revision = Some(p.value()?.string()?),
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),
@@ -300,6 +315,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             revision,
             json,
         }),
+        ["migrate-v1"] => Cmd::MigrateV1 { dry_run, json },
         ["run-routine", w, n] => Cmd::RunRoutine {
             workspace: (*w).to_owned(),
             name: (*n).to_owned(),
@@ -503,6 +519,24 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             c.request(json!({"type": "run-routine", "workspace": workspace, "name": name}))
                 .await?;
             println!("started {workspace}/{name}");
+            Ok(())
+        }
+        Cmd::MigrateV1 { dry_run, json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c
+                .request(json!({"type": "migrate-v1", "dry_run": dry_run}))
+                .await?;
+            if json {
+                println!(
+                    "{}",
+                    json!({"tasks": reply["tasks"], "added": reply["added"]})
+                );
+                return Ok(());
+            }
+            for t in reply["tasks"].as_array().into_iter().flatten() {
+                println!("{}", v1_row(t));
+            }
+            println!("added {}", reply["added"].as_u64().unwrap_or(0));
             Ok(())
         }
         Cmd::Review { terminal, note } => {
@@ -746,6 +780,19 @@ async fn reconnect(bridge: &str, state: State, why: &str) -> Result<(Conn, Child
     Err(format!("lost the connection: {last}"))
 }
 
+/// `id  status  workspace  title  path`.
+fn v1_row(t: &Value) -> String {
+    let s = |k: &str| t[k].as_str().unwrap_or("-");
+    format!(
+        "{}\t{}\t{}\t{}\t{}",
+        s("id"),
+        s("status"),
+        s("workspace"),
+        s("title"),
+        s("path")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -778,6 +825,41 @@ mod tests {
             parse(args(&["workspaces", "--json"])).unwrap(),
             Some(("muxa-bridge connect".into(), Cmd::Workspaces { json: true }))
         );
+    }
+
+    #[test]
+    fn migrate_and_resume_parse() {
+        assert_eq!(
+            parse(args(&["migrate-v1", "--dry-run"])).unwrap(),
+            Some((
+                "muxa-bridge connect".into(),
+                Cmd::MigrateV1 {
+                    dry_run: true,
+                    json: false
+                }
+            ))
+        );
+        let Some((_, Cmd::StartTask { places, .. })) = parse(args(&[
+            "start-task",
+            "--workspace",
+            "w",
+            "--title",
+            "Fix",
+            "--existing",
+            "/w/tasks/fix-t-000001",
+        ]))
+        .unwrap() else {
+            panic!("no start-task");
+        };
+        assert_eq!(
+            places,
+            [PlaceSpec::Existing {
+                path: "/w/tasks/fix-t-000001".into()
+            }]
+        );
+        let t = json!({"id": "t-000001", "workspace": "w", "title": "Fix", "path": "/w/x",
+                       "exists": true, "status": "added"});
+        assert_eq!(v1_row(&t), "t-000001\tadded\tw\tFix\t/w/x");
     }
 
     #[test]

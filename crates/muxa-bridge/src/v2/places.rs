@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use muxa_protocol::v2::{Place, PlaceKind, PlaceSpec};
 use muxa_server::TaskError;
 
+use super::adopt::{self, Adopted};
 use super::git::{self, BranchRequest, GitError};
 use crate::records::{Workspace, is_valid_id};
 
@@ -23,6 +24,8 @@ pub enum Checked {
     Folder,
     Branch(BranchRequest),
     Read(PathBuf),
+    /// A place that is there already; it is the working place.
+    Existing(Adopted),
 }
 
 /// The places as made, the working place first.
@@ -32,6 +35,8 @@ pub struct Made {
     /// The main checkout and branch of a worktree working place.
     pub repo: Option<PathBuf>,
     pub branch: Option<String>,
+    /// The working place is in a git repo: `.muxa/` goes into its exclude.
+    pub in_repo: bool,
 }
 
 impl Made {
@@ -58,6 +63,7 @@ pub async fn check(ws: &Workspace, specs: &[PlaceSpec]) -> Result<Vec<Checked>, 
                 let path = repo_path(ws, repo)?;
                 Checked::Read(git::main_checkout(&path).await.map_err(invalid)?)
             }
+            PlaceSpec::Existing { path } => Checked::Existing(adopt::resolve(ws, path).await?),
         };
         if let Some(main) = main_of(&checked).await? {
             if !repos.insert(main.clone()) {
@@ -68,6 +74,22 @@ pub async fn check(ws: &Workspace, specs: &[PlaceSpec]) -> Result<Vec<Checked>, 
             }
         }
         out.push(checked);
+    }
+    let existing = out
+        .iter()
+        .filter(|c| matches!(c, Checked::Existing(_)))
+        .count();
+    if existing > 0 {
+        let others = out
+            .iter()
+            .any(|c| matches!(c, Checked::Folder | Checked::Branch(_)));
+        if existing > 1 || others {
+            return Err(TaskError::Invalid(
+                "an existing place is the working place: give one, without a folder or a branch"
+                    .into(),
+            ));
+        }
+        return Ok(out);
     }
     match out.iter().filter(|c| **c == Checked::Folder).count() {
         0 if !out.iter().any(|c| matches!(c, Checked::Branch(_))) => out.insert(0, Checked::Folder),
@@ -80,6 +102,7 @@ pub async fn check(ws: &Workspace, specs: &[PlaceSpec]) -> Result<Vec<Checked>, 
 async fn main_of(c: &Checked) -> Result<Option<PathBuf>, TaskError> {
     match c {
         Checked::Folder => Ok(None),
+        Checked::Existing(a) => Ok(a.main.clone()),
         Checked::Read(main) => Ok(Some(main.clone())),
         Checked::Branch(req) => git::main_checkout(&req.repo)
             .await
@@ -93,11 +116,20 @@ fn repo_path(ws: &Workspace, raw: &str) -> Result<PathBuf, TaskError> {
         .map_err(|e| TaskError::Invalid(format!("Workspace {}: {e}", ws.name)))
 }
 
+/// The existing working place of a checked request, if it has one.
+pub fn adopted(checked: &[Checked]) -> Option<&Adopted> {
+    checked.iter().find_map(|c| match c {
+        Checked::Existing(a) => Some(a),
+        _ => None,
+    })
+}
+
 /// Makes the folder and the worktrees, or finds existing worktrees.
 pub async fn make(ws: &Workspace, title: &str, checked: Vec<Checked>) -> Result<Made, TaskError> {
     let working = checked
         .iter()
-        .position(|c| *c == Checked::Folder)
+        .position(|c| matches!(c, Checked::Existing(_)))
+        .or_else(|| checked.iter().position(|c| *c == Checked::Folder))
         .or_else(|| checked.iter().position(|c| matches!(c, Checked::Branch(_))))
         .ok_or_else(|| TaskError::Invalid("a Task needs a folder or a branch".into()))?;
     let mut ordered = checked;
@@ -107,6 +139,7 @@ pub async fn make(ws: &Workspace, title: &str, checked: Vec<Checked>) -> Result<
         places: Vec::with_capacity(ordered.len()),
         repo: None,
         branch: None,
+        in_repo: false,
     };
     for (i, c) in ordered.into_iter().enumerate() {
         let place = match c {
@@ -120,6 +153,7 @@ pub async fn make(ws: &Workspace, title: &str, checked: Vec<Checked>) -> Result<
                 if i == 0 {
                     made.repo = Some(tree.main);
                     made.branch = Some(req.branch.clone());
+                    made.in_repo = true;
                 }
                 Place {
                     kind: PlaceKind::Branch,
@@ -132,6 +166,20 @@ pub async fn make(ws: &Workspace, title: &str, checked: Vec<Checked>) -> Result<
                 path: main.to_string_lossy().into_owned(),
                 branch: None,
             },
+            Checked::Existing(a) => {
+                made.in_repo = a.in_repo;
+                made.repo = a.main;
+                made.branch = a.branch.clone();
+                Place {
+                    kind: if a.branch.is_some() {
+                        PlaceKind::Branch
+                    } else {
+                        PlaceKind::Folder
+                    },
+                    path: a.path.to_string_lossy().into_owned(),
+                    branch: a.branch,
+                }
+            }
         };
         made.places.push(place);
     }
@@ -159,7 +207,7 @@ fn new_id() -> Option<String> {
 /// restarted Task keeps its notes. Blocking.
 pub fn brief(made: &Made, title: &str, goal: Option<&str>) -> Result<(), String> {
     let working = made.working();
-    if made.repo.is_some() {
+    if made.in_repo {
         git::exclude(working)?;
     }
     if working.join(".muxa").join(TASK_FILE).exists() {

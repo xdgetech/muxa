@@ -17,13 +17,13 @@ use serde_json::Value;
 
 use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, cap};
 use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
-use super::{AgentAdapter, ChatEvent, ChatSource, Error, Processes};
+use super::{AgentAdapter, ChatEvent, ChatSource, CwdsFn, Error, Processes};
 
 pub const ID: &str = "codex";
 /// Moves Codex's state, and with it the rollouts (ADR 0016).
 pub const DIR_ENV: &str = "CODEX_HOME";
 /// The process name, the same for the Homebrew and the npm install.
-const PROCESS: &str = "codex";
+pub const PROCESS: &str = "codex";
 /// How often, in polls, the source checks the process and looks for a newer rollout.
 const CHECK_EVERY: u32 = 8;
 const DAY: Duration = Duration::from_secs(86_400);
@@ -34,8 +34,6 @@ const MAX_DAYS: usize = 7;
 const MAX_FILES: usize = 64;
 
 type ListProcesses = Box<dyn Fn() -> Result<Processes, Error> + Send>;
-/// Each pid's working directory (`super::process_cwds`); tests stand in for the host.
-type CwdsFn = dyn Fn(&[u32]) -> Result<HashMap<u32, PathBuf>, Error> + Send + Sync;
 type Cwds = Arc<CwdsFn>;
 
 pub struct CodexAdapter {

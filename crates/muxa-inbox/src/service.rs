@@ -142,6 +142,7 @@ mod tests {
             once: false,
             terminal: None,
             routine: None,
+            place: None,
         }
     }
 

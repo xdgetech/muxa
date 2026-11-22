@@ -149,17 +149,33 @@ fn session_in_folder(
     Ok(found.into_iter().next())
 }
 
+/// The folder name under `projects/` of a working directory: every
+/// non-alphanumeric character as `-`.
+fn project_name(cwd: &str) -> String {
+    cwd.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// Claude Code kept a conversation for `folder` in one of `dirs`: what
+/// `claude --continue` resumes there. `folder` as the agent's cwd, canonical.
+pub fn has_conversation(dirs: &[PathBuf], folder: &Path) -> bool {
+    let name = project_name(&folder.to_string_lossy());
+    dirs.iter().any(|dir| {
+        std::fs::read_dir(dir.join("projects").join(&name)).is_ok_and(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .any(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        })
+    })
+}
+
 /// `projects/<cwd with every non-alphanumeric as '-'>/<id>.jsonl`, or a search of
 /// `projects/*/` when the escaping differs.
 fn transcript(dir: &Path, session: &SessionFile) -> Option<PathBuf> {
     let projects = dir.join("projects");
     let name = format!("{}.jsonl", session.session_id);
-    let escaped: String = session
-        .cwd
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    let direct = projects.join(escaped).join(&name);
+    let direct = projects.join(project_name(&session.cwd)).join(&name);
     if direct.is_file() {
         return Some(direct);
     }

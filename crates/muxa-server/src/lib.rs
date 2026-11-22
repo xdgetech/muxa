@@ -5,6 +5,7 @@
 mod attachment;
 mod inbox;
 pub mod memory_settings;
+mod migrate;
 pub mod reader;
 mod ring;
 mod session;

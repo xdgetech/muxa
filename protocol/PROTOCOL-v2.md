@@ -105,6 +105,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"inbox-retry","item"}` | `{"inbox":Inbox}`. Runs again what made a Failed item and resolves it |
 | `{"type":"settings"}` | `{"settings":Settings}`: the host's editable settings. See Settings |
 | `{"type":"settings-update","revision","ops":[Op...]}` | `{"settings":Settings}`: the settings after the ops. See Settings |
+| `{"type":"migrate-v1","dry_run"?}` | `{"tasks":[V1Task...],"added"}`: one Inbox item per open Task of protocol v1. See Migration from v1 |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
@@ -112,9 +113,12 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 
 - `{"kind":"folder"}`: a new folder `<root>/tasks/<slug>-<id>`;
 - `{"kind":"branch","repo","branch","base"?}`: a worktree of the repo on the branch, made or found;
-- `{"kind":"read","repo"}`: the repo's main checkout, never written.
+- `{"kind":"read","repo"}`: the repo's main checkout, never written;
+- `{"kind":"existing","path"}`: a folder or git worktree that is there already (ADR 0076). Nothing is made. It is the working place and comes without a folder or a branch place.
 
 A `repo` is absolute, or relative to the Workspace's root. The working place is the folder, else the first branch; with neither, the server adds a folder, so no `places` means one folder. A Task has at most one folder and one place per repo. The working place gets `.muxa/TASK.md` with the title, the goal and every place with its mode. A restarted Task keeps its own. Claude Code also gets the other places as additional directories, with edits denied in the read-only ones (`--settings .muxa/claude-settings.json`). Read only is a rule for the agent, not a boundary.
+
+An `existing` path is absolute. With its symlinks resolved, it is a folder inside the Workspace's root, or a linked worktree of one of the Workspace's repos; else `bad-request`. A worktree on a branch is a `branch` place with that branch on `muxa.places`, so Approve closes it as below; any other path is a `folder` place. `.muxa/TASK.md` is written only when it is missing, and `.muxa/` goes into the repo's `info/exclude`. When muxa's agent already runs there (`muxa.dir` is the path), the reply has it with `existing: true`. When another `claude` or `codex` process works in the folder, the request is `conflict` and nothing is written. Claude Code gets `--continue` when its config dir holds a conversation for the folder.
 
 If the Task's agent is still running in that working place, the reply has it with `existing: true` and nothing new starts. A folder is new each time, so a folder Task always starts a new agent. The agent terminal's `name` is the title, and it has these labels:
 
@@ -203,12 +207,13 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...]}`. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
 
-`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?}`.
+`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?}`.
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
 - `due`: `YYYY-MM-DD`. `created` and `later_until`: Unix seconds.
 - An item with `later_until` in the future stays in `items` and the client hides it. At that time the server puts it back on top, clears `later_until` and sends `inbox`.
-- `source`: `capture`, `task` or `routine`.
+- `source`: `capture`, `task`, `routine` or `v1`.
 - `terminal`: the Task agent terminal that made the item (Review, and Failed of an agent or a Task Loop). `routine`: `{"workspace","name"}`, the Routine that made it. Items made before these fields have neither.
+- `place`: `{"workspace","path"}`, where an older Task worked. A client offers Resume Task for it: `start-task` with that workspace, the title without `Resume: `, and `places: [{"kind":"existing","path"}]`, then `inbox-done`.
 
 `parse-capture` reads a line by ADR 0066's rules: a first word `reply`, `read` or `decide` sets the kind (else `todo`); `#name` sets the Workspace only when one has that name; `due` takes `today`, `tomorrow`, a weekday (the next one, today included), `M/D` (the next one) or `YYYY-MM-DD`. The client shows the fields, lets the user change them, and sends `inbox-add`. A title is 1 to 300 characters; a note at most 4 KiB.
 
@@ -216,6 +221,18 @@ Items the server makes:
 - **Review** (`source: task`): on `task-review`. An agent can send it for its own Task (`muxa-cli v2 review` uses `HC_TERMINAL_ID`). While one is open, another `task-review` for the Task makes none.
 - **Failed** (`source: task`): a Task's agent ended with a non-zero code, on a signal it did not get from a kill, or was lost. Once per terminal. A clean exit or a kill makes none.
 - **Read** and **Decide** (`source: routine`): a Routine's briefing and proposal entries; **Failed** for a Routine's failure. Once each. Entries from before the server first ran are not copied.
+
+### Migration from v1
+
+ADR 0076. `migrate-v1` reads the open Task records of protocol v1 (status `open` or `review`) in the daemon's state dir, `<state dir>/t-<id>.json`. Done and dropped records and Routine runs are skipped. It never changes or deletes a record, a worktree or a branch.
+
+`V1Task`: `{"id","workspace","title","path","exists","status"}`. `path` is the record's folder or worktree, resolved when it is there; `exists` says it is. `status`:
+- `new`: a dry run would add it;
+- `added`: one To do item `Resume: <title>` with `source: v1`, `place` and a note that it came from the old muxa;
+- `in-inbox`: an earlier run added it. Each item has the key `v1:<id>`, so no run adds one twice, also after it is done or deleted;
+- `missing`: its place is gone; `no-workspace`: its Workspace is gone; `outside`: its place is no longer in its Workspace. None of these adds an item.
+
+`added` counts the items this run added; with `dry_run` it is 0.
 
 ### Task actions
 

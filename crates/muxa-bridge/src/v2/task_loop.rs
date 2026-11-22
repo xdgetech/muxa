@@ -480,6 +480,7 @@ fn review(id: &TerminalId, agent: &Agent) -> NewItem {
         once: false,
         terminal: Some(id.as_str().to_owned()),
         routine: None,
+        place: None,
     }
 }
 
@@ -495,6 +496,7 @@ fn failed(id: &TerminalId, agent: &Agent, note: &str) -> NewItem {
         once: true,
         terminal: Some(id.as_str().to_owned()),
         routine: None,
+        place: None,
     }
 }
 

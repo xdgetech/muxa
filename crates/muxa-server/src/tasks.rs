@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
 use muxa_protocol::v2::{
     ChatUpdate, LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList,
-    Routine, RoutineProblem, Settings, SettingsOp, Workspace, WorktreeMode,
+    Routine, RoutineProblem, Settings, SettingsOp, V1Task, Workspace, WorktreeMode,
 };
 use tokio::sync::watch;
 
@@ -51,6 +51,14 @@ impl TaskSpec {
     pub fn branch(&self) -> Option<(&str, &str)> {
         self.places.iter().find_map(|p| match p {
             PlaceSpec::Branch { repo, branch, .. } => Some((repo.as_str(), branch.as_str())),
+            _ => None,
+        })
+    }
+
+    /// The path of an `existing` place: the working place it adopts.
+    pub fn existing(&self) -> Option<&str> {
+        self.places.iter().find_map(|p| match p {
+            PlaceSpec::Existing { path } => Some(path.as_str()),
             _ => None,
         })
     }
@@ -226,6 +234,12 @@ pub trait Host: Send + Sync {
 
     fn chat_close(&self, _handle: u64) -> impl Future<Output = ()> + Send {
         async {}
+    }
+
+    /// The open Tasks of protocol v1 (ADR 0076), each `new` when its place
+    /// can be adopted, else why not. Changes nothing.
+    fn v1_tasks(&self) -> impl Future<Output = Result<Vec<V1Task>, TaskError>> + Send {
+        async { Ok(Vec::new()) }
     }
 
     /// The host's editable settings (ADR 0074). Never a secret or env value.
