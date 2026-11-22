@@ -48,7 +48,10 @@ extension DemoContent {
                 item("d1", .review, "Review fix-login", note: "Draft PR #42: refresh the session before it expires.", source: "task",
                      terminal: "t1"),
                 item("d2", .reply, "Reply to Anna about the launch date", workspace: "Personal", due: "2026-11-27", source: "capture"),
-                item("d3", .decide, "Upgrade the database to Postgres 17?", note: "Two extensions need a new version first.", source: "routine"),
+                item("d3", .decide, "Upgrade the database to Postgres 17?",
+                     note: "Two extensions need a new version first:\n\n- `pgvector` 0.8\n- `postgis` 3.5\n\n"
+                         + "**Plan:** upgrade them, then the database. See the [release notes](https://www.postgresql.org/docs/17/release-17.html).",
+                     source: "routine"),
                 item("d4", .read, "Weekly dependency digest", note: "3 updates, 1 security fix.", source: "routine"),
                 item("d5", .failed, "nightly-backup failed", note: "gh login expired.", source: "routine",
                      routine: RoutineRef(workspace: "app", name: "nightly-backup")),

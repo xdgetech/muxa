@@ -155,16 +155,9 @@ private struct ChatRow: View {
         case "notice":
             Text(entry.text ?? "").font(.caption).foregroundStyle(Palette.textTertiary)
         default:
-            Text(markdown(entry.text ?? ""))
-                .foregroundStyle(Palette.text)
-                .textSelection(.enabled)
+            MarkdownText(text: entry.text ?? "")
                 .accessibilityIdentifier("chat.assistant")
         }
-    }
-
-    private func markdown(_ text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 }
 

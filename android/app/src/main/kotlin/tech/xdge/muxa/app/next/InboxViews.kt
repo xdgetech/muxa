@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -204,7 +203,7 @@ fun InboxItemPane(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text("Summary", fontSize = 12.sp, color = Palette.textTertiary)
-                SelectionContainer { Text(note, color = Palette.text, lineHeight = 22.sp) }
+                MarkdownText(note, Modifier.testTag("detail.note"))
             }
         }
         if (position == null) {

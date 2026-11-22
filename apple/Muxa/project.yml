@@ -12,7 +12,7 @@ configFiles:
 packages:
   MuxaKit:
     path: ../MuxaKit
-  # Markdown with code blocks for agent replies (MIT).
+  # Markdown with code blocks for Inbox notes and agent replies (MIT).
   MarkdownUI:
     url: https://github.com/gonzalezreal/swift-markdown-ui
     exactVersion: 2.4.1
@@ -66,6 +66,7 @@ targets:
     dependencies:
       - package: MuxaKit
         products: [MuxaTransport, MuxaSession, MuxaV2]
+      - package: MarkdownUI
       - package: SwiftTerm
     settings:
       base:

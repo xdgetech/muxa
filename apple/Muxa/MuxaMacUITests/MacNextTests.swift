@@ -54,6 +54,19 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testAnItemsNoteShowsAsMarkdown() throws {
+        let app = launch()
+        app.descendants(matching: .any)["item.d3"].click()
+        let note = app.descendants(matching: .any)["detail.note"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        let shown = note.staticTexts.allElementsBoundByIndex.map { $0.value as? String ?? $0.label }
+        XCTAssertTrue(shown.contains { $0.contains("pgvector") }, "a list item: \(shown)")
+        XCTAssertFalse(shown.contains { $0.hasPrefix("- ") || $0.contains("**") || $0.contains("`") },
+                       "the note is Markdown: \(shown)")
+        XCTAssertTrue(note.links["release notes"].exists, "the web link is a link")
+    }
+
+    @MainActor
     func testMakeItATaskStartsATaskFromAReadItem() throws {
         let app = launch()
         app.descendants(matching: .any)["item.d4"].click()

@@ -89,11 +89,8 @@ struct HomeDetailPane: View {
     @ViewBuilder
     private func noteView(_ note: String?) -> some View {
         if let note {
-            Text(note)
-                .font(.system(size: 14))
-                .lineSpacing(6)
-                .foregroundStyle(Palette.terminalText)
-                .textSelection(.enabled)
+            MarkdownText(text: note, size: 14, color: Palette.terminalText)
+                .accessibilityIdentifier("detail.note")
         } else {
             Text("No note.").font(.system(size: 14)).foregroundStyle(Palette.textTertiary)
         }

@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasContentDescription
@@ -275,6 +276,17 @@ class NextTest {
         compose.waitUntil(TIMEOUT) {
             runCatching { compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d9")) }.isFailure
         }
+    }
+
+    @Test
+    fun anItemsNoteShowsAsMarkdown() {
+        launch()
+        compose.onNodeWithTag("item.d3").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.note"), TIMEOUT)
+        compose.onNode(hasText("pgvector", substring = true), useUnmergedTree = true).assertExists()
+        compose.onNode(hasText("Plan: upgrade them", substring = true), useUnmergedTree = true).assertExists()
+        compose.onAllNodes(hasText("**", substring = true), useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodes(hasText("- `", substring = true), useUnmergedTree = true).assertCountEquals(0)
     }
 
     @Test

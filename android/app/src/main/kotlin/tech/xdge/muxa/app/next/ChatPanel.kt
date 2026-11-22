@@ -138,7 +138,7 @@ private fun ChatRow(e: ChatEntry) {
             }
         }
         "notice" -> Text(e.text.orEmpty(), pad, fontSize = 12.sp, color = Palette.textTertiary)
-        else -> Text(e.text.orEmpty(), pad.testTag("chat.assistant"), lineHeight = 22.sp)
+        else -> MarkdownText(e.text.orEmpty(), pad.testTag("chat.assistant"))
     }
 }
 

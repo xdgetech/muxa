@@ -21,7 +21,7 @@ struct InboxItemPane: View {
                 if let note = item.note {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Summary").font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
-                        Text(note).foregroundStyle(Palette.text).textSelection(.enabled)
+                        MarkdownText(text: note).accessibilityIdentifier("detail.note")
                     }
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
