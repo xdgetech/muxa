@@ -404,6 +404,19 @@ final class NextModel {
         await run { (self.routines, self.routineProblems, self.routinesOff) = try await $0.routines() }
     }
 
+    /// Opens the Routines gate of `workspace` at the current settings
+    /// revision, keeping its direct writes as they are.
+    func turnOnRoutines(in workspace: String) async {
+        if settings.settings == nil { await settings.load() }
+        guard let w = settings.workspace(workspace) else {
+            requestError = settings.loadError ?? "\(workspace) is not in the settings any more."
+            return
+        }
+        let failure = await settings.save([.routinesGate(workspace: workspace, enabled: true, directWrites: w.directWrites)])
+        await refreshRoutines()
+        if let failure { requestError = failure }
+    }
+
     private func run(_ body: (V2Client) async throws -> Void) async {
         guard let c = client else {
             requestError = "Not connected."

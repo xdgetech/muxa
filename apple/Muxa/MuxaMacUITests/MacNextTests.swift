@@ -127,6 +127,20 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testTurnOnOpensAWorkspacesRoutines() throws {
+        let app = launch()
+        app.typeKey("o", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["routine.dependency-digest"].waitForExistence(timeout: 5))
+        // The demo's Personal has one Routine in its file and its gate off.
+        let on = app.buttons["routines.on.Personal"]
+        XCTAssertTrue(on.waitForExistence(timeout: 5))
+        on.click()
+        XCTAssertTrue(waitForGone(on))
+        app.buttons["routines.home"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testATaskStartsFromTheSheetWithItsLoop() throws {
         let app = launch()
         app.typeKey("n", modifierFlags: [.command, .shift])
