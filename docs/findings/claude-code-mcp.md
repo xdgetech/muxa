@@ -1,6 +1,6 @@
 # Claude Code's MCP config flags: what muxa relies on
 
-muxa gives a Claude Code agent only the MCP servers its Task or Routine names (ADR 0069, `crates/muxa-bridge/src/v2/mcp.rs`). These facts come from Claude Code's documentation (`code.claude.com/docs/en/mcp` and `/cli-reference`), read 2026-11-22. Rows marked *docs* were not probed against a binary; no repro script checks them yet, because a probe needs a Claude Code login. Re-check them after a Claude Code upgrade.
+muxa gives a Claude Code agent every MCP server of its workspace (ADR 0069, 0075, `crates/muxa-bridge/src/v2/mcp.rs`). These facts come from Claude Code's documentation (`code.claude.com/docs/en/mcp` and `/cli-reference`), read 2026-11-22. Rows marked *docs* were not probed against a binary; no repro script checks them yet, because a probe needs a Claude Code login. Re-check them after a Claude Code upgrade.
 
 | Fact | Source |
 |---|---|

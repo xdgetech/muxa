@@ -66,9 +66,9 @@ pub struct Workspace {
     pub park_after: Option<u64>,
     /// None: this workspace has no Routines (ADR 0036).
     pub routines: Option<RoutineGate>,
-    /// Secrets an agent gets only when its Task or Routine names them (ADR 0069).
+    /// Secrets every agent of the workspace gets (ADR 0069, 0075).
     pub connections: Vec<Connection>,
-    /// MCP servers an agent gets only when its Task or Routine names them (ADR 0069).
+    /// MCP servers every agent of the workspace gets (ADR 0069, 0075).
     pub mcp: Vec<McpServer>,
 }
 

@@ -4,6 +4,8 @@
 
 Proposed (2026-11-21). Changes ADR 0016 (per-Workspace agent environments) and ADR 0026 (a Routine's sources are its agent's native tools).
 
+**Partly reversed by [ADR 0075](0075-connections-per-workspace.md) (2026-11-22):** §4, §5 and the per-Task and per-Routine naming in the E2b addendum no longer hold. Every agent of a Workspace gets all its connections and MCP servers, and `default` is ignored.
+
 Decided while building (2026-11-22): the move is gradual. A Workspace's `[workspace.agent] env` keeps going to every agent, so nothing that relies on it breaks. Connections are the way to take a token out of it: a connection reaches only the Tasks and Routines that name it, or all of them with `default = true`. Secrets are read with `/usr/bin/security`; no Keychain library is linked in.
 
 ## Context

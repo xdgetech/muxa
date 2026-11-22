@@ -122,12 +122,14 @@ If the Task's agent is still running in that working place, the reply has it wit
 - `muxa.workspace`;
 - `muxa.repo` (the main checkout) and `muxa.branch`, when the working place is a branch;
 - `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
-- `muxa.connections`: a JSON list of the connection names `start-task` named, when it named any. Names only.
-- `muxa.mcp`: a JSON list of every MCP server the agent got, the default ones too, when it got any. Names only.
+- `muxa.connections`: a JSON list of every connection the agent got, when it got any. Names only.
+- `muxa.mcp`: a JSON list of every MCP server the agent got, when it got any. Names only.
 
-`connections` names the Workspace's connections the agent gets as environment variables, besides the ones on by default (ADR 0069). Their secrets come from the host's Keychain and never cross the wire. A missing or locked secret fails the start before any place is made.
+Every agent gets all of its Workspace's connections as environment variables (ADR 0075). Their secrets come from the host's Keychain and never cross the wire back. A missing or locked secret fails the start before any place is made.
 
-`mcp` names the Workspace's MCP servers the agent gets, besides the ones on by default (ADR 0069). Claude Code gets only those, in `.muxa/mcp.json` with `--strict-mcp-config`; with none, the file is empty, so no other configured server loads. The connections a server needs go into the agent's environment, never into the file. Only Claude Code takes MCP servers: for any other agent, a server named or on by default is `bad-request`, before any place is made.
+Every agent gets all of its Workspace's MCP servers (ADR 0075). In a Workspace that lists any, Claude Code gets them in `.muxa/mcp.json` with `--strict-mcp-config`, so no other configured server loads; a Workspace without any adds no MCP flags. The connections a server needs go into the agent's environment, never into the file. Only Claude Code takes MCP servers: for any other agent in a Workspace with servers, `start-task` is `bad-request`, before any place is made.
+
+`connections` and `mcp` in `start-task` are deprecated and ignored (ADR 0075). The server still accepts them, and an unknown name is not an error.
 
 An unknown Workspace, connection or MCP server, a missing title, a wrong repo or branch, or a repo named twice is `bad-request`.
 
@@ -223,13 +225,13 @@ ADR 0072. The actions of a Review or Failed item, and the Workspaces a client of
 - `repos`: the Workspace's repos as `start-task` takes them, relative to the root, or a listed repo's folder name.
 - `agent`: the program name of the Workspace's agent, such as `claude` or `codex`. Never its arguments or environment.
 - `loop`: `null` when the Workspace runs no Task Loops, else `{"checks":"any"}` or `{"checks":["make test",...]}`.
-- `connections`: names only, and whether each is on by default. A connection's variable, account and secret never cross the wire.
+- `connections`: names only. A connection's variable, account and secret never cross the wire.
 - `mcp`: the `[[workspace.mcp]]` servers, by name only. Their command, URL and variables never cross the wire.
 
-`Use` says who uses a connection or an MCP server (ADR 0069 §7): `{"name","default","used_by":{"routines":[...],"tasks":[...]},"last_used"}`.
-- `used_by.routines`: the names of the Workspace's Routines in `routines.toml` that get it: they list it, or, for a connection, they get an MCP server that needs it.
-- `used_by.tasks`: the ids of the live Task agent terminals that got it, from their `muxa.connections` and `muxa.mcp` labels.
-- A `default` one counts for every Routine and every live Task agent of the Workspace.
+`Use` says who uses a connection or an MCP server (ADR 0069 §7, ADR 0075): `{"name","default","used_by":{"routines":[...],"tasks":[...]},"last_used"}`.
+- `default` is always `true` since ADR 0075: every agent of the Workspace gets it. It stays so older clients keep decoding.
+- `used_by.routines`: every Routine in the Workspace's `routines.toml`.
+- `used_by.tasks`: the ids of every live Task agent terminal of the Workspace.
 - `last_used`: Unix seconds when the daemon last started an agent with it (a Task, a restart or a Routine run), or `null`. The host keeps the times in `<state dir>/usage.json`, names only.
 - A server before ADR 0069 §7 sends only `name` and `default`; clients read the rest as empty and `null`.
 
@@ -266,15 +268,15 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 - `routines_enabled` and `direct_writes`: `[workspace.routines]`.
 - `routines`: the Routines of `<root>/.muxa/routines.toml`, also while `routines_enabled` is false. `routines_problem`: why that file cannot be used, or `null`.
 
-`SettingsConnection`: `{"name","env","account","access","default","secret"}`. `account` is a label or `null`; `access` is `"read"`, `"write"` or `null`. `secret` is `"set"`, `"missing"`, `"locked"` (the host's Keychain is locked) or `"unavailable"` (the host has no macOS Keychain). The secret itself never crosses the wire from the server.
+`SettingsConnection`: `{"name","env","account","access","secret"}`. `account` is a label or `null`; `access` is `"read"`, `"write"` or `null`. `secret` is `"set"`, `"missing"`, `"locked"` (the host's Keychain is locked) or `"unavailable"` (the host has no macOS Keychain). The secret itself never crosses the wire from the server.
 
-`ConnectionSpec`, in ops: `{"name","env","account"?,"access"?,"default"?}`.
+`ConnectionSpec`, in ops: `{"name","env","account"?,"access"?}`. Every agent of the Workspace gets every connection and MCP server (ADR 0075), so neither has `default`, and a Routine names none. A `default` sent by an older client is ignored.
 
-`McpSpec`: `{"name","command"?,"args"?,"url"?,"type"?,"env":{},"headers":{},"connections":[...],"default"}`, as `[[workspace.mcp]]`: either `command` with `args`, or `url` with `type` `"http"` (default) or `"sse"`. Nothing here is a secret.
+`McpSpec`: `{"name","command"?,"args"?,"url"?,"type"?,"env":{},"headers":{},"connections":[...]}`, as `[[workspace.mcp]]`: either `command` with `args`, or `url` with `type` `"http"` (default) or `"sse"`. Nothing here is a secret.
 
 `SettingsRoutine`: a `RoutineSpec` plus `"instructions_text"`, the instruction file's content, or `null` when it cannot be read.
 
-`RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?,"connections"?,"mcp"?}`, as `[[routine]]` with `[routine.output]` flattened. `instructions` is the file's path relative to `.muxa/`.
+`RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?}`, as `[[routine]]` with `[routine.output]` flattened. Editing a connection, an MCP server or a Routine removes the ignored `default`, `connections` and `mcp` keys from the file. `instructions` is the file's path relative to `.muxa/`.
 
 `SettingsWorker`, also `WorkerSpec` in ops: `{"name","description"?,"agent","args":[...],"instructions"?,"workspaces"?,"loop"?:{"check","max_attempts"?,"timeout"?}}`, as `[[worker]]`. `agent` is `claude-code` or `codex`.
 
@@ -303,7 +305,7 @@ Names are not renamed: a Keychain account, a Routine's state and a Task's labels
 
 Rules:
 1. `revision` must be the current one, else `conflict` and nothing changes. The client reads `settings` again and shows the user what changed.
-2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, connections and MCP servers that a Routine names, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
+2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, the connections an MCP server needs, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
 3. `value` and `secret` are write-only. They are never sent back, never logged, and never in an error message. A `secret` goes only to the host's macOS Keychain (service `muxa`, account `<workspace>/<name>`), at most 1800 bytes of one line. An env `value` goes only into `workspaces.toml`, as before.
 4. An `instructions_text` is at most 12 KiB of UTF-8 without NUL. The file must stay inside `.muxa/`, also through a symlink.
 5. Each file is written whole to a temporary file and renamed over the old one; the old one is kept as `<file>.bak`. A file keeps its mode; a new file gets 0600.

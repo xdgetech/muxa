@@ -59,7 +59,7 @@ flowchart LR
 
 **Routines** (ADR 0026, 0036): a `[[routine]]` in a workspace's `.muxa/routines.toml` runs an agent on a schedule, for example at 8:00 on weekdays, in its own folder under `<root>/routines/`. `[workspace.routines]` in `workspaces.toml` allows them. The agent reads its sources with its own tools and writes briefings and proposals, which a check validates before they reach the Inbox.
 
-**Connections** (ADR 0069): a workspace names the tokens its agents may use in `[[workspace.connection]]`; the secrets live in the macOS Keychain and reach only the agents whose Task or Routine names them.
+**Connections** (ADR 0069, 0075): a workspace names its tokens in `[[workspace.connection]]`; the secrets live in the macOS Keychain and reach every agent of that workspace.
 
 On the Mac: the Go, Pane and Host menus, up to four Tasks side by side in Focus (`⌘\`), and `⌃⌥Space` for a Capture window from any app, where `⌘⏎` adds the item and starts a Task from it (ADR 0070).
 

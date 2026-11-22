@@ -33,29 +33,25 @@
 #            the workspace gets them; a token that only some agents need is
 #            better as a connection. TMUX and TMUX_PANE are refused.
 #
-# [[workspace.connection]]  optional; a secret an agent gets only when its
-#   Task or Routine names it (ADR 0069). A Routine names its connections in
-#   routines.toml (connections = ["linear"]); a Task, when it starts. Less
-#   access for agents that read untrusted text; not a security boundary.
+# [[workspace.connection]]  optional; a secret every agent of this
+#   workspace gets: each Task, restart and Routine run (ADR 0075). To keep a
+#   token from some agents, put them in another workspace.
 #   name     a-z, 0-9 and -, at most 64; unique in the workspace
 #   env      the variable the agent gets, e.g. LINEAR_API_KEY
 #   account  optional; who the secret acts as, shown to you
 #   access   optional; "read" or "write". A label: the token itself decides
 #            what an agent can do, so give a read-only token where the
 #            service has one.
-#   default  optional; true gives it to every Task and Routine here
 #   The secret is in the macOS Keychain of the host, never in this file:
 #     security add-generic-password -s muxa -a '<workspace>/<name>' -w
-#   (it asks for the secret), or set it in the app's Settings. A missing or locked one stops the agent's
-#   start with that reason.
+#   (it asks for the secret), or set it in the app's Settings. A missing or
+#   locked one stops the agent's start with that reason.
 #
-# [[workspace.mcp]]  optional; an MCP server a Claude Code agent gets only
-#   when its Task or Routine names it (ADR 0069). A Routine names its
-#   servers in routines.toml (mcp = ["linear"]); a Task, when it starts.
-#   muxa writes the chosen servers to .muxa/mcp.json in the agent's folder
-#   and passes --strict-mcp-config, so servers from your own Claude Code
-#   config (CLAUDE_CONFIG_DIR, ~/.claude.json, .mcp.json, plugins) no
-#   longer load in muxa's agents. Codex gets no MCP servers yet.
+# [[workspace.mcp]]  optional; an MCP server every Claude Code agent of this
+#   workspace gets (ADR 0075). muxa writes all of them to .muxa/mcp.json in
+#   the agent's folder and passes --strict-mcp-config, so servers from your
+#   own Claude Code config (CLAUDE_CONFIG_DIR, ~/.claude.json, .mcp.json,
+#   plugins) no longer load in muxa's agents. Codex gets no MCP servers yet.
 #   name         a-z, 0-9 and -, at most 64; unique in the workspace
 #   command      a server muxa's agent starts, with args = [...]; or
 #   url          a remote server, with type = "http" (default) or "sse"
@@ -66,7 +62,8 @@
 #   connections  optional; the [[workspace.connection]]s whose variables the
 #                server needs. The agent gets them; a command server's env
 #                refers to them as ${VAR}, which Claude Code expands
-#   default      optional; true gives it to every Task and Routine here
+#   A workspace with servers refuses Codex agents.
+#   default, on a connection or a server, is no longer used; muxa ignores it.
 #
 # [workspace.loop]  optional; lets a Task in this workspace have a Task Loop
 #   (ADR 0019). The muxa daemon then runs a check command with /bin/sh -c
@@ -109,7 +106,7 @@ env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company"
 [workspace.routines]
 enabled = true
 
-# A Linear token only the Tasks and Routines that name "linear" get.
+# A Linear token every agent of Company gets.
 # Its secret: security add-generic-password -s muxa -a 'Company/linear' -w
 [[workspace.connection]]
 name = "linear"
@@ -117,8 +114,8 @@ env = "LINEAR_API_KEY"
 account = "me@company.example"
 access = "read"
 
-# Linear's MCP server, with the token of the "linear" connection. Only the
-# Tasks and Routines that name "linear" get it.
+# Linear's MCP server, with the token of the "linear" connection. Every
+# Claude Code agent of Company gets it.
 [[workspace.mcp]]
 name = "linear"
 command = "npx"
