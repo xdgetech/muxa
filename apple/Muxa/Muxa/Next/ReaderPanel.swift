@@ -68,7 +68,7 @@ struct ReaderPanel: View {
             .listRowBackground(Color.clear)
             if let list {
                 Section(list.root ?? "Folder") {
-                    if list.entries.isEmpty { Text(empty).foregroundStyle(.secondary) }
+                    if list.entries.isEmpty { Text(empty).foregroundStyle(Palette.textSecondary) }
                     rows(list.entries, scope: .uncommitted)
                 }
                 .listRowBackground(Palette.card)
@@ -78,7 +78,7 @@ struct ReaderPanel: View {
                     }
                     .listRowBackground(Palette.card)
                 }
-                if list.truncated == true { Text("More files than shown.").font(.caption).foregroundStyle(.secondary) }
+                if list.truncated == true { Text("More files than shown.").font(.caption).foregroundStyle(Palette.textSecondary) }
             } else if loading {
                 ProgressView()
             }
@@ -102,15 +102,15 @@ struct ReaderPanel: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        if let status = e.status { Text(status.prefix(1).uppercased()).monospaced().foregroundStyle(.secondary) }
+                        if let status = e.status { Text(status.prefix(1).uppercased()).monospaced().foregroundStyle(Palette.textSecondary) }
                         Text(e.title ?? e.path).lineLimit(1)
                         Spacer()
                         if let added = e.added, let removed = e.removed {
-                            Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
                         }
-                        Image(systemName: "chevron.forward").font(.caption).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.forward").font(.caption).foregroundStyle(Palette.textTertiary)
                     }
-                    if e.title != nil { Text(e.path).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                    if e.title != nil { Text(e.path).font(.caption2).foregroundStyle(Palette.textSecondary).lineLimit(1) }
                 }
                 .contentShape(Rectangle())
             }

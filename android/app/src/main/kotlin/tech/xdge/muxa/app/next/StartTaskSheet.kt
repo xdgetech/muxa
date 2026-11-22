@@ -1,5 +1,6 @@
 package tech.xdge.muxa.app.next
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
+import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
@@ -92,7 +94,13 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
 
     Dialog(close, DialogProperties(usePlatformDefaultWidth = false)) {
         val size = if (phone) Modifier.fillMaxSize() else Modifier.widthIn(max = SHEET_WIDTH.dp).heightIn(max = SHEET_HEIGHT.dp)
-        Surface(size.then(startKey).testTag("task.sheet"), shape = MaterialTheme.shapes.large) {
+        // A card over the scrim on a tablet, as the mocks' sheets; the whole screen on a phone.
+        Surface(
+            size.then(startKey).testTag("task.sheet"),
+            shape = MaterialTheme.shapes.large,
+            color = if (phone) Palette.ground else Palette.surface,
+            border = if (phone) null else BorderStroke(1.dp, Palette.border),
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("New Task", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)

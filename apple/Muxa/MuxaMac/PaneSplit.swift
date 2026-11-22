@@ -25,7 +25,7 @@ struct PaneSplit: View {
                 HStack {
                     Text("\(index + 1)  \(t.branch ?? t.name ?? t.id)")
                         .font(.caption.weight(active ? .semibold : .regular))
-                        .foregroundStyle(active ? Theme.accent : .secondary)
+                        .foregroundStyle(active ? Theme.accent : Palette.textSecondary)
                     Spacer()
                 }
                 .padding(.horizontal, 8)

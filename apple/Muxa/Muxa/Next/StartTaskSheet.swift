@@ -36,7 +36,7 @@ struct StartTaskSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            PaletteForm {
                 if let ws = current {
                     task(ws)
                     TaskAgentSection(draft: $draft, workspace: ws)
@@ -44,12 +44,12 @@ struct StartTaskSheet: View {
                     TaskToolsSection(draft: $draft, workspace: ws)
                 } else if workspaces?.isEmpty == true {
                     Text("The host has no Workspaces. Add one in workspaces.toml on the host.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textSecondary)
                 } else if workspaces == nil, error == nil {
                     ProgressView()
                 }
                 if let error {
-                    Text(error).foregroundStyle(.red).accessibilityIdentifier("task.error")
+                    Text(error).foregroundStyle(Theme.failure).accessibilityIdentifier("task.error")
                 }
             }
             .formStyle(.grouped)

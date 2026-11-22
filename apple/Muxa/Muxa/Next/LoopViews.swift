@@ -13,7 +13,7 @@ struct LoopSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            PaletteForm {
                 if let lp = model.loops[terminal.id] {
                     Section("Now") {
                         LabeledContent("State", value: LoopText.state(lp))
@@ -38,7 +38,7 @@ struct LoopSheet: View {
                         + "Leave it empty for the workspace's only allowed check.")
                 }
                 if let error = model.requestError {
-                    Text(error).foregroundStyle(.red).accessibilityIdentifier("loop.error")
+                    Text(error).foregroundStyle(Theme.failure).accessibilityIdentifier("loop.error")
                 }
             }
             .navigationTitle("Task Loop")

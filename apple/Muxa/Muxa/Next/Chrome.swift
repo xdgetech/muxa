@@ -224,3 +224,14 @@ struct GroupHeader: View {
         .accessibilityAddTraits(.isHeader)
     }
 }
+
+/// A Form on the mocks' colors: card rows on the ground, also as a sheet.
+struct PaletteForm<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Form { Group { content }.listRowBackground(Palette.card) }
+            .groundList()
+            .presentationBackground(Palette.ground)
+    }
+}

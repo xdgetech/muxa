@@ -110,7 +110,7 @@ struct TaskToolsSection: View {
         ) {
             HStack {
                 Text(name)
-                if isDefault { Text("Default").font(.caption).foregroundStyle(.secondary) }
+                if isDefault { Text("Default").font(.caption).foregroundStyle(Palette.textSecondary) }
             }
         }
         .disabled(isDefault)

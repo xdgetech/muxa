@@ -16,6 +16,8 @@ struct MuxaMacApp: App {
                 .environment(nav)
                 .tint(Theme.accent)
                 .frame(minWidth: 720, minHeight: 480)
+                .containerBackground(Palette.ground, for: .window)
+                .toolbarBackground(Palette.ground, for: .windowToolbar)
                 .task {
                     if quickCapture == nil {
                         let capture = QuickCapture(model: model, nav: nav)

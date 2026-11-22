@@ -64,7 +64,7 @@ struct NextHostEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            PaletteForm {
                 // Labeled rows: a filled-in TextField hides its prompt, so "dev" or "22" alone says nothing.
                 Section {
                     LabeledContent("Name") {

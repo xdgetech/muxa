@@ -12,7 +12,7 @@ struct NextTrustSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            PaletteForm {
                 if changed {
                     Section {
                         Label("If you did not reinstall or reconfigure the host, do not trust this key. Another machine may be answering at this address.",

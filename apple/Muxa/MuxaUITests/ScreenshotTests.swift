@@ -54,6 +54,47 @@ final class ScreenshotTests: XCTestCase {
         save(dir, "routines")
     }
 
+    /// The Reader's pages and the sheets, to check their colors against the mocks.
+    @MainActor
+    func testPagesAndSheets() throws {
+        guard let dir = ProcessInfo.processInfo.environment["MUXA_SCREENSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("MUXA_SCREENSHOT_DIR is not set")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(app.buttons["needsyou.t2"].waitForExistence(timeout: 10))
+        app.buttons["needsyou.t2"].tap()
+        let pane = any["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        pane.tap()
+        save(dir, "keybar")
+        app.buttons["focus.reader"].tap()
+        let plan = any["reader.file.PLAN.md"]
+        XCTAssertTrue(plan.waitForExistence(timeout: 10))
+        plan.tap()
+        XCTAssertTrue(app.webViews["reader"].staticTexts["Plan"].waitForExistence(timeout: 10))
+        save(dir, "reader-doc")
+        app.buttons["reader.back"].tap()
+        app.segmentedControls["reader.kind"].buttons["Changes"].tap()
+        let change = any["reader.file.src/auth/session.ts"]
+        XCTAssertTrue(change.waitForExistence(timeout: 10))
+        change.tap()
+        XCTAssertTrue(app.webViews["reader"].waitForExistence(timeout: 10))
+        save(dir, "reader-diff")
+        app.buttons["focus.loop"].tap()
+        XCTAssertTrue(app.buttons["loop.start"].waitForExistence(timeout: 5))
+        save(dir, "loop")
+        app.launch()
+        XCTAssertTrue(any["item.d1"].waitForExistence(timeout: 10))
+        let tab = app.tabBars.buttons["Workspaces"]
+        if tab.exists { tab.tap() } else { app.buttons["mode.focus"].tap() }
+        app.buttons["home.newtask"].tap()
+        XCTAssertTrue(app.textFields["task.title"].waitForExistence(timeout: 10))
+        save(dir, "start-task")
+    }
+
     private func save(_ dir: String, _ name: String) {
         Thread.sleep(forTimeInterval: 1)
         let idiom = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"

@@ -26,22 +26,27 @@ struct GoToTask: View {
                 .focused($focused)
                 .onSubmit { if let first = matches.first { pick(first) } }
                 .accessibilityIdentifier("goto.field")
-            Divider()
+            Divider().overlay(Palette.border)
             List(matches) { t in
                 Button { pick(t) } label: {
                     HStack {
                         Text(title(t))
                         Spacer()
                         if let state = t.status?.state {
-                            Text(state).font(.caption).foregroundStyle(model.needsYou.contains(t) ? Theme.attention : .secondary)
+                            Text(state).font(.caption).foregroundStyle(model.needsYou.contains(t) ? Theme.attention : Palette.textSecondary)
                         }
                     }
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("goto.\(t.id)")
+                .listRowBackground(Color.clear)
             }
             .listStyle(.plain)
+            .groundList()
         }
+        .foregroundStyle(Palette.text)
+        .background(Palette.ground)
+        .presentationBackground(Palette.ground)
         .frame(minWidth: 420, minHeight: 300)
         .onAppear { focused = true }
         #if os(macOS)
