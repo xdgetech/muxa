@@ -11,6 +11,8 @@ struct FocusWorkspaces: View {
     @Binding var selected: String?
     /// Folded Workspaces by name.
     @State private var folded: Set<String> = []
+    /// Workspaces whose unused repos are shown.
+    @State private var allRepos: Set<String> = []
     /// Repos whose checkout agent is starting, as `<ws>.<repo>`.
     @State private var starting: Set<String> = []
 
@@ -63,10 +65,31 @@ struct FocusWorkspaces: View {
         .accessibilityIdentifier("workspace.\(g.id)")
     }
 
+    /// The repos an agent works in; the others wait behind "N more repos".
     @ViewBuilder private func content(_ g: WorkspaceGroup) -> some View {
-        ForEach(g.repos) { repo in
+        let used = g.repos.filter(\.inUse)
+        let more = g.repos.filter { !$0.inUse }
+        let showMore = allRepos.contains(g.id)
+        ForEach(showMore ? g.repos : used) { repo in
             repoRow(repo, in: g.workspace)
             ForEach(repo.tasks) { task($0, style: .task) }
+        }
+        if !more.isEmpty {
+            Button {
+                if showMore { allRepos.remove(g.id) } else { allRepos.insert(g.id) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: showMore ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold))
+                    Text(showMore ? "Fewer repos" : "\(more.count) more \(more.count == 1 ? "repo" : "repos")")
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.textTertiary)
+                .padding(.leading, 26)
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("repos.more.\(g.id)")
         }
         if !g.loose.isEmpty {
             HStack(spacing: 8) {

@@ -12,6 +12,8 @@ struct WorkspaceGroup: Identifiable {
         /// The agent in the repo's own checkout (ADR 0077), when one runs.
         let checkout: Terminal?
         let tasks: [Terminal]
+        /// An agent works in it, also one that Needs you lists.
+        let inUse: Bool
         var id: String { name }
     }
 
@@ -36,10 +38,11 @@ struct WorkspaceGroup: Identifiable {
             let work = own.filter { $0.labels["muxa.checkout"] == nil }
             let shown = work.filter { !hidden.contains($0.id) }
             let repos = ws.repos.map { repo in
-                Repo(
-                    name: repo, branch: ws.branches[repo],
-                    checkout: checkouts.first { $0.labels["muxa.checkout"] == repo },
-                    tasks: shown.filter { repoName(of: $0, in: ws.repos) == repo })
+                let checkout = checkouts.first { $0.labels["muxa.checkout"] == repo }
+                return Repo(
+                    name: repo, branch: ws.branches[repo], checkout: checkout,
+                    tasks: shown.filter { repoName(of: $0, in: ws.repos) == repo },
+                    inUse: checkout != nil || work.contains { repoName(of: $0, in: ws.repos) == repo })
             }
             let loose = shown.filter { repoName(of: $0, in: ws.repos) == nil }
             return WorkspaceGroup(workspace: ws, repos: repos, loose: loose, count: work.count)

@@ -1,7 +1,8 @@
 import MuxaV2
 import SwiftUI
 
-/// The root folder, the repos outside it, the Routines gate, and removal.
+/// The root folder, the repos found under it and outside it, the Routines
+/// gate, and removal.
 struct WorkspaceGeneralForm: View {
     @Environment(NextModel.self) private var model
     let workspace: SettingsWorkspace
@@ -44,6 +45,7 @@ struct WorkspaceGeneralForm: View {
         } footer: {
             Text("It must exist on the host. ~/ is the home folder.")
         }
+        found
         repos
         routines
         SaveError(text: error, id: "settings.error")
@@ -51,6 +53,37 @@ struct WorkspaceGeneralForm: View {
             Button("Remove Workspace", role: .destructive) { confirmRemove = true }
                 .accessibilityIdentifier("ws.remove")
         }
+    }
+
+    /// The repos the host finds under the root (ADR 0031), each shown or hidden.
+    @ViewBuilder
+    private var found: some View {
+        let found = workspace.foundRepos.filter { !workspace.repos.contains($0) }
+        if !found.isEmpty {
+            Section {
+                ForEach(found, id: \.self) { repo in
+                    Toggle(isOn: shown(repo)) {
+                        Text(repo).monospaced()
+                            .foregroundStyle(workspace.hiddenRepos.contains(repo) ? Palette.textTertiary : Palette.text)
+                    }
+                    .accessibilityIdentifier("ws.found.\(repo)")
+                }
+            } header: {
+                Text("Found under the root")
+            } footer: {
+                Text("Git repos one or two folders under the root belong to this Workspace on their own. "
+                    + "Hide the ones you do not use: Focus, Start Task and Tasks that read all repos leave them out.")
+            }
+        }
+    }
+
+    private func shown(_ repo: String) -> Binding<Bool> {
+        Binding(
+            get: { !workspace.hiddenRepos.contains(repo) },
+            set: { show in
+                let hidden = show ? workspace.hiddenRepos.filter { $0 != repo } : workspace.hiddenRepos + [repo]
+                save(.workspaceUpdate(workspace: workspace.name, hiddenRepos: hidden))
+            })
     }
 
     private var repos: some View {
