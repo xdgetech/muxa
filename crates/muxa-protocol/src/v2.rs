@@ -284,6 +284,10 @@ pub enum ClientMsg {
         /// ones (ADR 0069).
         #[serde(default)]
         connections: Vec<String>,
+        /// The Workspace's MCP servers the agent gets besides the default
+        /// ones (ADR 0069).
+        #[serde(default)]
+        mcp: Vec<String>,
         /// Claude Code starts in plan mode (ADR 0060).
         #[serde(default)]
         plan: bool,

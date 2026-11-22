@@ -18,6 +18,11 @@ impl Host {
 
     /// `extra` is added to the workspace's `.muxa/routines.toml`.
     fn with(name: &str, extra: &str) -> Host {
+        Host::with_workspace(name, extra, "")
+    }
+
+    /// `workspace` is added to the workspace's table in `workspaces.toml`.
+    fn with_workspace(name: &str, extra: &str, workspace: &str) -> Host {
         let base = std::env::temp_dir().join(format!("muxa-runner-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("root/.muxa")).unwrap();
@@ -34,7 +39,7 @@ impl Host {
         std::fs::write(
             base.join("workspaces.toml"),
             format!(
-                "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n[workspace.routines]\nenabled = true\n\
+                "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n[workspace.routines]\nenabled = true\n{workspace}\
                  [[worker]]\nname = \"Cx\"\nagent = \"codex\"\n",
                 base.join("root").display()
             ),
@@ -94,8 +99,20 @@ async fn a_run_starts_its_agent_in_its_folder_with_the_prompt() {
     let t = h.started(&backend).await;
     let launch = &backend.launches()[0];
     assert_eq!(launch.argv[..2], ["/bin/sh", "-c"]);
-    assert_eq!(launch.argv[2], "claude 'Read .muxa/TASK.md and start.'");
     let dir = launch.cwd.clone().unwrap();
+    // No MCP server named: an empty config keeps the user's servers out.
+    assert_eq!(
+        launch.argv[2],
+        format!(
+            "claude --mcp-config '{}' --strict-mcp-config 'Read .muxa/TASK.md and start.'",
+            dir.join(".muxa/mcp.json").display()
+        )
+    );
+    let config = std::fs::read_to_string(dir.join(".muxa/mcp.json")).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&config).unwrap(),
+        json!({"mcpServers": {}})
+    );
     assert!(
         dir.starts_with(h.base.join("root/routines")),
         "{}",
@@ -264,5 +281,29 @@ fn a_worker_gets_the_prompt_as_its_last_argument() {
     assert_eq!(
         argv(&LaunchCommand::Shell("c".into()), "it's"),
         ["/bin/sh", "-c", "c 'it'\\''s'"]
+    );
+}
+
+#[tokio::test]
+async fn a_run_gets_only_the_mcp_servers_its_routine_names() {
+    let h = Host::with_workspace(
+        "mcp",
+        "mcp = [\"docs\"]\n",
+        "[[workspace.mcp]]\nname = \"docs\"\ncommand = \"docs-mcp\"\n\
+         [[workspace.mcp]]\nname = \"web\"\nurl = \"https://web.example/mcp\"\n",
+    );
+    let backend = FakeBackend::new();
+    h.started(&backend).await;
+    let launch = &backend.launches()[0];
+    let dir = launch.cwd.clone().unwrap();
+    assert!(
+        launch.argv[2].contains("--strict-mcp-config 'Read .muxa/TASK.md and start.'"),
+        "{}",
+        launch.argv[2]
+    );
+    let config = std::fs::read_to_string(dir.join(".muxa/mcp.json")).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&config).unwrap(),
+        json!({"mcpServers": {"docs": {"type": "stdio", "command": "docs-mcp", "args": [], "env": {}}}})
     );
 }

@@ -55,6 +55,7 @@ fn workspace(name: &str) -> Workspace {
         park_after: None,
         routines: None,
         connections: Vec::new(),
+        mcp: Vec::new(),
     }
 }
 

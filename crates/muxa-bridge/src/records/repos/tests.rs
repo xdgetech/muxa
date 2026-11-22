@@ -27,6 +27,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         park_after: None,
         routines: None,
         connections: Vec::new(),
+        mcp: Vec::new(),
     }
 }
 

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::chat::Chats;
+use super::mcp;
 use super::places;
 use super::runner::Runner;
 use super::task_loop::TaskLoops;
@@ -79,37 +80,50 @@ impl Host for BridgeHost {
                 TaskError::Invalid(format!("no Workspace named {:?}", spec.workspace))
             })?;
         let checked = places::check(&ws, &spec.places).await?;
-        crate::connections::chosen(&ws, &spec.connections).map_err(TaskError::Invalid)?;
-        // Before any place is made: a missing secret stops the start.
-        let (named, ws_owned) = (spec.connections.clone(), ws.clone());
-        let given = tokio::task::spawn_blocking(move || crate::connections::env(&ws_owned, &named))
-            .await
-            .map_err(|e| TaskError::Failed(e.to_string()))?
-            .map_err(TaskError::Failed)?;
-        let made = places::make(&ws, title, checked).await?;
         let command = ws
             .agent
             .as_ref()
             .and_then(|a| a.command.clone())
             .unwrap_or_else(|| self.command.clone());
-        let claude = crate::launch::is_claude_code(&LaunchCommand::Shell(command.clone()));
-        let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
-        let (made, settings) = tokio::task::spawn_blocking(move || {
+        let launch = LaunchCommand::Shell(command.clone());
+        let claude = crate::launch::is_claude_code(&launch);
+        let servers = mcp::chosen(&ws, &spec.mcp).map_err(TaskError::Invalid)?;
+        if !claude {
+            mcp::only_claude(crate::launch::program(&launch), &servers)
+                .map_err(TaskError::Invalid)?;
+        }
+        let named = mcp::with_connections(&spec.connections, &servers);
+        crate::connections::chosen(&ws, &named).map_err(TaskError::Invalid)?;
+        // Before any place is made: a missing secret stops the start.
+        let ws_owned = ws.clone();
+        let given = tokio::task::spawn_blocking(move || crate::connections::env(&ws_owned, &named))
+            .await
+            .map_err(|e| TaskError::Failed(e.to_string()))?
+            .map_err(TaskError::Failed)?;
+        let made = places::make(&ws, title, checked).await?;
+        let (title_owned, goal, known) =
+            (title.to_owned(), spec.goal.clone(), ws.connections.clone());
+        let (made, flags) = tokio::task::spawn_blocking(move || {
             places::brief(&made, &title_owned, goal.as_deref())?;
-            let settings = if claude {
-                places::claude_settings(&made)?
-            } else {
-                None
-            };
-            Ok::<_, String>((made, settings))
+            let mut flags = Vec::new();
+            if claude {
+                flags.extend(places::claude_settings(&made)?);
+                let config = mcp::write(made.working(), &servers, &known)?;
+                flags.push(mcp::shell_flags(&config));
+                if !servers.is_empty() {
+                    let names: Vec<&str> = servers.iter().map(|s| s.name.as_str()).collect();
+                    tracing::info!(mcp = ?names, "mcp servers given");
+                }
+            }
+            Ok::<_, String>((made, flags))
         })
         .await
         .map_err(|e| TaskError::Failed(e.to_string()))?
         .map_err(TaskError::Failed)?;
-        let mut line = match settings {
-            Some(flag) => format!("{command} {flag}"),
-            None => command,
-        };
+        let mut line = std::iter::once(command)
+            .chain(flags)
+            .collect::<Vec<_>>()
+            .join(" ");
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
@@ -278,12 +292,85 @@ mod tests {
             goal: None,
             places: Vec::new(),
             connections: Vec::new(),
+            mcp: Vec::new(),
             plan: false,
         };
         assert!(matches!(
             host.prepare(&spec).await,
             Err(TaskError::Invalid(_))
         ));
+    }
+
+    /// A host whose one Workspace `w` has `extra` in its table.
+    fn host(name: &str, extra: &str) -> (BridgeHost, std::path::PathBuf) {
+        let base = std::env::temp_dir().join(format!("muxa-tasks-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("root")).unwrap();
+        let base = base.canonicalize().unwrap();
+        std::fs::write(
+            base.join("workspaces.toml"),
+            format!(
+                "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n{extra}\
+                 [[workspace.mcp]]\nname = \"docs\"\ncommand = \"docs-mcp\"\n",
+                base.join("root").display()
+            ),
+        )
+        .unwrap();
+        let config = crate::config::Config {
+            state_dir: None,
+            workspaces: Some(base.join("workspaces.toml")),
+            home: None,
+        };
+        (BridgeHost::new("claude".into(), Arc::new(config)), base)
+    }
+
+    fn spec(mcp: &[&str]) -> TaskSpec {
+        TaskSpec {
+            workspace: "w".into(),
+            title: "Fix".into(),
+            goal: None,
+            places: Vec::new(),
+            connections: Vec::new(),
+            mcp: mcp.iter().map(|m| (*m).to_owned()).collect(),
+            plan: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn claude_code_gets_only_the_named_mcp_servers_strictly() {
+        let (host, base) = host("mcp", "");
+        let ready = host.prepare(&spec(&["docs"])).await.unwrap();
+        let config = ready.dir.join(".muxa/mcp.json");
+        assert_eq!(
+            ready.argv[2],
+            format!(
+                "claude --mcp-config '{}' --strict-mcp-config",
+                config.display()
+            )
+        );
+        let text = std::fs::read_to_string(&config).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["mcpServers"]["docs"]["command"], "docs-mcp");
+        let unknown = host.prepare(&spec(&["web"])).await;
+        assert!(
+            matches!(&unknown, Err(TaskError::Invalid(m)) if m.contains("no MCP server \"web\"")),
+            "{unknown:?}"
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn a_codex_task_with_mcp_servers_is_refused_before_its_places() {
+        let (host, base) = host("codex", "[workspace.agent]\ncommand = \"codex\"\n");
+        let refused = host.prepare(&spec(&["docs"])).await;
+        assert!(
+            matches!(&refused, Err(TaskError::Invalid(m)) if m.contains("need Claude Code")),
+            "{refused:?}"
+        );
+        assert!(!base.join("root/tasks").exists(), "no place was made");
+        let ready = host.prepare(&spec(&[])).await.unwrap();
+        assert_eq!(ready.argv[2], "codex");
+        let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]

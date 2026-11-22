@@ -271,6 +271,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         park_after: None,
         routines: None,
         connections: Vec::new(),
+        mcp: Vec::new(),
     };
     (dir, ws)
 }
@@ -374,6 +375,84 @@ fn connections_load_and_a_routine_names_only_its_own() {
         "[[workspace.connection]]\nname = \"a\"\nenv = \"X\"\n[[workspace.connection]]\nname = \"b\"\nenv = \"X\"\n",
         "[[workspace.connection]]\nname = \"a\"\nenv = \"X\"\naccess = \"admin\"\n",
         "[[workspace.connection]]\nname = \"a\"\nenv = \"X\"\nsecret = \"t\"\n",
+    ] {
+        assert!(ws(bad, "").is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn mcp_servers_load_and_a_routine_names_only_its_own() {
+    let dir = temp("mcp");
+    std::fs::create_dir_all(dir.join(".muxa")).unwrap();
+    std::fs::write(dir.join(".muxa/brief.md"), "Read.\n").unwrap();
+    let ws = |extra: &str, routine: &str| {
+        std::fs::write(
+            dir.join(".muxa/routines.toml"),
+            format!(
+                "[[routine]]\nname = \"r\"\ninstructions = \"brief.md\"\nenabled = true\n{routine}"
+            ),
+        )
+        .unwrap();
+        config(
+            &dir,
+            &format!(
+                "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n[workspace.routines]\nenabled = true\n\
+                 [[workspace.connection]]\nname = \"linear\"\nenv = \"LINEAR_API_KEY\"\n{extra}",
+                dir.display()
+            ),
+        )
+    };
+    let two = "[[workspace.mcp]]\nname = \"linear\"\ncommand = \"npx\"\nargs = [\"-y\", \"linear-mcp\"]\n\
+               env = { LOG = \"info\" }\nconnections = [\"linear\"]\n\
+               [[workspace.mcp]]\nname = \"docs\"\nurl = \"https://docs.example/mcp\"\ntype = \"sse\"\n\
+               headers = { Authorization = \"Bearer ${LINEAR_API_KEY}\" }\nconnections = [\"linear\"]\ndefault = true\n";
+    let loaded = ws(two, "mcp = [\"linear\"]\n").unwrap();
+    let w = &loaded.all()[0];
+    assert_eq!(w.mcp.len(), 2);
+    assert_eq!(
+        w.mcp[0].transport,
+        super::mcp::Transport::Stdio {
+            command: "npx".into(),
+            args: vec!["-y".into(), "linear-mcp".into()]
+        }
+    );
+    assert_eq!(w.mcp[0].connections, ["linear"]);
+    assert!(!w.mcp[0].default && w.mcp[1].default);
+    assert!(matches!(
+        w.mcp[1].transport,
+        super::mcp::Transport::Sse { .. }
+    ));
+    assert_eq!(loaded.routine("w", "r").unwrap().mcp, ["linear"]);
+    // A Routine that names another server loads no Routines of its workspace.
+    let other = ws(two, "mcp = [\"github\"]\n").unwrap();
+    assert!(other.routine("w", "r").is_none());
+    assert!(other.routine_problems()[0].reason.contains("\"github\""));
+    let unknown = ws(
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nconnections = [\"slack\"]\n",
+        "",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        unknown.contains("connection \"slack\" is not a [[workspace.connection]]"),
+        "{unknown}"
+    );
+    for bad in [
+        "[[workspace.mcp]]\nname = \"A\"\ncommand = \"x\"\n",
+        "[[workspace.mcp]]\nname = \"a\"\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nurl = \"https://x\"\n",
+        "[[workspace.mcp]]\nname = \"a\"\nurl = \"ftp://x\"\n",
+        "[[workspace.mcp]]\nname = \"a\"\nurl = \"https://x\"\ntype = \"ws\"\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\ntype = \"http\"\n",
+        "[[workspace.mcp]]\nname = \"a\"\nurl = \"https://x\"\nargs = [\"y\"]\n",
+        "[[workspace.mcp]]\nname = \"a\"\nurl = \"https://x\"\nenv = { A = \"1\" }\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nheaders = { A = \"1\" }\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nenv = { \"1A\" = \"1\" }\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nenv = { LINEAR_API_KEY = \"t\" }\nconnections = [\"linear\"]\n",
+        "[[workspace.mcp]]\nname = \"a\"\nurl = \"https://x\"\nheaders = { A = \"${OTHER}\" }\nconnections = [\"linear\"]\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nconnections = [\"linear\", \"linear\"]\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\n[[workspace.mcp]]\nname = \"a\"\ncommand = \"y\"\n",
+        "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nsecret = \"t\"\n",
     ] {
         assert!(ws(bad, "").is_err(), "{bad}");
     }

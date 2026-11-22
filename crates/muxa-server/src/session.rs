@@ -349,6 +349,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 goal,
                 places,
                 connections,
+                mcp,
                 plan,
                 task_loop,
             } => {
@@ -358,6 +359,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     goal,
                     places,
                     connections,
+                    mcp,
                     plan,
                 };
                 self.start_task(id, &spec, task_loop).await;

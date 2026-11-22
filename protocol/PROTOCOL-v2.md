@@ -80,7 +80,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"terminals"}` | `{"terminals":[Terminal...]}`: the live terminals |
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
-| `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"plan"?,"loop"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal. `loop` (LoopSpec) also starts its Task Loop |
+| `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"mcp"?,"plan"?,"loop"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal. `loop` (LoopSpec) also starts its Task Loop |
 | `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
 | `{"type":"inbox"}` | `{"inbox":Inbox}` |
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
@@ -119,7 +119,9 @@ If the Task's agent is still running in that working place, the reply has it wit
 
 `connections` names the Workspace's connections the agent gets as environment variables, besides the ones on by default (ADR 0069). Their secrets come from the host's Keychain and never cross the wire. A missing or locked secret fails the start before any place is made.
 
-An unknown Workspace or connection, a missing title, a wrong repo or branch, or a repo named twice is `bad-request`.
+`mcp` names the Workspace's MCP servers the agent gets, besides the ones on by default (ADR 0069). Claude Code gets only those, in `.muxa/mcp.json` with `--strict-mcp-config`; with none, the file is empty, so no other configured server loads. The connections a server needs go into the agent's environment, never into the file. Only Claude Code takes MCP servers: for any other agent, a server named or on by default is `bad-request`, before any place is made.
+
+An unknown Workspace, connection or MCP server, a missing title, a wrong repo or branch, or a repo named twice is `bad-request`.
 
 ### Notifications
 

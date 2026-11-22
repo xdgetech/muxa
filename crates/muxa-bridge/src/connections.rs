@@ -61,23 +61,6 @@ pub fn env(ws: &Workspace, named: &[String]) -> Result<Vec<(String, String)>, St
     Ok(out)
 }
 
-/// What a v1 Task or a Routine run gets: the default connections, and the
-/// ones its Routine names. Blocking.
-pub fn for_run(
-    workspaces: &crate::records::Workspaces,
-    workspace: &str,
-    routine: Option<&str>,
-) -> Result<Vec<(String, String)>, String> {
-    let Some(ws) = workspaces.get(workspace) else {
-        return Ok(Vec::new());
-    };
-    let named = routine
-        .and_then(|name| workspaces.routine(workspace, name))
-        .map(|r| r.connections.clone())
-        .unwrap_or_default();
-    env(ws, &named)
-}
-
 /// Adds `extra` to an agent's variables, keeping them sorted by key.
 pub fn merge(env: &mut Vec<(String, String)>, extra: Vec<(String, String)>) {
     env.extend(extra);
@@ -153,6 +136,7 @@ mod tests {
                 c("linear", "LINEAR_API_KEY", false),
                 c("slack", "SLACK_TOKEN", false),
             ],
+            mcp: Vec::new(),
         }
     }
 

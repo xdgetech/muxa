@@ -23,6 +23,8 @@
 #   connections   optional; the workspace's [[workspace.connection]]s the
 #                 agent gets, besides the default ones (ADR 0069). Without
 #                 it, a run gets only the default ones
+#   mcp           optional; the workspace's [[workspace.mcp]] servers the
+#                 agent gets, besides the default ones (ADR 0069)
 #   enabled       required; nothing runs, also not Run now, while false
 #   [routine.output]  optional
 #     items          at most this many items per run, 1 to 50 (default 10).
@@ -37,6 +39,7 @@ timezone = "Asia/Tokyo"
 instructions = "routines/situation.md"
 project = "Ops"
 connections = ["linear"]
+mcp = ["linear"]
 enabled = false
 
 [routine.output]

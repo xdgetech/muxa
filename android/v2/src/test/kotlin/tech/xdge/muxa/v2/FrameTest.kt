@@ -43,6 +43,9 @@ class FrameTest {
             """{"id":4,"type":"inbox-add","kind":"reply","title":"bank","due":"2026-12-01"}""",
             add.toString(),
         )
+        val start = V2Request.StartTask("w", "Fix", connections = listOf("linear"), mcp = listOf("docs")).json(5)
+        assertEquals("""["linear"]""", start["connections"].toString())
+        assertEquals("""["docs"]""", start["mcp"].toString())
     }
 
     @Test

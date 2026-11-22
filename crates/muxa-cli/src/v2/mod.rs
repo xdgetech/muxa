@@ -23,7 +23,7 @@ use client::{Client, Event, State};
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
                 [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--connection NAME]...
-                [--plan] [--loop [--check CMD]] [--json]
+                [--mcp NAME]... [--plan] [--loop [--check CMD]] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
        muxa-cli v2 [--bridge CMD] inbox [--json]
@@ -90,6 +90,8 @@ enum Cmd {
         places: Vec<PlaceSpec>,
         /// Besides the Workspace's default ones (ADR 0069).
         connections: Vec<String>,
+        /// Besides the Workspace's default ones (ADR 0069).
+        mcp: Vec<String>,
         plan: bool,
         task_loop: Option<LoopSpec>,
         json: bool,
@@ -153,6 +155,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let (mut workspace, mut title, mut goal) = (None, None, None);
     let mut places: Vec<PlaceSpec> = Vec::new();
     let mut connections: Vec<String> = Vec::new();
+    let mut mcp: Vec<String> = Vec::new();
     let mut words = Vec::new();
     let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
@@ -193,6 +196,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
                 }
             }
             Long("connection") => connections.push(p.value()?.string()?),
+            Long("mcp") => mcp.push(p.value()?.string()?),
             Long("read") => places.push(PlaceSpec::Read {
                 repo: p.value()?.string()?,
             }),
@@ -212,6 +216,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             goal,
             places,
             connections,
+            mcp,
             plan,
             task_loop: (with_loop || spec.check.is_some()).then(|| spec.clone()),
             json,
@@ -336,6 +341,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             goal,
             places,
             connections,
+            mcp,
             plan,
             task_loop,
             json,
@@ -343,7 +349,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let mut msg = json!({"type": "start-task", "workspace": workspace, "title": title,
                              "goal": goal, "places": places, "connections": connections,
-                             "plan": plan});
+                             "mcp": mcp, "plan": plan});
             if let Some(l) = task_loop {
                 msg["loop"] = json!(l);
             }
@@ -679,6 +685,8 @@ mod tests {
             "main",
             "--connection",
             "linear",
+            "--mcp",
+            "docs",
             "--plan",
         ]))
         .unwrap()
@@ -701,6 +709,7 @@ mod tests {
                     },
                 ],
                 connections: vec!["linear".into()],
+                mcp: vec!["docs".into()],
                 plan: true,
                 task_loop: None,
                 json: false

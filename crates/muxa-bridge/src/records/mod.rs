@@ -6,6 +6,7 @@ pub mod connections;
 pub mod cron;
 pub mod lock;
 pub mod loops;
+pub mod mcp;
 pub mod repos;
 pub mod routines;
 pub mod workers;

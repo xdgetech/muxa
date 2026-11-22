@@ -46,6 +46,25 @@
 #   (it asks for the secret). A missing or locked one stops the agent's
 #   start with that reason.
 #
+# [[workspace.mcp]]  optional; an MCP server a Claude Code agent gets only
+#   when its Task or Routine names it (ADR 0069). A Routine names its
+#   servers in routines.toml (mcp = ["linear"]); a Task, when it starts.
+#   muxa writes the chosen servers to .muxa/mcp.json in the agent's folder
+#   and passes --strict-mcp-config, so servers from your own Claude Code
+#   config (CLAUDE_CONFIG_DIR, ~/.claude.json, .mcp.json, plugins) no
+#   longer load in muxa's agents. Codex gets no MCP servers yet.
+#   name         a-z, 0-9 and -, at most 64; unique in the workspace
+#   command      a server muxa's agent starts, with args = [...]; or
+#   url          a remote server, with type = "http" (default) or "sse"
+#   env          optional, command servers; plain variables, never secrets:
+#                they are written to .muxa/mcp.json
+#   headers      optional, url servers; plain values, where ${VAR} may name
+#                the variable of one of this server's connections
+#   connections  optional; the [[workspace.connection]]s whose variables the
+#                server needs. The agent gets them; a command server's env
+#                refers to them as ${VAR}, which Claude Code expands
+#   default      optional; true gives it to every Task and Routine here
+#
 # [workspace.loop]  optional; lets a Task in this workspace have a Task Loop
 #   (ADR 0019). The muxa daemon then runs a check command with /bin/sh -c
 #   in the Task's directory after each of the agent's turns. Only a Task
@@ -94,6 +113,14 @@ name = "linear"
 env = "LINEAR_API_KEY"
 account = "me@company.example"
 access = "read"
+
+# Linear's MCP server, with the token of the "linear" connection. Only the
+# Tasks and Routines that name "linear" get it.
+[[workspace.mcp]]
+name = "linear"
+command = "npx"
+args = ["-y", "linear-mcp-server"]
+connections = ["linear"]
 
 # Remove the # signs to allow these two checks in Company's Tasks.
 # [workspace.loop]

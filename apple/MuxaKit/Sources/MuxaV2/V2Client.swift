@@ -131,12 +131,12 @@ public actor V2Client {
     /// The Task's agent terminal, and whether it was already running.
     public func startTask(
         workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], connections: [String] = [],
-        plan: Bool = false, loop: LoopSpec? = nil
+        mcp: [String] = [], plan: Bool = false, loop: LoopSpec? = nil
     ) async throws -> (Terminal, existing: Bool) {
         let reply = try await request(
             .startTask(
-                workspace: workspace, title: title, goal: goal, places: places, connections: connections, plan: plan,
-                loop: loop))
+                workspace: workspace, title: title, goal: goal, places: places, connections: connections, mcp: mcp,
+                plan: plan, loop: loop))
         return (try field("terminal", of: reply), try field("existing", of: reply))
     }
 

@@ -5,6 +5,7 @@
 pub mod chat;
 pub mod feed;
 mod git;
+mod mcp;
 mod places;
 pub mod reader;
 mod routines;

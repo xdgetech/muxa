@@ -120,7 +120,7 @@ pub fn is_name(s: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
-fn is_env_key(s: &str) -> bool {
+pub(super) fn is_env_key(s: &str) -> bool {
     let mut bytes = s.bytes();
     bytes
         .next()

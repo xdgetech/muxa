@@ -18,6 +18,7 @@ use muxa_backend::{
 use muxa_protocol::RoutineFailure;
 
 use super::git as brief;
+use super::mcp;
 use crate::loops::CheckEnd;
 use crate::records::routines::Routine;
 use crate::records::workers::{LaunchCommand, WorkerChoice};
@@ -374,10 +375,19 @@ fn made(
     }
     brief::write_file(&dir, "TASK.md", &text)?;
     crate::routines::prepare_at(config, &routine.workspace, &routine.name, &dir)?;
-    let given = crate::connections::for_run(workspaces, &routine.workspace, Some(&routine.name))?;
+    let servers = mcp::chosen(ws, &routine.mcp)?;
+    let command = if crate::launch::is_claude_code(&resolved.command) {
+        let config = mcp::write(&dir, &servers, &ws.connections)?;
+        mcp::with_flags(resolved.command, &config)
+    } else {
+        mcp::only_claude(crate::launch::program(&resolved.command), &servers)?;
+        resolved.command
+    };
+    let named = mcp::with_connections(&routine.connections, &servers);
+    let given = crate::connections::env(ws, &named)?;
     crate::connections::merge(&mut resolved.environment.env, given);
     Ok(Ready {
-        argv: argv(&resolved.command, START_PROMPT),
+        argv: argv(&command, START_PROMPT),
         env: resolved.environment.env.into_iter().collect(),
         routine,
         occurrence,

@@ -12,6 +12,7 @@ use super::agent_env::{AgentSettings, RawAgent};
 use super::connections::{self, Connection, RawConnection};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
+use super::mcp::{self, McpServer, RawMcp};
 use super::routines::{self, Routine, RoutineGate, RoutineProblem};
 use super::workers::{RawWorker, Worker};
 
@@ -66,6 +67,8 @@ pub struct Workspace {
     pub routines: Option<RoutineGate>,
     /// Secrets an agent gets only when its Task or Routine names them (ADR 0069).
     pub connections: Vec<Connection>,
+    /// MCP servers an agent gets only when its Task or Routine names them (ADR 0069).
+    pub mcp: Vec<McpServer>,
 }
 
 /// The configured workspaces, in file order.
@@ -116,6 +119,8 @@ struct RawWorkspace {
     routines: Option<RawGate>,
     #[serde(default)]
     connection: Vec<RawConnection>,
+    #[serde(default)]
+    mcp: Vec<RawMcp>,
     /// `[workspace.assistant]` and `memory` of the removed assistant layer
     /// (ADR 0066): read so an older file still loads, not used.
     assistant: Option<toml::Value>,
@@ -237,6 +242,8 @@ impl Workspaces {
             let taken: Vec<&str> = agent.as_ref().map(|a| a.keys()).unwrap_or_default();
             let connections = connections::check_all(w.connection, &taken)
                 .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
+            let mcp = mcp::check_all(w.mcp, &connections)
+                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
             if w.assistant.is_some() || w.memory.is_some() {
                 tracing::warn!(workspace = %w.name, "[workspace.assistant] and memory are no longer used; remove them");
             }
@@ -250,6 +257,7 @@ impl Workspaces {
                 park_after,
                 routines,
                 connections,
+                mcp,
             });
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);

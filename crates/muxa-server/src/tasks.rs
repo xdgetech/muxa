@@ -36,6 +36,8 @@ pub struct TaskSpec {
     pub places: Vec<PlaceSpec>,
     /// Besides the default ones (ADR 0069).
     pub connections: Vec<String>,
+    /// MCP servers, besides the default ones (ADR 0069).
+    pub mcp: Vec<String>,
     pub plan: bool,
 }
 

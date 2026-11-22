@@ -20,6 +20,8 @@ sealed interface V2Request {
         val places: List<PlaceSpec> = emptyList(),
         /** The Workspace's connections, besides the default ones (ADR 0069). */
         val connections: List<String> = emptyList(),
+        /** The Workspace's MCP servers, besides the default ones (ADR 0069). */
+        val mcp: List<String> = emptyList(),
         val plan: Boolean = false,
         val loop: LoopSpec? = null,
     ) : V2Request
@@ -65,7 +67,8 @@ sealed interface V2Request {
             is StartTask -> {
                 type("start-task"); put("workspace", r.workspace); put("title", r.title); opt("goal", r.goal)
                 put("places", buildJsonArray { r.places.forEach { add(placeJson(it)) } })
-                put("connections", buildJsonArray { r.connections.forEach { add(JsonPrimitive(it)) } }); put("plan", r.plan)
+                put("connections", buildJsonArray { r.connections.forEach { add(JsonPrimitive(it)) } })
+                put("mcp", buildJsonArray { r.mcp.forEach { add(JsonPrimitive(it)) } }); put("plan", r.plan)
                 if (r.loop != null) put("loop", json.encodeToJsonElement(r.loop))
             }
             Watch -> type("watch")

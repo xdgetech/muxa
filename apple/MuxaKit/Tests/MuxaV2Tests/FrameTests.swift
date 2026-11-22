@@ -35,6 +35,12 @@ struct FrameTests {
         let add = try V2Request.inboxAdd(Capture(kind: .reply, title: "bank", due: "2026-12-01")).json(id: 4)
         let json = String(decoding: add, as: UTF8.self)
         #expect(json == #"{"due":"2026-12-01","id":4,"kind":"reply","title":"bank","type":"inbox-add"}"#)
+        let start = try V2Request.startTask(workspace: "w", title: "Fix", connections: ["linear"], mcp: ["docs"])
+            .json(id: 5)
+        let fields = try JSONSerialization.jsonObject(with: start) as? [String: Any]
+        #expect(fields?["type"] as? String == "start-task")
+        #expect(fields?["connections"] as? [String] == ["linear"])
+        #expect(fields?["mcp"] as? [String] == ["docs"])
     }
 
     @Test func itemsDecodeFromTheWire() throws {
