@@ -21,6 +21,7 @@ What is built but not verified, and what is left after the F phases and their fo
 ## Not built
 
 - **Settings** that show who uses which connection and MCP server, and when it was last used (ADR 0069 §7). The `workspaces` reply carries it (`used_by`, `last_used`). Android shows it in Settings, read only; iOS and the Mac do not yet.
+- **Editable Settings screens** (ADR 0074): `settings` and `settings-update` are on the wire, in the daemon, in `muxa-cli` and in the MuxaV2 and `:v2` clients with their demo servers. No app has the screens yet; they are next.
 - **Codex**: no MCP servers, no Routines (whether Codex sends OSC 7501 by itself is unchecked), no approval prompt in Chat.
 - **Edit Routine** on a Failed item (`docs/next.md`), in every app.
 - **Adding a place** to an open Task.

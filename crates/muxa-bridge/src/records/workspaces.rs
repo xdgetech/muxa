@@ -1,5 +1,6 @@
 //! Workspaces from the host's `workspaces.toml`, and the path rules that keep
-//! a task's directory inside its workspace root. Clients never write this file.
+//! a task's directory inside its workspace root. Clients change this file only
+//! through `settings-update` (ADR 0074, `src/settings/`).
 
 use std::collections::HashSet;
 use std::ffi::OsStr;

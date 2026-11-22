@@ -1,5 +1,8 @@
 # muxa workspaces: copy to ~/.config/muxa/workspaces.toml on the host.
-# The bridge reads it; the apps cannot change it (ADR 0015).
+# The bridge reads it. The apps can edit it through Settings (ADR 0074): the
+# daemon keeps your comments and order, and keeps the old file as
+# workspaces.toml.bak. `muxa-bridge daemon install --settings-read-only`
+# turns that off.
 #
 # A workspace is an Entity: one folder with its repos, accounts and agents
 # (ADR 0031).
@@ -43,7 +46,7 @@
 #   default  optional; true gives it to every Task and Routine here
 #   The secret is in the macOS Keychain of the host, never in this file:
 #     security add-generic-password -s muxa -a '<workspace>/<name>' -w
-#   (it asks for the secret). A missing or locked one stops the agent's
+#   (it asks for the secret), or set it in the app's Settings. A missing or locked one stops the agent's
 #   start with that reason.
 #
 # [[workspace.mcp]]  optional; an MCP server a Claude Code agent gets only

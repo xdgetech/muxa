@@ -21,7 +21,7 @@ Deleting the app deletes all of this.
 
 Muxa connects only to the hosts you add, over SSH, directly from your device. What you see and type in Muxa travels between your device and your own machine, encrypted by SSH. It does not pass through any server of the developer's.
 
-Secrets that agents on your host use, such as service tokens, stay in your host's Keychain. The apps never receive them.
+Secrets that agents on your host use, such as service tokens, stay in your host's Keychain. You can add or replace one from the app: it goes over your SSH connection straight to your host's Keychain, and the app does not keep it. The apps never receive a secret back.
 
 The Reader shows your documents, changes and images without loading anything from the internet. Scripts in an HTML document run on your device with no network access. Links that you tap, such as the setup guide, open in your browser.
 
