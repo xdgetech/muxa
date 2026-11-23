@@ -550,6 +550,27 @@ final class NextModel {
         return opened
     }
 
+    /// As `openChat`, for an agent that may have just started: its session
+    /// shows up some seconds after the terminal, so "no agent here" is tried
+    /// again each second for up to `seconds` before it is an error.
+    func openChatWhenReady(_ terminal: String, seconds: Int = 20) async -> UInt32? {
+        for _ in 1..<max(seconds, 1) {
+            guard let c = client else { break }
+            do {
+                let (n, update) = try await c.chatOpen(terminal)
+                chats[n] = update.applied(to: [])
+                chatPrompts[n] = update.prompt
+                return n
+            } catch V2Error.refused(_, let message) where message.contains("no Claude Code or Codex runs") {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return nil }
+            } catch {
+                break
+            }
+        }
+        return await openChat(terminal)
+    }
+
     func closeChat(_ n: UInt32) async {
         let open = chats.removeValue(forKey: n) != nil
         chatPrompts[n] = nil

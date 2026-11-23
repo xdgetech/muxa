@@ -12,7 +12,7 @@ private struct ChatLink: ViewModifier {
         content
             .task(id: terminal) {
                 close()
-                chat = await model.openChat(terminal)
+                chat = await model.openChatWhenReady(terminal)
             }
             .onDisappear { close() }
     }
