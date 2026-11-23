@@ -719,7 +719,7 @@ private fun standardContent(): DemoContent {
             ),
             item(
                 "d12", ItemKind.DECIDE, "pr-watch proposes: a nightly sweep",
-                note = "routine-add nightly-sweep (off)\nbot-update pr-watch", source = "task", bot = "pr-watch",
+                note = "- routine-add nightly-sweep (off)\n- bot-update pr-watch\n", source = "task", bot = "pr-watch",
                 settingsProposal = SettingsProposal("1", NIGHTLY_SWEEP_OPS),
             ),
             item(
