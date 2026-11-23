@@ -41,7 +41,7 @@ struct GoToTask: View {
         .foregroundStyle(Palette.text)
         .background(Palette.surface)
         .presentationBackground(Palette.surface)
-        .onAppear { focused = true }
+        .onAppear(perform: takeKeyboard)
         .onChange(of: text) { selected = 0 }
         #if os(macOS)
         .onExitCommand(perform: close)
@@ -159,7 +159,20 @@ struct GoToTask: View {
         close()
     }
 
-    private func close() { nav.showPalette = false }
+    /// On the Mac the terminal, an AppKit view, keeps the keyboard until it
+    /// lets go; the field takes it a moment later.
+    private func takeKeyboard() {
+        #if os(macOS)
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        #endif
+        DispatchQueue.main.async { focused = true }
+    }
+
+    /// Closing without a pick gives the keyboard back to the terminal.
+    private func close() {
+        nav.showPalette = false
+        nav.refocus()
+    }
 
     // MARK: Names
 

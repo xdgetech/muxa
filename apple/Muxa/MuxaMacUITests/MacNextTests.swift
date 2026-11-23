@@ -132,6 +132,22 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testGoToTaskTakesTheKeyboardFromTheTerminal() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(any["pane.1"].waitForExistence(timeout: 5))
+        app.typeKey("p", modifierFlags: .command)
+        XCTAssertTrue(app.textFields["goto.field"].waitForExistence(timeout: 5))
+        // Typed at once, without a click: the field must have the keyboard.
+        app.typeText("fix")
+        XCTAssertEqual(app.textFields["goto.field"].value as? String, "fix")
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(waitForGone(app.textFields["goto.field"]))
+        XCTAssertTrue(any["tab.t1"].isSelected)
+    }
+
+    @MainActor
     func testOtherTerminalsStayClosedUntilOpened() throws {
         let app = launch()
         app.typeKey("f", modifierFlags: [.command, .shift])

@@ -69,6 +69,9 @@ final class NextNavigation {
         }
     }
 
+    /// Moves the keyboard back to the active pane, as after a popup closes.
+    func refocus() { focusRequest += 1 }
+
     /// The terminal of the pane that has the keyboard.
     var activePane: String? { panes.indices.contains(active) ? panes[active] : nil }
 
