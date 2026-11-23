@@ -408,7 +408,7 @@ fn made(
         resolved.command
     };
     let command = if crate::launch::is_claude_code(&command) {
-        bot_run::with_settings(command, &dir, &bot_run::deny_rules(ws, &routine))?
+        bot_run::with_settings(command, &dir, &bot_run::deny_rules(ws, &routine, &dir))?
     } else {
         command
     };

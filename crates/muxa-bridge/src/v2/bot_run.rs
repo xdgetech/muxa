@@ -24,15 +24,21 @@ pub fn brief(bot: &Bot) -> Result<BotBrief, String> {
 
 /// Pure. Paths start with `//` to be absolute; `Edit(…)` covers every
 /// built-in tool that edits a file. A Bot never edits its own Soul or the
-/// routines file; a read-only run edits no repo either.
-pub fn deny_rules(ws: &Workspace, routine: &Routine) -> Vec<String> {
+/// routines file; a read-only run edits no repo either, except one that
+/// holds `run_dir`, where it must write its output.
+pub fn deny_rules(ws: &Workspace, routine: &Routine, run_dir: &Path) -> Vec<String> {
     let rule = |path: &Path| format!("Edit(/{}/**)", path.to_string_lossy().trim_end_matches('/'));
     let mut rules = Vec::new();
     if routine.bot.is_some() || routine.read_only {
         rules.push(rule(&routine.dir));
     }
     if routine.read_only {
-        rules.extend(ws.repos.iter().map(|r| rule(r)));
+        rules.extend(
+            ws.repos
+                .iter()
+                .filter(|r| !run_dir.starts_with(r))
+                .map(|r| rule(r)),
+        );
     }
     rules
 }
@@ -104,13 +110,24 @@ mod tests {
 
     #[test]
     fn a_plain_run_gets_no_rules() {
-        assert!(deny_rules(&workspace(), &routine(None, false)).is_empty());
+        assert!(
+            deny_rules(
+                &workspace(),
+                &routine(None, false),
+                Path::new("/ws/routines/r-1")
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     fn a_bot_run_may_not_edit_the_muxa_folder() {
         assert_eq!(
-            deny_rules(&workspace(), &routine(Some("b"), false)),
+            deny_rules(
+                &workspace(),
+                &routine(Some("b"), false),
+                Path::new("/ws/routines/r-1")
+            ),
             ["Edit(//ws/.muxa/**)"]
         );
     }
@@ -118,13 +135,26 @@ mod tests {
     #[test]
     fn a_read_only_run_may_edit_no_repo() {
         assert_eq!(
-            deny_rules(&workspace(), &routine(None, true)),
+            deny_rules(
+                &workspace(),
+                &routine(None, true),
+                Path::new("/ws/routines/r-1")
+            ),
             [
                 "Edit(//ws/.muxa/**)",
                 "Edit(//code/app/**)",
                 "Edit(//code/lib/**)"
             ]
         );
+    }
+
+    #[test]
+    fn a_repo_that_holds_the_run_stays_writable() {
+        let mut ws = workspace();
+        ws.repos.push(PathBuf::from("/ws"));
+        let rules = deny_rules(&ws, &routine(None, true), Path::new("/ws/routines/r-1"));
+        assert!(!rules.contains(&"Edit(//ws/**)".to_owned()), "{rules:?}");
+        assert!(rules.contains(&"Edit(//code/app/**)".to_owned()));
     }
 
     #[test]

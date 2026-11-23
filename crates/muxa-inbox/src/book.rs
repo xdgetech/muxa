@@ -241,10 +241,8 @@ impl Book {
                 terminal: None,
                 routine: new.routine,
                 place: None,
-                extra: Extra {
-                    bot: Some(bot),
-                    ..Extra::default()
-                },
+                // No `bot`: how this item ends says nothing of one of its items.
+                extra: Extra::default(),
             },
             now,
         )
@@ -620,7 +618,10 @@ mod tests {
         b.add_from_bot(from_bot("d", "k4"), 1, "2026-11-24", 5)
             .unwrap();
         assert_eq!(titles(&b)[0], "d");
+        let d = b.view().items[0].id.clone();
         b.done(&first).unwrap();
+        b.delete(&d).unwrap();
+        // Deleting the "more" item counts for none of its items.
         b.delete(&more).unwrap();
         let counts = b.view().bots;
         assert_eq!((counts[0].done, counts[0].deleted), (1, 1));
