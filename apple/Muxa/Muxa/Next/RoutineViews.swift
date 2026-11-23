@@ -152,3 +152,22 @@ struct NeedsYouBanner: View {
         }
     }
 }
+
+extension NextModel {
+    /// The Routine as `.muxa/routines.toml` says it; nil until Settings are read.
+    func routineSettings(_ r: Routine) -> SettingsRoutine? {
+        settings.workspace(r.workspace)?.routines.first { $0.name == r.name }
+    }
+
+    /// Pauses or resumes a Routine through `routine-update`, at the current revision.
+    func setRoutine(_ r: Routine, enabled: Bool) async {
+        guard var spec = routineSettings(r)?.spec else {
+            requestError = "The settings are not loaded yet."
+            return
+        }
+        spec.enabled = enabled
+        let failure = await settings.save([.routineUpdate(workspace: r.workspace, routine: spec)])
+        await refreshRoutines()
+        if let failure { requestError = failure }
+    }
+}

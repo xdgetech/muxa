@@ -53,6 +53,9 @@ final class NextNavigation {
     var newTask: TaskSeed?
     /// An item Home picks when it shows next, e.g. from a Bot's page.
     var showItem: String?
+    /// iOS: the Bot page to show, and the terminal to open on it (ADR 0086).
+    /// The Mac keeps its Bots state in `MacChrome`.
+    var botRoute: BotRoute?
     var sidebar = NavigationSplitViewVisibility.all
 
     /// The open Task's terminal (its agent), whichever pane has the keyboard.
@@ -138,4 +141,13 @@ final class NextNavigation {
     func toggleSidebar() {
         sidebar = sidebar == .detailOnly ? .all : .detailOnly
     }
+}
+
+/// A Bot's page on iOS, with one of its terminals open on it or none. Each
+/// request is new, so asking for the same page again still moves there.
+struct BotRoute: Equatable {
+    let id = UUID()
+    var workspace: String
+    var bot: String
+    var terminal: String?
 }

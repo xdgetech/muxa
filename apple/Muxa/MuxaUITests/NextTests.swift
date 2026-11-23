@@ -402,8 +402,14 @@ final class NextTests: XCTestCase {
     }
 
     /// The Routines: the phone's tab, or the tablet sidebar's segment.
+    /// Routines without a Bot are a section of Bots (ADR 0086).
     func showRoutines(_ app: XCUIApplication) {
-        show(app, tab: "Routines", segment: "home.routines")
+        showBots(app)
+    }
+
+    /// Bots: the phone's tab, or the tablet sidebar's segment.
+    func showBots(_ app: XCUIApplication) {
+        show(app, tab: "Bots", segment: "home.bots")
     }
 
     /// The layout follows the size class: a phone has tabs, a tablet segments.

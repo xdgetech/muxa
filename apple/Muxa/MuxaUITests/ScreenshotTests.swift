@@ -42,13 +42,13 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(any["reader.file.PLAN.md"].waitForExistence(timeout: 10))
         save(dir, "reader")
         if pad {
-            app.buttons["home.routines"].tap()
+            app.buttons["home.bots"].tap()
         } else {
             app.buttons["mode.home"].tap()
             app.tabBars.buttons["Workspaces"].tap()
             XCTAssertTrue(any["terminal.t1"].waitForExistence(timeout: 5))
             save(dir, "tasks")
-            app.tabBars.buttons["Routines"].tap()
+            app.tabBars.buttons["Bots"].tap()
         }
         XCTAssertTrue(any["routine.nightly-backup"].waitForExistence(timeout: 5))
         save(dir, "routines")

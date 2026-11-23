@@ -1,19 +1,21 @@
 import MuxaV2
 import SwiftUI
 
-/// The tablet's sidebar: a title and New Task, the Inbox | Tasks | Routines
-/// segments, the list, and the host and Settings at the foot.
+/// The tablet's sidebar: a title and New Task (New Bot on Bots), the Inbox |
+/// Tasks | Bots segments, the list, and the host and Settings at the foot.
 struct TabletSidebar: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     let mode: Binding<NextNavigation.Tab>
     @Binding var selectedItem: String?
-    @Binding var selectedRoutine: String?
+    @Binding var selectedBot: BotsDestination?
+    @Binding var botPath: [BotsDestination]
     @Binding var selectedSetting: SettingsPlace?
     @Binding var filter: InboxFilter
     let now: Int64
     @State private var reordering = false
     @State private var showOthers = false
+    @State private var addingBot = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,9 +26,17 @@ struct TabletSidebar: View {
                     if mode.wrappedValue == .inbox {
                         InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering)
                     }
-                    NewTaskButton(id: "home.newtask")
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(RaisedIconStyle())
+                    if mode.wrappedValue == .bots {
+                        Button("New Bot", systemImage: "plus") { addingBot = true }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(RaisedIconStyle())
+                            .disabled(model.settings.settings == nil || model.settings.readOnly)
+                            .accessibilityIdentifier("bots.new")
+                    } else {
+                        NewTaskButton(id: "home.newtask")
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(RaisedIconStyle())
+                    }
                 }
                 SegmentBar(segments: segments, selection: mode, ground: Palette.ground)
             }
@@ -35,19 +45,20 @@ struct TabletSidebar: View {
             .padding(.bottom, 12)
             switch mode.wrappedValue {
             case .tasks: tasks
-            case .routines: routines
+            case .bots: bots
             case .hosts: settings
             default: inbox
             }
             footer
         }
         .background(Palette.surface)
+        .sheet(isPresented: $addingBot) { NewBotForm() }
     }
 
     private var title: String {
         switch mode.wrappedValue {
         case .tasks: "Tasks"
-        case .routines: "Routines"
+        case .bots: "Bots"
         case .hosts: "Settings"
         default: "Inbox"
         }
@@ -58,7 +69,7 @@ struct TabletSidebar: View {
         return [
             Segment(value: .inbox, title: count > 0 ? "Inbox \(count)" : "Inbox", id: "mode.home"),
             Segment(value: .tasks, title: "Tasks", id: "mode.focus"),
-            Segment(value: .routines, title: "Routines", id: "home.routines"),
+            Segment(value: .bots, title: "Bots", id: "home.bots"),
         ]
     }
 
@@ -115,8 +126,8 @@ struct TabletSidebar: View {
                 ForEach(model.tasksByState, id: \.state) { group in
                     taskGroup(group.state.title, color: group.state.color, group.tasks)
                 }
-                if !model.otherTerminals.isEmpty { others }
-                if model.liveTasks.isEmpty {
+                if !model.focusOthers.isEmpty { others }
+                if model.focusTasks.isEmpty {
                     Text("No Tasks run. Start one with New Task.").foregroundStyle(Palette.textSecondary)
                 }
             }
@@ -137,7 +148,7 @@ struct TabletSidebar: View {
 
     /// Live terminals that are not Tasks, closed until the user opens them.
     private var others: some View {
-        let list = model.otherTerminals
+        let list = model.focusOthers
         return VStack(spacing: 4) {
             Button { showOthers.toggle() } label: {
                 HStack(spacing: 6) {
@@ -162,28 +173,13 @@ struct TabletSidebar: View {
         }
     }
 
-    // MARK: Routines
+    // MARK: Bots
 
-    private var routines: some View {
-        List {
-            ForEach(model.routines) { r in
-                Button { selectedRoutine = r.id } label: {
-                    RoutineRow(routine: r)
-                        .padding(.horizontal, 10)
-                        .background(r.id == selectedRoutine ? Palette.rowSelected : .clear,
-                                    in: RoundedRectangle(cornerRadius: 10))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .routineElement(r)
-                .cardRow(vertical: 2)
-            }
-            RoutineProblems()
+    private var bots: some View {
+        BotsList(picked: selectedBot, showsChevrons: false) { dest in
+            selectedBot = dest
+            botPath = []
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .refreshable { await model.refreshRoutines() }
-        .task { await model.refreshRoutines() }
     }
 
     // MARK: Settings

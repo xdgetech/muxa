@@ -1,14 +1,16 @@
 import MuxaV2
 import SwiftUI
 
-/// The tablet (Tablet mock): a sidebar with Inbox | Tasks | Routines, and the
-/// picked item, Task or Routine beside it. Settings has its index in the
+/// The tablet (Tablet mock): a sidebar with Inbox | Tasks | Bots, and the
+/// picked item, Task or Bot beside it (ADR 0086). Settings has its index in the
 /// sidebar and the picked page beside it.
 struct TabletRoot: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     @State private var selectedItem: String?
-    @State private var selectedRoutine: String?
+    @State private var selectedBot: BotsDestination?
+    /// What a Bot's page pushed: its items and conversations.
+    @State private var botPath: [BotsDestination] = []
     @State private var selectedSetting: SettingsPlace?
     @State private var filter = InboxFilter()
     @State private var now = Int64(Date().timeIntervalSince1970)
@@ -20,7 +22,7 @@ struct TabletRoot: View {
         GeometryReader { geo in
             HStack(spacing: 0) {
                 TabletSidebar(
-                    mode: mode, selectedItem: $selectedItem, selectedRoutine: $selectedRoutine,
+                    mode: mode, selectedItem: $selectedItem, selectedBot: $selectedBot, botPath: $botPath,
                     selectedSetting: $selectedSetting, filter: $filter, now: now)
                     .frame(width: min(Self.sidebarWidth, max(300, geo.size.width * 0.4)))
                 Rectangle().fill(Palette.border).frame(width: 1)
@@ -29,6 +31,13 @@ struct TabletRoot: View {
         }
         .background(Palette.ground)
         .tint(Palette.accent)
+        .onChange(of: nav.botRoute, initial: true) { _, route in
+            // Another place asked for a Bot's page, or one of its terminals on it.
+            guard let route else { return }
+            selectedBot = .bot(workspace: route.workspace, name: route.bot)
+            botPath = route.terminal.map { [.conversation(terminal: $0)] } ?? []
+            nav.botRoute = nil
+        }
         .task {
             // Later items come back on their own; the clock decides what shows.
             while !Task.isCancelled {
@@ -38,10 +47,10 @@ struct TabletRoot: View {
         }
     }
 
-    /// The sidebar's segment: Tasks while a Task is open, else the Inbox, Routines or Settings.
+    /// The sidebar's segment: Tasks while a Task is open, else the Inbox, Bots or Settings.
     private var mode: Binding<NextNavigation.Tab> {
         Binding(
-            get: { nav.focus ? .tasks : ([.routines, .hosts].contains(nav.tab) ? nav.tab : .inbox) },
+            get: { nav.focus ? .tasks : ([.bots, .hosts].contains(nav.tab) ? nav.tab : .inbox) },
             set: { tab in
                 if tab == .tasks {
                     nav.focus = true
@@ -67,12 +76,18 @@ struct TabletRoot: View {
             } else {
                 ContentUnavailableView("Select a Workspace", systemImage: "gearshape")
             }
-        case .routines:
-            if let id = selectedRoutine, let r = model.routines.first(where: { $0.id == id }) {
-                RoutinePane(routine: r)
-            } else {
-                ContentUnavailableView("Select a Routine", systemImage: "clock")
+        case .bots:
+            NavigationStack(path: $botPath) {
+                Group {
+                    if let selectedBot {
+                        BotsDestinationView(destination: selectedBot)
+                    } else {
+                        ContentUnavailableView("Select a Bot", systemImage: "sparkles")
+                    }
+                }
+                .botsDestinations()
             }
+            .id(selectedBot)
         default:
             Group {
                 if let id = selectedItem, let item = (model.inbox.items + model.inbox.done).first(where: { $0.id == id }) {

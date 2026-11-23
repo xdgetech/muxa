@@ -191,21 +191,3 @@ struct BotRow<Leading: View, Title: View, Trailing: View>: View {
         .accessibilityElement(children: .combine)
     }
 }
-
-extension MuxaV2.Terminal {
-    /// What the terminal is to the Bot: `Chat`, `Run of scan`, `research, a member`, with its state.
-    func botRole(of bot: String) -> String {
-        let role: String
-        if lead == bot {
-            role = "\(self.bot ?? "a member"), a member"
-        } else if isTaskAgent {
-            role = "Chat"
-        } else if let r = routineName {
-            role = "Run of \(r)"
-        } else {
-            role = labels["muxa.kind"] == "handoff" ? "Run as a member" : "Run"
-        }
-        guard let state = status?.state else { return role }
-        return "\(role) · \(TaskState(state).title.lowercased())"
-    }
-}

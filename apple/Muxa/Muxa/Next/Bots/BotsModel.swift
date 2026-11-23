@@ -1,6 +1,34 @@
 import Foundation
 import MuxaV2
 
+/// What the Bots list picked: a Bot of a Workspace, or a Routine without a Bot.
+enum BotPick: Hashable {
+    case bot(workspace: String, name: String)
+    case routine(id: String)
+}
+
+/// The tabs of a Bot's page; on the Mac `⌘1`…`⌘5` pick them in Bots.
+enum BotTab: Int, CaseIterable {
+    case home = 1, chats, routines, files, settings
+
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .chats: "Chats"
+        case .routines: "Routines"
+        case .files: "Files"
+        case .settings: "Settings"
+        }
+    }
+}
+
+/// What New Bot did: whether the Bot was added, and its first talk.
+struct BotCreation {
+    var added: Bool
+    var talk: Terminal?
+    var error: String?
+}
+
 /// A Bot of a Workspace as the Bots page shows it: its settings and its work.
 struct BotEntry: Identifiable {
     let workspace: SettingsWorkspace
@@ -27,7 +55,8 @@ extension NextModel {
     /// Routines no Bot owns: failed or held (paused) ones first.
     var routinesWithoutBot: [Routine] {
         let own = routines.filter { $0.bot == nil }
-        return own.filter { $0.group != .running } + own.filter { $0.group == .running }
+        func held(_ r: Routine) -> Bool { !r.enabled || r.last?.ok == false }
+        return own.filter(held) + own.filter { !held($0) }
     }
 
     /// The Bot's live talks: Task agents with its `muxa.bot`.
@@ -45,6 +74,21 @@ extension NextModel {
     func startChat(with e: BotEntry, now: Date = .now) async -> Terminal? {
         let stamp = now.formatted(date: .abbreviated, time: .shortened)
         return await startTalk(workspace: e.workspace.name, bot: e.name, title: "Talk to \(e.name) · \(stamp)")
+    }
+
+    /// New Bot (ADR 0086 decision 3): `bot-add`, then its first talk. A talk
+    /// that did not start leaves the Bot added and says so.
+    func createBot(_ spec: BotSpec, in workspace: String) async -> BotCreation {
+        if let failure = await settings.save([.botAdd(workspace: workspace, bot: spec)]) {
+            return BotCreation(added: false, talk: nil, error: failure)
+        }
+        let goal = spec.description.map { "You are \(spec.name): \($0). Ask me what to watch, then propose your Routines." }
+        guard let t = await startTalk(workspace: workspace, bot: spec.name, title: "Talk to \(spec.name)", goal: goal)
+        else {
+            return BotCreation(added: true, talk: nil,
+                               error: "\(spec.name) was added, but its chat did not start: \(requestError ?? "unknown error")")
+        }
+        return BotCreation(added: true, talk: t, error: nil)
     }
 
     /// Pause or Resume: `bot-update` with the Bot's switch; its Routines follow it.

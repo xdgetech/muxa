@@ -63,27 +63,6 @@ enum BotView: Hashable {
     case chat, terminal, reader
 }
 
-/// What the Bots list picked: a Bot of a Workspace, or a Routine without a Bot.
-enum BotPick: Hashable {
-    case bot(workspace: String, name: String)
-    case routine(id: String)
-}
-
-/// The tabs of a Bot's page; `⌘1`…`⌘4` pick them in Bots.
-enum BotTab: Int, CaseIterable {
-    case home = 1, chats, routines, files, settings
-
-    var title: String {
-        switch self {
-        case .home: "Home"
-        case .chats: "Chats"
-        case .routines: "Routines"
-        case .files: "Files"
-        case .settings: "Settings"
-        }
-    }
-}
-
 /// Hands the window a view sits in to `found`.
 struct WindowReader: NSViewRepresentable {
     let found: (NSWindow?) -> Void

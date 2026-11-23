@@ -2,9 +2,10 @@ import MuxaV2
 import SwiftUI
 
 extension NextModel {
-    /// The live Tasks by Workspace, in name order; Tasks without one last.
+    /// The live Tasks by Workspace, in name order; Tasks without one last. A
+    /// Bot's talks are on its page instead (ADR 0086).
     var tasksByWorkspace: [(name: String, tasks: [Terminal])] {
-        let groups = Dictionary(grouping: liveTasks) { $0.workspace ?? "" }
+        let groups = Dictionary(grouping: focusTasks) { $0.workspace ?? "" }
         return groups.keys.sorted { a, b in a.isEmpty ? false : b.isEmpty ? true : a < b }
             .map { (name: $0.isEmpty ? "Other Tasks" : $0, tasks: groups[$0] ?? []) }
     }
@@ -12,7 +13,7 @@ extension NextModel {
     /// The live Tasks by what their agents report, in the mocks' order.
     var tasksByState: [(state: TaskState, tasks: [Terminal])] {
         TaskState.allCases.compactMap { state in
-            let tasks = liveTasks.filter { $0.state == state }
+            let tasks = focusTasks.filter { $0.state == state }
             return tasks.isEmpty ? nil : (state: state, tasks: tasks)
         }
     }
@@ -38,10 +39,10 @@ struct PhoneTasks: View {
                     ForEach(model.tasksByWorkspace, id: \.name) { group in
                         WorkspaceCard(name: group.name, tasks: group.tasks, workspace: group.tasks.first?.workspace)
                     }
-                    if !model.otherTerminals.isEmpty {
-                        OtherTerminalsCard(terminals: model.otherTerminals)
+                    if !model.focusOthers.isEmpty {
+                        OtherTerminalsCard(terminals: model.focusOthers)
                     }
-                    if model.liveTasks.isEmpty {
+                    if model.focusTasks.isEmpty {
                         Text("No Tasks run. Start one with New Task.")
                             .foregroundStyle(Palette.textSecondary)
                             .padding(.top, 20)

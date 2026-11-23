@@ -6,12 +6,17 @@ import SwiftUI
 struct ConnectedRoot: View {
     @Environment(\.horizontalSizeClass) private var size
 
+    @Environment(NextNavigation.self) private var nav
+
     var body: some View {
-        if size == .compact {
-            PhoneRoot()
-        } else {
-            TabletRoot()
+        Group {
+            if size == .compact {
+                PhoneRoot()
+            } else {
+                TabletRoot()
+            }
         }
+        .onAppear { nav.openElsewhere = { [weak nav] t in nav?.showOnBotPage(t) ?? false } }
     }
 }
 
@@ -45,9 +50,9 @@ struct PhoneRoot: View {
             PhoneTasks()
                 .tabItem { Label("Workspaces", systemImage: "rectangle.stack") }
                 .tag(NextNavigation.Tab.tasks)
-            PhoneRoutines()
-                .tabItem { Label("Routines", systemImage: "clock") }
-                .tag(NextNavigation.Tab.routines)
+            PhoneBots()
+                .tabItem { Label("Bots", systemImage: "sparkles") }
+                .tag(NextNavigation.Tab.bots)
             PhoneSettings()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(NextNavigation.Tab.hosts)
