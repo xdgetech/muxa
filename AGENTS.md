@@ -16,7 +16,7 @@ muxa lets you run and follow coding agents from an iPad, an iPhone, an Android p
 
 | Path | What |
 |---|---|
-| `crates/muxa-backend` | the session backend trait (ADR 0067): one terminal at a time, no Workspaces or layout. Its `contract` feature is the suite every adapter must pass; its `fake` feature is the in-memory backend tests use. |
+| `crates/muxa-backend` | the session backend trait (ADR 0067; `docs/backends.md`): one terminal at a time, no Workspaces or layout. Its `contract` feature is the suite every adapter must pass; its `fake` feature is the in-memory backend tests use. |
 | `crates/muxa-herdr` | herdr-core client (JSON-RPC calls, attach streams with credit, events) and `HerdrBackend`, the backend over it. The only code that talks to herdr-core. |
 | `crates/muxa-inbox` | the Inbox of ADR 0066: items in the user's order, Later, Done, the Capture parser, and `<state dir>/inbox.json`. No i/o but its own file. |
 | `crates/muxa-server` | the client sessions of protocol v2: attach, input with acks, credit, resume (attachments parked with a 256 KiB buffer), Task start (`src/tasks.rs`: the host prepares the places, the server runs the agent with `muxa.*` labels), a Task's shells (`src/shells.rs`, ADR 0079), `watch`, the Reader (`src/reader.rs`), Task Loops, Chat and Settings through the `Host` trait; `src/memory_settings.rs` keeps Settings in memory for the fake server and tests. Generic over the session backend; it never touches files. |

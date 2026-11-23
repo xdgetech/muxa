@@ -149,7 +149,7 @@ The decisions and their reasons are in `docs/adr/`; the herdr-core facts they re
 
 - **Transport:** SSH handles authentication and host-key pinning (ADR 0003). The daemon opens no network port: `server.sock` sits in a 0700 directory, mode 0600, and the peer's uid is checked.
 - **Protocol:** `protocol/PROTOCOL-v2.md`. Binary frames; JSON control messages on channel 0; one channel per attached terminal with output credit, acknowledged input and resume after a lost connection (ADR 0067).
-- **Terminals:** herdr-core owns them. muxa starts agents with `muxa.*` labels and finds them again by those labels; it never changes a terminal it did not start. A terminal takes the size of its last active viewer.
+- **Terminals:** herdr-core owns them, behind the `SessionBackend` trait; `docs/backends.md` says how another multiplexer such as Rex would replace it. muxa starts agents with `muxa.*` labels and finds them again by those labels; it never changes a terminal it did not start. A terminal takes the size of its last active viewer.
 - **State:** each Task's state lives in its working place (`.muxa/TASK.md`, `.muxa/loop.json`, `.muxa/CHECK.md`); Routine state and the Inbox live in the state dir. A restarted daemon goes on from the files.
 - **Agent state** is what the program reports with OSC 7501, never a guess. Chat reads the agent's own records through its adapter (`docs/agents.md`).
 
