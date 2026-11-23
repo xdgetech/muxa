@@ -181,8 +181,7 @@ fn keep(
     item: &str,
     dir: &Path,
 ) -> Result<(), String> {
-    let bytes = std::fs::read(dir.join(".muxa").join(assistant_brief::OUTPUT))
-        .map_err(|e| format!("no suggestion: {e}"))?;
+    let bytes = bot_run::read_output(&dir.join(".muxa").join(assistant_brief::OUTPUT), 64 << 10)?;
     let raw: RawSuggestion = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     let all = config.load_workspaces()?;
     let current = inbox.item(item).map_err(|e| e.to_string())?;

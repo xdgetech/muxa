@@ -47,6 +47,27 @@ pub fn deny_rules(ws: &Workspace, routine: &Routine, run_dir: &Path) -> Vec<Stri
     rules
 }
 
+/// Blocking. An agent's output file: a regular file, not a symlink that
+/// could point the host at another file, of at most `max` bytes.
+pub fn read_output(path: &Path, max: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let meta = std::fs::symlink_metadata(path).map_err(|e| format!("no {name}: {e}"))?;
+    if !meta.file_type().is_file() {
+        return Err(format!("{name} must be a regular file, not a symlink"));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|f| f.take(max + 1).read_to_end(&mut bytes))
+        .map_err(|e| format!("cannot read {name}: {e}"))?;
+    if bytes.len() as u64 > max {
+        return Err(format!("{name} is larger than {} KiB", max / 1024));
+    }
+    Ok(bytes)
+}
+
 /// Pure. The rule that denies Claude Code's edit tools under `path`.
 pub fn deny(path: &Path) -> String {
     format!("Edit(/{}/**)", path.to_string_lossy().trim_end_matches('/'))

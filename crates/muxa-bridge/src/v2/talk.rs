@@ -21,6 +21,8 @@ use crate::settings::SettingsStore;
 const SEEN: &str = "bot.seen";
 const CHECK: &str = "CHECK.md";
 const MAX_TITLE: usize = 300;
+/// Bytes of `bot.json`: a memory and up to 20 ops with their texts.
+const MAX_OUTPUT: u64 = 512 << 10;
 
 pub struct Talks {
     records: Arc<crate::config::Config>,
@@ -95,6 +97,13 @@ impl Talks {
     }
 }
 
+fn refused(why: &str) -> Vec<String> {
+    vec![
+        format!("refused: {why}"),
+        format!("Fix .muxa/{OUTPUT} and end your turn again."),
+    ]
+}
+
 /// A talk by its terminal's labels.
 pub(crate) struct Talk {
     pub workspace: String,
@@ -121,33 +130,37 @@ impl Talk {
         inbox: &Inbox,
     ) {
         let muxa = self.dir.join(".muxa");
-        let Ok(bytes) = std::fs::read(muxa.join(OUTPUT)) else {
-            return;
-        };
-        let hash: String = Sha256::digest(&bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        if std::fs::read_to_string(muxa.join(SEEN)).is_ok_and(|s| s.trim() == hash) {
+        let path = muxa.join(OUTPUT);
+        if std::fs::symlink_metadata(&path).is_err() {
             return;
         }
-        let lines = match self.accept(&bytes, &hash, records, settings, inbox) {
-            Ok(lines) => {
-                tracing::info!(bot = %self.bot, terminal = %self.terminal, "talk output handled");
-                lines
-            }
-            Err(why) => {
-                tracing::info!(bot = %self.bot, terminal = %self.terminal, "talk output refused");
-                vec![
-                    format!("refused: {why}"),
-                    format!("Fix .muxa/{OUTPUT} and end your turn again."),
-                ]
+        let (lines, hash) = match super::bot_run::read_output(&path, MAX_OUTPUT) {
+            Err(why) => (refused(&why), None),
+            Ok(bytes) => {
+                let hash: String = Sha256::digest(&bytes)
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                if std::fs::read_to_string(muxa.join(SEEN)).is_ok_and(|s| s.trim() == hash) {
+                    return;
+                }
+                let lines = match self.accept(&bytes, &hash, records, settings, inbox) {
+                    Ok(lines) => {
+                        tracing::info!(bot = %self.bot, terminal = %self.terminal, "talk output handled");
+                        lines
+                    }
+                    Err(why) => {
+                        tracing::info!(bot = %self.bot, terminal = %self.terminal, "talk output refused");
+                        refused(&why)
+                    }
+                };
+                (lines, Some(hash))
             }
         };
         let report = format!("# Check\n\n{}\n", lines.join("\n"));
-        if let Err(e) = std::fs::write(muxa.join(CHECK), report)
-            .and_then(|()| std::fs::write(muxa.join(SEEN), &hash))
-        {
+        let kept = std::fs::write(muxa.join(CHECK), report)
+            .and_then(|()| hash.map_or(Ok(()), |h| std::fs::write(muxa.join(SEEN), h)));
+        if let Err(e) = kept {
             tracing::warn!(terminal = %self.terminal, error = %e, "cannot keep a talk's check");
         }
     }

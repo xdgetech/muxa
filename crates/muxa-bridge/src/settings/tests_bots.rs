@@ -218,3 +218,20 @@ fn a_talk_about_a_new_bot_may_propose_adding_it() {
     let item = &inbox.view().items[0];
     assert_eq!(item.note.as_deref(), Some("- Add Bot fresh, with a Soul\n"));
 }
+
+#[test]
+fn a_talks_output_that_is_a_symlink_is_refused() {
+    let h = host("talk-link");
+    add_bot(&h, "b", json!({}));
+    let t = talk(&h, "b");
+    let elsewhere = h.dir.join("elsewhere.json");
+    fs::write(&elsewhere, r#"{"memory": "x"}"#).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, t.dir.join(".muxa/bot.json")).unwrap();
+    t.handle(&records(&h), &h.store, &Inbox::memory());
+    let check = fs::read_to_string(t.dir.join(".muxa/CHECK.md")).unwrap();
+    assert!(
+        check.contains("refused") && check.contains("symlink"),
+        "{check}"
+    );
+    assert!(!h.dir.join("work/.muxa/bots/b/memory.md").exists());
+}

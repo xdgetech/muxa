@@ -426,7 +426,7 @@ fn member_of(t: &TerminalInfo) -> Option<(PathBuf, PathBuf, String, String)> {
 }
 
 fn read_result(dir: &Path) -> Result<(String, Option<String>), String> {
-    let bytes = std::fs::read(dir.join(RESULT)).map_err(|e| format!("no {RESULT}: {e}"))?;
+    let bytes = bot_run::read_output(&dir.join(RESULT), 64 << 10)?;
     let r: MemberResult =
         serde_json::from_slice(&bytes).map_err(|e| format!("{RESULT} is not valid: {e}"))?;
     if r.summary.trim().is_empty() || r.summary.len() > MAX_SUMMARY {
