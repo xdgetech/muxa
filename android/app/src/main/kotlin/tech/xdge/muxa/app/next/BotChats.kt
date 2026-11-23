@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -95,6 +99,46 @@ fun BotChats(model: NextModel, e: BotEntry, bots: BotNav) {
             dismissButton = { LinkButton("Cancel", { choosing = false }) },
         )
     }
+}
+
+/**
+ * "Talk to <bot>…" on Home: Send starts a chat whose first message is the text, then opens it in Chats.
+ * Its Chat waits for the agent's session as New Bot's first chat does.
+ */
+@Composable
+fun TalkField(model: NextModel, e: BotEntry, bots: BotNav) {
+    val scope = rememberCoroutineScope()
+    var text by rememberSaveable(e.pick) { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    // Every value it uses is a parameter: Compose remembers a lambda by what it captures.
+    fun send(draft: TaskDraft) = scope.launch {
+        busy = true
+        val t = model.startTask(draft)
+        busy = false
+        if (t == null) {
+            error = model.requestError
+        } else {
+            text = ""
+            error = null
+            bots.terminal = t.id
+            bots.selectTab(BotTab.CHATS)
+        }
+    }
+    val draft = TaskDraft.talk(e.workspace.name, e.name).copy(title = newChatTitle(e.name), goal = text.trim())
+    val canSend = text.isNotBlank() && !busy
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            text, { text = it }, Modifier.weight(1f).testTag("bot.home.talk"),
+            placeholder = { Text("Talk to ${e.name}…") },
+            singleLine = true,
+            enabled = !busy,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (canSend) send(draft) }),
+        )
+        SendButton("Send", canSend, { send(draft) }, Modifier.testTag("bot.home.talk.send"))
+    }
+    error?.let { Text(it, Modifier.testTag("bot.home.talk.error"), color = Theme.failure, fontSize = 13.sp) }
 }
 
 /** A time in the title keeps a new chat apart from the open ones: a folder Task with the same title is the same Task. */

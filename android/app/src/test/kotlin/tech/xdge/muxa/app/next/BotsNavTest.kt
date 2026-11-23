@@ -14,6 +14,7 @@ import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsRoutine
 import tech.xdge.muxa.v2.SettingsWorkspace
 import tech.xdge.muxa.v2.Terminal
+import tech.xdge.muxa.v2.TerminalStatus
 
 class BotsNavTest {
     private fun t(id: String, vararg labels: Pair<String, String>) =
@@ -75,5 +76,49 @@ class BotsNavTest {
         assertEquals(2, ops.size)
         assertEquals("triage", (ops[0] as SettingsOp.RoutineUpdate).routine.bot)
         assertEquals(SettingsOp.BotRemove("app", "pr-watch"), ops[1])
+    }
+
+    private fun talk(id: String, state: String?, live: Boolean = true) = Terminal(
+        id, live = live, status = state?.let { TerminalStatus(it) }, cols = 80, rows = 24,
+        labels = mapOf("muxa.workspace" to "app", "muxa.kind" to "task", "muxa.role" to "agent", "muxa.bot" to "pr-watch"),
+    )
+
+    @Test
+    fun aBotLandsOnItsNewestLiveTalkThatIsNotDone() {
+        assertEquals("t3", liveTalk(listOf(talk("t1", "working"), talk("t2", "done"), talk("t3", "waiting"))).let { it?.id })
+        assertEquals("t1", liveTalk(listOf(talk("t1", null), talk("t2", "done"))).let { it?.id })
+        assertNull(liveTalk(listOf(talk("t1", "done"), talk("t2", "working", live = false))))
+        assertNull(liveTalk(emptyList()))
+    }
+
+    private fun entry(vararg terminals: Terminal): BotEntry {
+        val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("pr-watch")))
+        return botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, terminals.toList(), emptyList(), 0).single()
+    }
+
+    @Test
+    fun theFirstPickLandsOnTheLiveTalkOrHomeAndLaterPicksKeepTheLastTab() {
+        val nav = BotNav()
+        nav.pickBot(entry(talk("t2", "done")))
+        assertEquals(BotTab.HOME to null, nav.tab to nav.terminal)
+        nav.selectTab(BotTab.FILES)
+        nav.back()
+        nav.pickBot(entry(talk("t2", "done"), talk("t9", "working")))
+        assertEquals("a Bot picked before keeps its last tab", BotTab.FILES to null, nav.tab to nav.terminal)
+
+        val fresh = BotNav()
+        fresh.pickBot(entry(talk("t9", "working")))
+        assertEquals(BotTab.CHATS to "t9", fresh.tab to fresh.terminal)
+    }
+
+    @Test
+    fun aTalkOpenedFromElsewhereIsNotTheFirstPick() {
+        val nav = BotNav()
+        val t = talk("t9", "working")
+        nav.open(t)
+        nav.back()
+        nav.back()
+        nav.pickBot(entry(t))
+        assertEquals(BotTab.CHATS to "t9", nav.tab to nav.terminal)
     }
 }

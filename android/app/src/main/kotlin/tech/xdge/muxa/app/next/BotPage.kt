@@ -68,10 +68,13 @@ fun BotPage(model: NextModel, nav: Nav, editor: SettingsEditor, e: BotEntry) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 BotHeader(e)
-                TabChips(bots.tab) { bots.tab = it }
+                TabChips(bots.tab) { bots.selectTab(it) }
             }
             when (bots.tab) {
-                BotTab.HOME -> PageColumn { BotHome(e, bots) }
+                BotTab.HOME -> PageColumn {
+                    TalkField(model, e, bots)
+                    BotHome(e, bots)
+                }
                 BotTab.CHATS -> BotChats(model, e, bots)
                 BotTab.ROUTINES -> PageColumn { BotRoutines(model, editor, e) }
                 BotTab.FILES -> PageColumn { BotFiles(editor, e) }
@@ -136,7 +139,7 @@ private fun ColumnScope.BotHome(e: BotEntry, bots: BotNav) {
     val w = e.work
     fun openTerminal(t: Terminal) {
         bots.terminal = t.id
-        bots.tab = BotTab.CHATS
+        bots.selectTab(BotTab.CHATS)
     }
     HomeSection("Needs you", w.needsYou.size, "bot.home.needsyou", amber = w.needsYou.isNotEmpty())
     if (w.needsYou.isEmpty()) Quiet("Nothing waits for you.")

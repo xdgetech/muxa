@@ -38,22 +38,43 @@ class BotNav {
     /** A Routine without a Bot, by its id. */
     var routine: String? by mutableStateOf(null)
 
-    fun pickBot(p: BotPick) {
+    /** The last tab of each Bot the user picked; a Bot not in it lands by [pickBot]'s rule. */
+    private val lastTab = mutableMapOf<BotPick, BotTab>()
+
+    /**
+     * The user picks [e] in the list. The first time, it lands on its live talk's conversation in Chats,
+     * else on Home; after that, on the tab it was left on.
+     */
+    fun pickBot(e: BotEntry) {
+        val p = e.pick
         pick = p
         routine = null
-        terminal = null
         item = null
-        tab = BotTab.HOME
+        val talk = e.liveTalk.takeIf { p !in lastTab }
+        terminal = talk?.id
+        tab = lastTab[p] ?: if (talk != null) BotTab.CHATS else BotTab.HOME
+        lastTab[p] = tab
     }
 
-    /** [t]'s Bot's page, on the conversation: a member opens on its own Bot, not its lead. */
+    /** Shows [t] and remembers it as the picked Bot's last tab. */
+    fun selectTab(t: BotTab) {
+        tab = t
+        pick?.let { lastTab[it] = t }
+    }
+
+    /**
+     * [t]'s Bot's page, on the conversation: a member opens on its own Bot, not its lead. It is not the
+     * user picking the Bot, so a Bot never picked still lands by [pickBot]'s rule next time.
+     */
     fun open(t: Terminal) {
         val name = t.bot ?: t.lead ?: return
         val workspace = t.labels["muxa.workspace"] ?: return
-        pick = BotPick(workspace, name)
+        val p = BotPick(workspace, name)
+        pick = p
         routine = null
         item = null
         tab = BotTab.CHATS
+        if (p in lastTab) lastTab[p] = BotTab.CHATS
         terminal = t.id
     }
 
@@ -79,7 +100,18 @@ data class BotEntry(val workspace: SettingsWorkspace, val bot: SettingsBot, val 
 
     /** Its other terminals: Routine runs, its runs as a member, and its members' runs. */
     val runs: List<Terminal> get() = work.terminals - talks.toSet()
+
+    /** The talk a picked Bot opens on: its most recent live one whose agent is not done. */
+    val liveTalk: Terminal? get() = liveTalk(talks)
 }
+
+/**
+ * The most recent of [talks] that is live and not done. The server lists terminals in the order they
+ * started, so the last one is the newest.
+ */
+fun liveTalk(talks: List<Terminal>): Terminal? = talks.lastOrNull { it.live && it.status?.state != DONE }
+
+private const val DONE = "done"
 
 /** Every Bot of [settings], Workspace by Workspace, with its work grouped as the protocol says. */
 fun botEntries(settings: Settings?, inbox: Inbox, terminals: List<Terminal>, routines: List<Routine>, now: Long): List<BotEntry> =

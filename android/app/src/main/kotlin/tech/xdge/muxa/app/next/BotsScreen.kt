@@ -136,7 +136,7 @@ private fun BotList(model: NextModel, editor: SettingsEditor, entries: List<BotE
         for ((workspace, group) in entries.groupBy { it.workspace.name }) {
             item(key = "ws-$workspace") { GroupTitle(workspace, "bots.workspace.$workspace") }
             items(group, key = { "bot-${it.workspace.name}-${it.name}" }) { e ->
-                BotCard(e, e.pick == bots.pick) { bots.pickBot(e.pick) }
+                BotCard(e, e.pick == bots.pick) { bots.pickBot(e) }
             }
         }
         if (loose.isNotEmpty()) {

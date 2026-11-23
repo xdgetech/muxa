@@ -9,6 +9,8 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasContentDescription
@@ -227,6 +229,40 @@ class NextTest {
         compose.waitUntilAtLeastOneExists(hasTestTag("detail.proposal"), TIMEOUT)
         compose.onNodeWithTag("bot.item.back").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("bot.home.needsyou"), TIMEOUT)
+    }
+
+    // A Bot without a live talk lands on Home; its talk field starts a chat with the text as the first message.
+    @Test
+    fun aBotWithoutALiveTalkOpensOnHomeAndItsTalkFieldStartsAChat() {
+        launch()
+        compose.openBot("pr-watch")
+        compose.onNodeWithTag("bot.tab.home").assertIsSelected()
+        compose.onNodeWithTag("bot.home.talk.send").assertIsNotEnabled()
+        compose.onNodeWithTag("bot.home.talk").performTextInput("Also watch the docs repo")
+        compose.onNodeWithTag("bot.home.talk").performImeAction()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.conversation"), TIMEOUT)
+        compose.onNodeWithTag("bot.conversation.bot", useUnmergedTree = true).assert(hasText("with pr-watch"))
+        compose.waitUntilAtLeastOneExists(screenContains("Starting the agent for Talk to pr-watch · "), TIMEOUT)
+        compose.onNodeWithTag("bot.conversation.back").performClick()
+        compose.onNodeWithTag("bot.tab.chats").assertIsSelected()
+    }
+
+    // A Bot with a live talk lands on that talk's conversation, the first time the user picks it.
+    @Test
+    fun aBotWithALiveTalkOpensOnItsConversation() {
+        launch()
+        compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d13"))
+        compose.onNodeWithTag("item.d13").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("suggestion.ask"), TIMEOUT)
+        compose.onNodeWithTag("suggestion.ask").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.conversation"), TIMEOUT)
+        // Out to the list, then pick the Bot there.
+        compose.onNodeWithTag("bot.conversation.back").performClick()
+        if (compose.onAllNodesWithTag("bots.back").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("bots.back").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.app.pr-watch"), TIMEOUT)
+        compose.onNodeWithTag("bot.app.pr-watch").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.conversation"), TIMEOUT)
+        compose.onNode(hasText("Ask pr-watch: Look at the flaky login test", substring = true)).assertExists()
     }
 
     @Test
