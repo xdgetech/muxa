@@ -8,7 +8,8 @@ import SwiftUI
 @Observable
 final class NextNavigation {
     /// The touch app's main parts: the iPhone's tabs, the iPad sidebar's segments.
-    enum Tab: Hashable { case inbox, tasks, routines, hosts }
+    /// `bots` is the Mac's Bots page (ADR 0086).
+    enum Tab: Hashable { case inbox, tasks, routines, hosts, bots }
 
     /// A Task is open: Focus on the Mac, the Task screen on a phone, and the
     /// sidebar's Tasks on an iPad.
@@ -50,6 +51,8 @@ final class NextNavigation {
     var showPalette = false
     /// The Start Task sheet is open with this seed.
     var newTask: TaskSeed?
+    /// An item Home picks when it shows next, e.g. from a Bot's page.
+    var showItem: String?
     var sidebar = NavigationSplitViewVisibility.all
 
     /// The open Task's terminal (its agent), whichever pane has the keyboard.

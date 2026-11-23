@@ -77,8 +77,11 @@ final class NextModel {
     }
 
     /// Agents waiting on the user: a short-lived state, never an Inbox item.
+    /// Every kind counts, Routine runs and team members too (ADR 0086 §6).
     var needsYou: [Terminal] {
-        terminals.filter { $0.live && $0.isTaskAgent && ["blocked", "waiting"].contains($0.status?.state ?? "") }
+        terminals.filter {
+            $0.live && $0.labels["muxa.role"] == "agent" && ["blocked", "waiting"].contains($0.status?.state ?? "")
+        }
     }
 
     var isConnected: Bool { link == .connected }
@@ -456,9 +459,20 @@ final class NextModel {
 
     /// Applies a Bot's proposed settings (ADR 0083). Loaded settings are read
     /// again: the host changed them, or they changed since the proposal.
-    func applyProposal(_ item: InboxItem) async {
-        await inbox(.inboxApply(item: item.id))
+    /// True when the host refused it as `conflict`; `requestError` has its words.
+    @discardableResult
+    func applyProposal(_ item: InboxItem) async -> Bool {
+        var stale = false
+        await run { c in
+            do {
+                self.inbox = try await c.inbox(.inboxApply(item: item.id))
+            } catch V2Error.refused(let code, let message) where code == "conflict" {
+                stale = true
+                throw V2Error.refused(code: code, message: message)
+            }
+        }
         if settings.settings != nil { await settings.load() }
+        return stale
     }
 
     /// Resume Task: starts the agent in the item's place, then marks the item Done.

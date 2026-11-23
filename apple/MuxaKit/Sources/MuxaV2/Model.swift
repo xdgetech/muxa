@@ -495,6 +495,8 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     public var isTaskShell: Bool { labels["muxa.kind"] == "task" && labels["muxa.role"] == "shell" }
     /// The Bot a talk Task talks with (ADR 0083).
     public var bot: String? { labels["muxa.bot"] }
+    /// The team lead a member's run works for (ADR 0086).
+    public var lead: String? { labels["muxa.lead"] }
     /// A Task's places, the working place first; empty for other terminals.
     public var places: [Place] {
         guard let text = labels["muxa.places"], let data = text.data(using: .utf8) else { return [] }

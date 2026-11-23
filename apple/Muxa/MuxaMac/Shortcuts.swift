@@ -10,6 +10,7 @@ struct Shortcut: Identifiable {
         case capture = "Capture and Tasks"
         case inbox = "Inbox"
         case panes = "Focus panes"
+        case bots = "Bots"
     }
 
     let id: String
@@ -53,7 +54,9 @@ struct Shortcut: Identifiable {
     static let previousNeedsYou = Shortcut("previous-needs-you", .go, "Previous Task that needs you", KeyChord("j", [.command, .shift]))
     static let previousTask = Shortcut("previous-task", .go, "Previous Task", KeyChord(.tab, [.control, .shift]))
     static let sidebar = Shortcut("sidebar", .go, "Toggle sidebar", KeyChord("b", .command))
-    static let routines = Shortcut("routines", .go, "Routines", KeyChord("o", [.command, .shift]))
+    static let bots = Shortcut("bots", .go, "Bots", KeyChord("b", [.command, .shift]))
+    // The Routines page became part of Bots (ADR 0086); its key opens Bots.
+    static let routines = Shortcut("routines", .go, "Bots (Routines)", KeyChord("o", [.command, .shift]))
     static let capture = Shortcut("capture", .capture, "Capture", KeyChord("n", .command))
     static let captureAnywhere = Shortcut("capture-anywhere", .capture, "Capture from anywhere", KeyChord(.space, [.control, .option]))
     static let newTask = Shortcut("new-task", .capture, "New Task", KeyChord("n", [.command, .shift]))
@@ -76,12 +79,18 @@ struct Shortcut: Identifiable {
     static let inboxPanel = Shortcut("inbox-panel", .panes, "Inbox panel", KeyChord("i", [.command, .shift]))
     static let readerPanel = Shortcut("reader-panel", .panes, "Reader panel", KeyChord("r", [.command, .shift]))
     static let chatPanel = Shortcut("chat-panel", .panes, "Chat panel", KeyChord("c", [.command, .shift]))
+    // The Bots page's own keys; Home's ⌘R and the Pane menu's ⌘1–4 are not shown there.
+    static let newChat = Shortcut("new-chat", .bots, "New chat", fixed: "⌘T")
+    static let runBot = Shortcut("run-bot", .bots, "Run now", fixed: "⌘R")
+    static let botTabs = Shortcut("bot-tabs", .bots, "Home · Chats · Routines · Files", fixed: "⌘1 … ⌘4")
+    static let applyProposal = Shortcut("apply-proposal", .bots, "Apply a talk's proposal in Focus", fixed: "⌘⏎")
 
     static let all: [Shortcut] = [
-        home, focus, goToTask, nextNeedsYou, previousNeedsYou, nextTask, previousTask, sidebar, routines,
+        home, focus, bots, goToTask, nextNeedsYou, previousNeedsYou, nextTask, previousTask, sidebar, routines,
         capture, captureAnywhere, newTask, settings, shortcuts,
         open, later, done, retry, move,
         split, nextPane, previousPane, closePane, closeOtherPanes, closeTask, pane, inboxPanel, readerPanel, chatPanel,
+        newChat, runBot, botTabs, applyProposal,
     ]
 }
 

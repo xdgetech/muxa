@@ -295,7 +295,7 @@ ADR 0086. Clients show each Bot on a page of its own. Every client groups the da
 - **Recent:** the items of `done` with `bot` = `b` and `workspace` = `w`. `done` keeps the last 100 of all items, so the list may be shorter than `BotCount.done`.
 - **Status:** "needs you" when Needs you is not empty; else "running" when it has terminals; else "paused" when the Bot is turned off; else "idle".
 
-Every client's own "needs you" list (the header pill, the next-waiting key) counts every live agent terminal (`muxa.role` = `agent`) whose state is `blocked` or `waiting`, of any `muxa.kind`. A Routine run or a team member waiting on a menu is the user's to answer, as a Task's is: the approval card offers only keys an adapter checked (ADR 0009).
+Every client's own "needs you" list (the header pill, the next-waiting key) counts every live agent terminal (`muxa.role` = `agent`) whose state is `blocked` or `waiting`, of any `muxa.kind`. A Routine run or a team member waiting on a menu is the user's to answer in its terminal. `chat-open` serves Task agents only, so the approval card (ADR 0009) shows for Tasks.
 
 A settings proposal of a talk is an item with `terminal` = the talk's agent. A client shows it beside that talk and applies it with `inbox-apply`, the same item as in the Inbox.
 

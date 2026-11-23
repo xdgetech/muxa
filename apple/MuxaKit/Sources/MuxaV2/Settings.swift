@@ -475,21 +475,27 @@ public struct SettingsBot: Codable, Equatable, Sendable, Identifiable {
     public var memoryText: String?
     /// How many earlier memories can come back.
     public var memoryVersions: UInt32
+    /// When each earlier memory was replaced, newest first (ADR 0086); empty
+    /// from an older server.
+    public var memoryHistory: [MemoryVersion]
 
     public var id: String { spec.name }
     public var name: String { spec.name }
 
-    public init(spec: BotSpec, soulText: String? = "", memoryText: String? = "", memoryVersions: UInt32 = 0) {
+    public init(spec: BotSpec, soulText: String? = "", memoryText: String? = "", memoryVersions: UInt32 = 0,
+                memoryHistory: [MemoryVersion] = []) {
         self.spec = spec
         self.soulText = soulText
         self.memoryText = memoryText
         self.memoryVersions = memoryVersions
+        self.memoryHistory = memoryHistory
     }
 
     enum CodingKeys: String, CodingKey {
         case soulText = "soul_text"
         case memoryText = "memory_text"
         case memoryVersions = "memory_versions"
+        case memoryHistory = "memory_history"
     }
 
     // On the wire the spec's fields and the texts share one object.
@@ -499,6 +505,7 @@ public struct SettingsBot: Codable, Equatable, Sendable, Identifiable {
         soulText = try c.decodeIfPresent(String.self, forKey: .soulText)
         memoryText = try c.decodeIfPresent(String.self, forKey: .memoryText)
         memoryVersions = try c.decode(.memoryVersions, or: 0)
+        memoryHistory = try c.decode(.memoryHistory, or: [])
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -507,6 +514,22 @@ public struct SettingsBot: Codable, Equatable, Sendable, Identifiable {
         try c.encodeIfPresent(soulText, forKey: .soulText)
         try c.encodeIfPresent(memoryText, forKey: .memoryText)
         try c.encode(memoryVersions, forKey: .memoryVersions)
+        if !memoryHistory.isEmpty { try c.encode(memoryHistory, forKey: .memoryHistory) }
+    }
+}
+
+/// One earlier memory `botMemoryRestore` can bring back.
+public struct MemoryVersion: Codable, Equatable, Sendable, Identifiable {
+    /// 1 is the newest.
+    public var version: UInt32
+    /// Unix seconds when it was replaced.
+    public var at: Int64
+
+    public var id: UInt32 { version }
+
+    public init(version: UInt32, at: Int64) {
+        self.version = version
+        self.at = at
     }
 }
 

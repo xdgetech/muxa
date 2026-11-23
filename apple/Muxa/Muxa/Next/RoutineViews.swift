@@ -132,7 +132,7 @@ struct NeedsYouBanner: View {
             } label: {
                 HStack(spacing: 10) {
                     StateDot(color: TaskState.needsYou.color)
-                    Text(one ? "\(first.title) needs you" : "\(waiting.count) Tasks need you")
+                    Text(one ? "\(first.title) needs you" : "\(waiting.count) agents need you")
                         .font(.system(size: 14))
                         .foregroundStyle(Palette.text)
                         .lineLimit(1)

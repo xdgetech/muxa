@@ -41,7 +41,9 @@ let package = Package(
         .target(name: "MuxaV2", dependencies: ["MuxaTransport"]),
         .testTarget(
             name: "MuxaV2Tests",
-            dependencies: ["MuxaV2", "MuxaTransport"]
+            dependencies: ["MuxaV2", "MuxaTransport"],
+            // Plain wire JSON, so the Kotlin tests can read the same cases.
+            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "MuxaTransportTests",

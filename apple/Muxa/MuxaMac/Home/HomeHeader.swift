@@ -1,8 +1,8 @@
 import MuxaV2
 import SwiftUI
 
-/// Home's top bar as the desktop mock: the mark, the host, Home/Focus, who
-/// needs you, Routines, New Task and the shortcuts sheet.
+/// Home's top bar as the desktop mock: the mark, the host, Home/Focus/Bots,
+/// who needs you, New Task and the shortcuts sheet.
 struct HomeHeader: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -13,10 +13,9 @@ struct HomeHeader: View {
     var body: some View {
         MacHeaderBar {
             HeaderBrand()
-            ModeSwitch(focus: false, home: {}, showFocus: showFocus)
+            ModeSwitch(mode: .home)
         } trailing: {
             NeedsYouPill(open: openTerminal, showAll: showFocus)
-            RoutinesButton()
             HeaderButton(title: "New Task", systemImage: "plus", key: Shortcut.newTask.display) {
                 nav.newTask = TaskSeed()
             }
@@ -44,7 +43,7 @@ private struct NeedsYouPill: View {
             } label: {
                 HStack(spacing: 8) {
                     StateDot(color: TaskState.needsYou.color, size: 8)
-                    Text(one ? "\(first.title) needs you" : "\(waiting.count) Tasks need you")
+                    Text(one ? "\(first.title) needs you" : "\(waiting.count) agents need you")
                         .lineLimit(1)
                     KeyHint(Shortcut.nextNeedsYou.display, color: Palette.textSecondary)
                 }
@@ -59,32 +58,5 @@ private struct NeedsYouPill: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier(one ? "needsyou.\(first.id)" : "home.needsyou")
         }
-    }
-}
-
-/// Opens the Routines page; says how many Routines failed their last run.
-private struct RoutinesButton: View {
-    @Environment(NextModel.self) private var model
-    @Environment(NextNavigation.self) private var nav
-
-    var body: some View {
-        let failed = model.routines.filter { $0.last?.ok == false }.count
-        Button { nav.tab = .routines } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "clock").font(.system(size: 12, weight: .semibold))
-                Text("Routines")
-                if failed > 0 { Text("\(failed) failed").foregroundStyle(Palette.late) }
-            }
-            .font(.system(size: 13))
-            .foregroundStyle(Palette.textMid)
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.borderStrong))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Routines (\(Shortcut.routines.display))")
-        .accessibilityIdentifier("home.routines")
-        .task { await model.refreshRoutines() }
     }
 }

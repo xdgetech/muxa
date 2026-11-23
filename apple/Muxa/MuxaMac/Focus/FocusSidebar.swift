@@ -88,7 +88,7 @@ struct FocusSidebar: View {
     }
 }
 
-/// "Routines · N running · N failed": opens the Routines page.
+/// "Bots · N running · N failed": opens Bots, where the Routines are (ADR 0086).
 private struct RoutinesFooter: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -98,11 +98,11 @@ private struct RoutinesFooter: View {
         let failed = model.routines.filter { $0.health == .failed }.count
         Button {
             nav.focus = false
-            nav.tab = .routines
+            nav.tab = .bots
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: "clock").font(.system(size: 13, weight: .medium))
-                Text("Routines")
+                Image(systemName: "sparkles").font(.system(size: 13, weight: .medium))
+                Text("Bots")
                 Spacer()
                 Text("\(running) running · \(failed) failed").font(.system(size: 11))
             }
@@ -115,7 +115,7 @@ private struct RoutinesFooter: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1).padding(.horizontal, 8) }
-        .help("Routines (\(Shortcut.routines.display))")
-        .accessibilityIdentifier("focus.routines")
+        .help("Bots (\(Shortcut.bots.display))")
+        .accessibilityIdentifier("focus.bots")
     }
 }

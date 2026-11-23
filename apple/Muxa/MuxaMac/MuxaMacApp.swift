@@ -89,7 +89,10 @@ struct MuxaMacApp: App {
                     .shortcut(.home)
                 Button("Focus") { nav.focus = true }
                     .shortcut(.focus)
-                Button("Routines") { nav.focus = false; nav.tab = .routines }
+                Button("Bots") { nav.focus = false; nav.tab = .bots }
+                    .shortcut(.bots)
+                    .disabled(!model.isConnected)
+                Button("Routines in Bots") { nav.focus = false; nav.tab = .bots }
                     .shortcut(.routines)
                     .disabled(!model.isConnected)
                 Divider()
@@ -142,10 +145,13 @@ struct MuxaMacApp: App {
                     .shortcut(.closeTask)
                     .disabled(focusedTask == nil)
                 Divider()
+                // In Bots the first four keys pick the Bot's tab instead (ADR 0086).
                 ForEach(1...9, id: \.self) { n in
-                    Button("Pane \(n)") { pane(.pane(n)) }
-                        .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
-                        .disabled(n > nav.panes.count)
+                    Button(inBots ? (BotTab(rawValue: n)?.title ?? "Pane \(n)") : "Pane \(n)") {
+                        if inBots, let tab = BotTab(rawValue: n) { chrome.botTab = tab } else { pane(.pane(n)) }
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
+                    .disabled(inBots ? BotTab(rawValue: n) == nil : n > nav.panes.count)
                 }
             }
             CommandMenu("Host") {
@@ -158,6 +164,9 @@ struct MuxaMacApp: App {
             }
         }
     }
+
+    /// The Bots page shows: `⌘1`…`⌘4` are its tabs.
+    private var inBots: Bool { !nav.focus && (nav.tab == .bots || nav.tab == .routines) }
 
     private func pane(_ command: WindowCommand) {
         PaneCommands.run(command, nav: nav, model: model)

@@ -23,7 +23,7 @@ ADR 0082 to 0085 put Bots in Settings: the user sets them up there and finds the
 3. **New Bot, then a chat.** New Bot asks for a name, one sentence and the Workspace. Create sends `bot-add` and starts the Bot's first talk. Routines come from that chat as proposals the user applies.
 4. **A proposal shows beside its talk.** Its item has the talk's `terminal`. The client shows it above the chat with Apply, and it stays in the Inbox. Applying either one closes both.
 5. **The host labels what belongs to a Bot.** A Bot's Routine runs carry `muxa.bot`. A team member carries `muxa.lead`. Clients never infer a Bot from paths or from the Routines list.
-6. **Every waiting agent needs you.** The clients' "needs you" lists count Routine runs and members too, not only Tasks. The user answers their menus as a Task's: only adapter-checked keys, picked by the user. This is the user's own input to a muxa terminal (invariants 2 and 7). ADR 0085's "nothing is typed" still holds for muxa itself.
+6. **Every waiting agent needs you.** The clients' "needs you" lists count Routine runs and members too, not only Tasks. A Task's menu is answered on the approval card. A Routine run or a member opens in Focus, and the user answers in its terminal: the card follows a Task's Chat, which `chat-open` serves for Task agents only. That input is the user's own, to a muxa terminal (invariants 2 and 7). ADR 0085's "nothing is typed" still holds for muxa itself.
 
 ## Consequences
 

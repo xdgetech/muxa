@@ -107,3 +107,22 @@ struct DemoTalkTests {
         }
     }
 }
+
+/// The demo's pr-watch as its Bot page groups it (ADR 0086).
+struct DemoBotWorkTests {
+    @Test(.timeLimit(.minutes(1)))
+    func prWatchHasItemsATalkARunAndAPlannedScan() async throws {
+        let c = try await V2Client.open(DemoChannel(), name: "test")
+        let settings = try await c.settings()
+        let bot = try #require(settings.workspaces[0].bots.first { $0.name == "pr-watch" })
+        #expect(bot.memoryHistory.map(\.version) == [1, 2])
+        let w = BotWork(bot: "pr-watch", workspace: "app", enabled: bot.spec.enabled, inbox: try await c.inbox(),
+                        terminals: try await c.terminals(), routines: try await c.routines().routines,
+                        now: 1_764_000_000)
+        #expect(w.items.map(\.id) == ["d10", "d11", "d12"])
+        #expect(w.terminals.map(\.id) == ["t7", "t8"])
+        #expect(w.planned.map(\.name) == ["scan"])
+        #expect(w.status == .needsYou)
+        #expect(try await c.inbox().items.first { $0.id == "d12" }?.terminal == "t7")
+    }
+}

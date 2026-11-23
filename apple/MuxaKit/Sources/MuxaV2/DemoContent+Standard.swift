@@ -4,7 +4,8 @@ extension DemoContent {
     /// Two Tasks (one waits on the user, one has a shell beside its agent), a
     /// shell, a terminal muxa did not start, a Routine run, every Inbox kind,
     /// four Routines, and the Bot `pr-watch` with two items (ADR 0082) and a
-    /// settings proposal (`d12`, ADR 0083). The Capture assistant suggests
+    /// settings proposal (`d12`, ADR 0083) from its talk `t7`, and a run of
+    /// its Routine `scan` (`t8`, ADR 0086). The Capture assistant suggests
     /// where `d13` goes (ADR 0084). Approving `d8` needs force: its worktree
     /// holds work. `d9` came from muxa v1.
     public static let standard: DemoContent = {
@@ -54,6 +55,19 @@ extension DemoContent {
                     labels: ["muxa.kind": "task", "muxa.role": "shell", "muxa.workspace": "app",
                              "muxa.dir": "/demo/app-fix-login"],
                     cols: 80, rows: 24),
+                // A talk with pr-watch (ADR 0083); d12 is its proposal.
+                Terminal(
+                    id: "t7", name: "Talk to pr-watch", live: true, status: TerminalStatus(state: "done", app: "claude-code"),
+                    labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "pr-watch",
+                             "muxa.title": "Talk to pr-watch", "muxa.dir": "/demo/tasks/talk-to-pr-watch",
+                             "muxa.places": #"[{"kind":"folder","path":"/demo/tasks/talk-to-pr-watch"}]"#],
+                    cols: 80, rows: 24),
+                // A run of pr-watch's Routine scan (ADR 0086).
+                Terminal(
+                    id: "t8", name: nil, live: true, status: TerminalStatus(state: "working", app: "claude-code"),
+                    labels: ["muxa.kind": "routine", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "pr-watch",
+                             "muxa.routine": "scan", "muxa.dir": "/demo/runs/scan"],
+                    cols: 80, rows: 24),
             ],
             screens: [
                 "t1": "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
@@ -62,6 +76,9 @@ extension DemoContent {
                 "t4": "% ",
                 "t5": "● Reading the lockfile\r\n",
                 "t6": "~/demo/app-fix-login $ ",
+                "t7": "› Every night, list the PRs nobody touched for a week.\r\n\r\n"
+                    + "● I wrote a proposal: a nightly-sweep Routine, turned off. Apply it from the bar above or the Inbox.\r\n",
+                "t8": "● Listing the PRs that wait for review\r\n",
             ],
             inbox: [
                 item("d1", .review, "Review fix-login", note: "Draft PR #42: refresh the session before it expires.", source: "task",
@@ -95,8 +112,9 @@ extension DemoContent {
                 routine("dependency-digest", at: "09:00", running: 1_764_000_000, last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 1)),
                 routine("nightly-backup", at: "02:00", last: RoutineLast(at: 1_764_000_000, ok: false, reason: "gh login expired.", published: nil)),
                 routine("release-notes", at: nil, last: nil),
+                // t8 runs it.
                 Routine(workspace: "app", name: "scan", enabled: true, at: "09:00", timezone: "Europe/Berlin",
-                        schedule: "*/30 9-18 * * 1-5", nextDue: nil, runningSince: nil,
+                        schedule: "*/30 9-18 * * 1-5", nextDue: 1_764_001_800, runningSince: 1_764_000_000,
                         last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 2), bot: "pr-watch"),
             ],
             workspaces: ["app", "Personal"],
@@ -163,7 +181,7 @@ extension DemoContent {
         var i = InboxItem(
             id: "d12", kind: .decide, title: "pr-watch proposes: a nightly sweep of stale PRs",
             note: "- routine-add nightly-sweep (off)\n- bot-update pr-watch\n", workspace: "app", due: nil, laterUntil: nil,
-            created: 1_764_000_000, source: "task", terminal: nil, routine: nil)
+            created: 1_764_000_000, source: "task", terminal: "t7", routine: nil)
         i.bot = "pr-watch"
         i.settingsProposal = SettingsProposal(revision: "1", ops: [
             .routineAdd(workspace: "app", routine: sweep,
@@ -215,7 +233,9 @@ extension DemoContent {
                         soulText: "I watch the PRs that wait for my review and the threads that ask me something.\n"
                             + "I never comment or merge by myself.\n",
                         memoryText: "Anna owns the release. The docs repo merges with squash.\n",
-                        memoryVersions: 1),
+                        memoryVersions: 2,
+                        memoryHistory: [MemoryVersion(version: 1, at: 1_764_000_240),
+                                        MemoryVersion(version: 2, at: 1_763_913_600)]),
                 ]),
             SettingsWorkspace(
                 name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude"),

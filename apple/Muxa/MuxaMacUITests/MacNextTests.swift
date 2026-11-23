@@ -246,7 +246,8 @@ final class MacNextTests: XCTestCase {
         XCTAssertTrue(on.waitForExistence(timeout: 5))
         on.click()
         XCTAssertTrue(waitForGone(on))
-        app.buttons["routines.home"].click()
+        // The Routines page became Bots (ADR 0086); the header's mode switch goes Home.
+        app.buttons["mode.home"].click()
         XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
     }
 

@@ -5,13 +5,12 @@ import SwiftUI
 /// as tabs, Go to Task and the Inbox panel's button.
 struct FocusHeader: View {
     let active: MuxaV2.Terminal?
-    let onHome: () -> Void
 
     var body: some View {
         MacHeaderBar {
             HStack(spacing: 16) {
                 HeaderBrand()
-                ModeSwitch(focus: true, home: onHome, showFocus: {})
+                ModeSwitch(mode: .focus)
                 FocusTabStrip(active: active)
             }
             .frame(maxHeight: .infinity)
@@ -75,6 +74,8 @@ private struct InboxButton: View {
             }
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(Palette.text)
+            // The tab strip gives way when the header is short; this button never does.
+            .fixedSize()
             .padding(.horizontal, 12)
             .frame(height: 34)
             .background(on ? Palette.rowSelected : .clear, in: RoundedRectangle(cornerRadius: 8))

@@ -3,9 +3,10 @@ import SwiftUI
 
 /// The Mac's Home (ADR 0066, ADR 0070) as the desktop mock: the header, the
 /// Inbox in the user's order beside the picked item, and the keys at the foot.
-/// Routines have their own page.
+/// Bots and their Routines have their own page.
 struct HomeView: View {
     @Environment(NextModel.self) private var model
+    @Environment(NextNavigation.self) private var nav
     var openTerminal: (Terminal) -> Void = { _ in }
     var showFocus: () -> Void = {}
 
@@ -35,7 +36,15 @@ struct HomeView: View {
             ])
         }
         .background(Palette.ground)
-        .onAppear { keepSelection(was: []) }
+        .onAppear {
+            if let id = nav.showItem {
+                // A Bot's page asked for this item; Done items show with the Done filter.
+                if model.inbox.done.contains(where: { $0.id == id }) { filter.showDone = true }
+                selected = id
+                nav.showItem = nil
+            }
+            keepSelection(was: [])
+        }
         .onChange(of: visible.map(\.id)) { old, _ in keepSelection(was: old) }
         .task {
             // Later items come back on their own; the clock decides what shows.

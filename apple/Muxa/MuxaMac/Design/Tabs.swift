@@ -30,19 +30,27 @@ struct UnderlineTabs<Tag: Hashable>: View {
     }
 }
 
-/// The Home/Focus switch of the header: two segments with their keys.
+/// The Home/Focus/Bots switch of the header: three segments with their keys.
 struct ModeSwitch: View {
-    let focus: Bool
-    let home: () -> Void
-    let showFocus: () -> Void
+    enum Mode { case home, focus, bots }
+
+    @Environment(NextNavigation.self) private var nav
+    let mode: Mode
 
     var body: some View {
         HStack(spacing: 4) {
-            segment("Home", key: Shortcut.home.display, on: !focus, id: "mode.home", action: home)
-            segment("Focus", key: Shortcut.focus.display, on: focus, id: "mode.focus", action: showFocus)
+            segment("Home", key: Shortcut.home.display, on: mode == .home, id: "mode.home") {
+                nav.focus = false
+                nav.tab = .inbox
+            }
+            segment("Focus", key: Shortcut.focus.display, on: mode == .focus, id: "mode.focus") { nav.focus = true }
+            segment("Bots", key: Shortcut.bots.display, on: mode == .bots, id: "mode.bots") {
+                nav.focus = false
+                nav.tab = .bots
+            }
         }
         .padding(3)
-        .frame(width: 240)
+        .frame(width: 360)
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Palette.border))
     }

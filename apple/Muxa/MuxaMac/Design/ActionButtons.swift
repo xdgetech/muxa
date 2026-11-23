@@ -6,6 +6,7 @@ struct ActionButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, destructive }
     var kind = Kind.secondary
     var compact = false
+    @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -19,7 +20,7 @@ struct ActionButtonStyle: ButtonStyle {
                     RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.buttonBorder)
                 }
             }
-            .opacity(configuration.isPressed ? 0.8 : 1)
+            .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
             .contentShape(Rectangle())
     }
 

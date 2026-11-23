@@ -201,7 +201,8 @@ struct DemoTests {
         #expect(await events.next() == .removed(terminal: "t1"))
         #expect(await events.next() == .removed(terminal: "t6"), "the Task's shell goes with it")
         #expect(await events.next() == .inbox(inbox))
-        #expect(try await c.terminals().map(\.id) == ["t2", "t3", "t4", "t5"])
+        // t7 is pr-watch's talk and t8 its scan run (ADR 0086).
+        #expect(try await c.terminals().map(\.id) == ["t2", "t3", "t4", "t5", "t7", "t8"])
         await #expect(throws: V2Error.self) { try await c.inbox(.inboxApprove(item: "d2")) }
         do {
             _ = try await c.inbox(.inboxApprove(item: "nope"))
@@ -261,18 +262,19 @@ struct DemoTests {
     func workspacesSayWhoUsesEachConnectionAndServer() async throws {
         let c = try await open()
         let app = try #require(try await c.workspaces().first)
+        // t7, pr-watch's talk, is a Task agent too (ADR 0083).
         #expect(app.connections[0].usedBy == UsedBy(
-            routines: ["dependency-digest", "nightly-backup", "release-notes"], tasks: ["t1", "t2"]))
+            routines: ["dependency-digest", "nightly-backup", "release-notes"], tasks: ["t1", "t2", "t7"]))
         #expect(app.connections[0].lastUsed == 1_764_000_000)
         #expect(app.connections[1].usedBy == UsedBy(
-            routines: ["dependency-digest", "nightly-backup", "release-notes"], tasks: ["t1", "t2"]))
+            routines: ["dependency-digest", "nightly-backup", "release-notes"], tasks: ["t1", "t2", "t7"]))
         // A named connection is ignored: every agent gets all of them (ADR 0075).
         let (t, _) = try await c.startTask(workspace: "app", title: "Triage", connections: ["linear"])
         #expect(t.labels["muxa.connections"] == #"["github","linear"]"#)
         #expect(t.labels["muxa.mcp"] == #"["docs"]"#)
         let after = try #require(try await c.workspaces().first)
-        #expect(after.connections[1].usedBy.tasks == ["t1", "t2", t.id])
-        #expect(after.mcp[0].usedBy.tasks == ["t1", "t2", t.id])
+        #expect(after.connections[1].usedBy.tasks == ["t1", "t2", "t7", t.id])
+        #expect(after.mcp[0].usedBy.tasks == ["t1", "t2", "t7", t.id])
     }
 
     @Test(.timeLimit(.minutes(1)))

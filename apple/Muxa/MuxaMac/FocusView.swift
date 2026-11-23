@@ -8,7 +8,6 @@ struct FocusView: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     @Binding var selected: String?
-    var showHome: () -> Void
 
     /// The Task whose loop sheet is open.
     @State private var loopFor: MuxaV2.Terminal?
@@ -17,14 +16,25 @@ struct FocusView: View {
         model.terminals.first { $0.id == selected }
     }
 
+    /// An open settings proposal of the talk Focus shows (ADR 0086 decision 4).
+    private var proposal: (InboxItem, SettingsProposal)? {
+        guard let id = active?.id, active?.isTaskAgent == true,
+              let item = model.inbox.items.first(where: { $0.terminal == id && $0.settingsProposal != nil }),
+              let p = item.settingsProposal else { return nil }
+        return (item, p)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            FocusHeader(active: active, onHome: showHome)
+            FocusHeader(active: active)
             HStack(spacing: 0) {
                 if nav.sidebar != .detailOnly {
                     FocusSidebar(selected: $selected)
                 }
                 VStack(spacing: 0) {
+                    if let (item, proposal) = proposal {
+                        ProposalBar(item: item, proposal: proposal).id(item.id)
+                    }
                     if active != nil {
                         PaneSplit { loopFor = $0 }
                     } else {
