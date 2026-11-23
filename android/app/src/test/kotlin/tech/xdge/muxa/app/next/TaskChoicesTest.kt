@@ -8,6 +8,7 @@ import org.junit.Test
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.ItemKind
 import tech.xdge.muxa.v2.ItemPlace
+import tech.xdge.muxa.v2.ItemProposal
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.PlaceSpec
@@ -68,5 +69,13 @@ class TaskChoicesTest {
     @Test
     fun aTitleIsNeeded() {
         assertFalse(TaskChoices(title = "  ").inWorkspace(app).canStart)
+    }
+
+    @Test
+    fun startTaskOnAProposalTakesItAsTheGoal() {
+        val item = InboxItem("i1", ItemKind.DECIDE, "Approve PR #57?", note = "CI passed.", workspace = "app", created = 0, source = "routine")
+        assertEquals(TaskSeed("Approve PR #57?", "app", ""), TaskSeed.startTask(item))
+        val proposed = item.copy(proposal = ItemProposal("review-approve", "example/app#57", "Approving."))
+        assertEquals("review-approve on example/app#57:\n\nApproving.", TaskSeed.startTask(proposed).goal)
     }
 }

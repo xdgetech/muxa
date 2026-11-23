@@ -1,5 +1,6 @@
 package tech.xdge.muxa.app.next
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,10 +38,7 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier, fontSize: TextUnit
     val context = LocalContext.current
     val webOnly = remember(context) {
         object : UriHandler {
-            override fun openUri(uri: String) {
-                val parsed = Uri.parse(uri)
-                if (parsed.scheme?.lowercase() in WEB_SCHEMES) context.startActivity(Intent(Intent.ACTION_VIEW, parsed))
-            }
+            override fun openUri(uri: String) = openWebLink(context, uri)
         }
     }
     val body = TextStyle(color = color, fontSize = fontSize, lineHeight = fontSize * LINE_HEIGHT)
@@ -75,6 +73,12 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier, fontSize: TextUnit
             )
         }
     }
+}
+
+/** Opens an `http` or `https` link in the browser; any other link does nothing. */
+fun openWebLink(context: Context, uri: String) {
+    val parsed = Uri.parse(uri)
+    if (parsed.scheme?.lowercase() in WEB_SCHEMES) context.startActivity(Intent(Intent.ACTION_VIEW, parsed))
 }
 
 private val WEB_SCHEMES = setOf("http", "https")

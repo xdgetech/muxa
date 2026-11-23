@@ -7,7 +7,14 @@ import tech.xdge.muxa.v2.PlaceSpec
 import tech.xdge.muxa.v2.Workspace
 
 /** What a new Task starts from: an Inbox item's title, Workspace and note, or nothing. */
-data class TaskSeed(val title: String = "", val workspace: String? = null, val goal: String = "")
+data class TaskSeed(val title: String = "", val workspace: String? = null, val goal: String = "") {
+    companion object {
+        /** Start Task on [item]: a Decide item's proposal becomes the goal (ADR 0082). */
+        fun startTask(item: InboxItem) = TaskSeed(
+            item.title, item.workspace, item.proposal?.let { "${it.action} on ${it.target}:\n\n${it.content}" }.orEmpty(),
+        )
+    }
+}
 
 /** A `start-task` request, as the sheet builds it. */
 data class TaskDraft(

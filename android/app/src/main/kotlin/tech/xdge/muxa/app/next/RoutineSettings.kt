@@ -38,16 +38,26 @@ fun RoutineSettings(editor: SettingsEditor, ws: SettingsWorkspace) {
         ActionRow("+ Add Routine", "settings.routine.add", !editor.readOnly) { editing = RoutineDraft(isNew = true) }
     }
     val workers = editor.settings?.workers.orEmpty().map { it.name }
-    editing?.let { RoutineDialog(editor, ws.name, workers, it) { editing = null } }
+    editing?.let { RoutineDialog(editor, ws.name, workers, ws.bots.map { b -> b.name }, it) { editing = null } }
 }
 
 private fun scheduleText(r: SettingsRoutine): String {
     val whenText = r.schedule?.let { "cron $it" } ?: r.at?.let { "at $it" } ?: "only when run by hand"
-    return listOfNotNull(whenText, r.timezone, r.worker?.let { "worker $it" }, r.items?.let { "$it items" }).joinToString(" · ")
+    return listOfNotNull(
+        whenText, r.timezone, r.bot?.let { "Bot $it" }, r.worker?.let { "worker $it" }, r.items?.let { "$it items" },
+        "read only".takeIf { r.readOnly },
+    ).joinToString(" · ")
 }
 
 @Composable
-private fun RoutineDialog(editor: SettingsEditor, workspace: String, workers: List<String>, initial: RoutineDraft, close: () -> Unit) {
+private fun RoutineDialog(
+    editor: SettingsEditor,
+    workspace: String,
+    workers: List<String>,
+    bots: List<String>,
+    initial: RoutineDraft,
+    close: () -> Unit,
+) {
     var d by remember { mutableStateOf(initial) }
     FormDialog(
         if (d.isNew) "New Routine" else d.name, "settings.routine.form", d.problem == null, { editor.save(listOf(d.op(workspace))) }, close,
@@ -57,12 +67,16 @@ private fun RoutineDialog(editor: SettingsEditor, workspace: String, workers: Li
         Field(d.name, { d = d.copy(name = it) }, "Name", "routine.name", enabled = d.isNew, placeholder = "daily-digest")
         Choice(listOf(false, true), listOf("At a time", "Cron"), d.cron, "routine.kind") { d = d.copy(cron = it) }
         if (d.cron) {
-            Field(d.schedule, { d = d.copy(schedule = it) }, "Schedule", "routine.schedule", mono = true, placeholder = "0 9 * * 1-5")
+            Field(
+                d.schedule, { d = d.copy(schedule = it) }, "Schedule", "routine.schedule", mono = true, placeholder = "0 9 * * 1-5",
+                help = "It may run several times a day, at least 15 minutes apart: */30 9-18 * * 1-5.",
+            )
         } else {
             Field(d.at, { d = d.copy(at = it) }, "At", "routine.at", mono = true, placeholder = "09:00", help = "Empty: only when run by hand.")
         }
         Field(d.timezone, { d = d.copy(timezone = it) }, "Time zone", "routine.timezone", placeholder = "The host's")
-        WorkerPicker(workers, d.worker) { d = d.copy(worker = it) }
+        NamePicker("Worker", "routine.worker", workers, d.worker) { d = d.copy(worker = it) }
+        NamePicker("Bot", "routine.bot", bots, d.bot) { d = d.copy(bot = it) }
         Field(d.instructions, { d = d.copy(instructions = it) }, "Instruction file", "routine.file", mono = true,
             placeholder = "routines/${d.name.trim().ifEmpty { "name" }}.md", help = "In .muxa/.")
         if (!d.isNew && d.originalText == null) {
@@ -70,21 +84,24 @@ private fun RoutineDialog(editor: SettingsEditor, workspace: String, workers: Li
         }
         Field(d.text, { d = d.copy(text = it) }, "Instructions", "routine.instructions", mono = true, lines = INSTRUCTION_LINES)
         Field(d.items, { d = d.copy(items = it) }, "Items", "routine.items", number = true, help = "At most this many Inbox items per run. Empty: the default.")
+        SwitchField("Read only", "routine.readonly", d.readOnly) { d = d.copy(readOnly = it) }
+        Text("Claude Code may not edit files in this run's repos.", style = MaterialTheme.typography.bodySmall)
         SwitchField("Enabled", "routine.enabled", d.enabled) { d = d.copy(enabled = it) }
     }
 }
 
+/** One of [names] or none; each choice is tagged `<tag>.<name>`, none `<tag>.none`. */
 @Composable
-private fun WorkerPicker(workers: List<String>, picked: String?, pick: (String?) -> Unit) {
+fun NamePicker(title: String, tag: String, names: List<String>, picked: String?, pick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        SecondaryButton("Worker: ${picked ?: "none"}", { open = true }, Modifier.testTag("routine.worker"))
+        SecondaryButton("$title: ${picked ?: "none"}", { open = true }, Modifier.testTag(tag))
         DropdownMenu(open, { open = false }) {
-            for (w in listOf<String?>(null) + workers) {
-                DropdownMenuItem({ Text(w ?: "none") }, {
+            for (n in listOf<String?>(null) + names) {
+                DropdownMenuItem({ Text(n ?: "none") }, {
                     open = false
-                    pick(w)
-                }, Modifier.testTag("routine.worker.${w ?: "none"}"))
+                    pick(n)
+                }, Modifier.testTag("$tag.${n ?: "none"}"))
             }
         }
     }

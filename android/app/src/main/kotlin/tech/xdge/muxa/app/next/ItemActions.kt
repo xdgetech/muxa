@@ -133,7 +133,7 @@ fun ItemActions(
             if (item.place != null) {
                 SecondaryButton("Resume Task", { actions.resume(item, openTerminal, onDone) }, Modifier.testTag("detail.resume"), enabled = !actions.busy)
             } else if (item.kind in TASK_KINDS) {
-                SecondaryButton("Start Task", { newTask(TaskSeed(item.title, item.workspace)) }, Modifier.testTag("detail.starttask"))
+                SecondaryButton("Start Task", { newTask(TaskSeed.startTask(item)) }, Modifier.testTag("detail.starttask"))
             }
             if (item.kind == ItemKind.READ) {
                 SecondaryButton("Make it a Task", { newTask(TaskSeed(item.title, item.workspace, item.note.orEmpty())) }, Modifier.testTag("detail.maketask"))

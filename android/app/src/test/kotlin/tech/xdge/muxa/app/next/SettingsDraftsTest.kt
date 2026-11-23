@@ -4,12 +4,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
+import tech.xdge.muxa.v2.BotCount
+import tech.xdge.muxa.v2.BotSpec
 import tech.xdge.muxa.v2.ConnectionSpec
 import tech.xdge.muxa.v2.McpSpec
 import tech.xdge.muxa.v2.SecretState
+import tech.xdge.muxa.v2.SettingsBot
 import tech.xdge.muxa.v2.SettingsConnection
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsRoutine
+import tech.xdge.muxa.v2.SettingsWorkspace
 import tech.xdge.muxa.v2.WorkerLoop
 import tech.xdge.muxa.v2.WorkerSpec
 
@@ -70,5 +74,50 @@ class SettingsDraftsTest {
         assertEquals(WorkerLoop("make lint", maxAttempts = 4), spec.loop)
         assertNull(spec.workspaces)
         assertNull(WorkerDraft.of(w).copy(check = " ").spec().loop)
+    }
+
+    @Test
+    fun aRoutineKeepsItsBotAndReadOnly() {
+        val r = SettingsRoutine("scan", schedule = "*/30 9-18 * * 1-5", instructions = "routines/scan.md", bot = "pr-watch", readOnly = true)
+        val spec = RoutineDraft.of(r).spec()
+        assertEquals("pr-watch", spec.bot)
+        assertEquals(true, spec.readOnly)
+        assertNull(RoutineDraft.of(r).copy(bot = null).spec().bot)
+    }
+
+    @Test
+    fun aBotNameIsLowercaseAndItsDailyItemsAreFrom1To50() {
+        val d = BotDraft(true, "pr-watch", soul = "You watch PRs.")
+        assertNull(d.problem)
+        assertEquals("A name has only lowercase letters, digits, - and _.", d.copy(name = "PR Watch").problem)
+        assertEquals("Daily items is a number from 1 to 50.", d.copy(dailyItems = "51").problem)
+        assertEquals("Daily items is a number from 1 to 50.", d.copy(dailyItems = "0").problem)
+        assertNull(d.copy(dailyItems = " 50 ").problem)
+        assertEquals("The Soul is at most 12 KiB.", d.copy(soul = "x".repeat(12 * 1024 + 1)).problem)
+        val add = d.copy(description = " Watches PRs ", dailyItems = "5").op("app") as SettingsOp.BotAdd
+        assertEquals(BotSpec("pr-watch", "Watches PRs", null, 5, true), add.bot)
+        assertEquals("You watch PRs.", add.soulText)
+    }
+
+    @Test
+    fun aBotSendsItsSoulOnlyWhenItChanged() {
+        val b = SettingsBot("pr-watch", dailyItems = 3, soulText = "Old\n", memoryText = "- learned\n", memoryVersions = 2)
+        val same = BotDraft.of(b).op("app") as SettingsOp.BotUpdate
+        assertNull(same.soulText)
+        assertEquals(BotSpec("pr-watch", dailyItems = 3), same.bot)
+        assertEquals("New", (BotDraft.of(b).copy(soul = "New").op("app") as SettingsOp.BotUpdate).soulText)
+        assertNull((BotDraft.of(b.copy(soulText = null)).op("app") as SettingsOp.BotUpdate).soulText)
+    }
+
+    @Test
+    fun aBotsSummaryCountsItsRoutinesAndHowItsItemsEnded() {
+        val bot = SettingsBot("pr-watch", worker = "reviewer")
+        val ws = SettingsWorkspace(
+            "app", "/w",
+            routines = listOf(SettingsRoutine("scan", instructions = "s.md", bot = "pr-watch"), SettingsRoutine("other", instructions = "o.md")),
+        )
+        assertEquals("1 Routine · 3 a day · worker reviewer", botSummary(bot, ws, emptyList()))
+        val counts = listOf(BotCount("Personal", "pr-watch", 9, 9), BotCount("app", "pr-watch", 4, 1))
+        assertEquals("1 Routine · 3 a day · worker reviewer · 4 done · 1 deleted", botSummary(bot, ws, counts))
     }
 }

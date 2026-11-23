@@ -65,9 +65,14 @@ data class DemoContent(
     val losesWork: Map<String, String> = emptyMap(),
     /** What `settings` answers first; `settings-update` changes a copy in memory. */
     val settings: Settings = Settings("1"),
+    /** How the Bots' items ended before; Done and Delete add to them. */
+    val botCounts: List<BotCount> = emptyList(),
 ) {
     companion object {
-        /** Two Tasks (one waits on the user), a shell, every Inbox kind, a v1 item to resume (`d9`), and three Routines. Approving `d8` needs force. */
+        /**
+         * Two Tasks (one waits on the user), a shell, every Inbox kind, a v1 item to resume (`d9`), and four Routines.
+         * Approving `d8` needs force. The Bot `pr-watch` owns the Routine `scan` and made `d10` and `d11`.
+         */
         val STANDARD: DemoContent = standardContent()
     }
 }
@@ -87,7 +92,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private val losesWork = content.losesWork
     private var nextChat = 1
     private val settings = DemoSettings(content.settings)
-    private var inbox = Inbox(1, content.inbox, emptyList())
+    private var inbox = Inbox(1, content.inbox, emptyList(), content.botCounts)
 
     /** Uploads by folder and file name, so a second one with the same name gets a number. */
     private val uploads = mutableSetOf<String>()
@@ -185,7 +190,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             }
             "inbox-done" -> change(id) { i ->
                 val done = i.items.firstOrNull { it.id == item } ?: return@change null
-                i.copy(items = i.items - done, done = listOf(done) + i.done)
+                i.copy(items = i.items - done, done = listOf(done) + i.done, bots = counted(i.bots, done, deleted = false))
             }
             "inbox-reopen" -> change(id) { i ->
                 val open = i.done.firstOrNull { it.id == item } ?: return@change null
@@ -193,7 +198,11 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             }
             "inbox-delete" -> change(id) { i ->
                 if (i.items.none { it.id == item } && i.done.none { it.id == item }) return@change null
-                i.copy(items = i.items.filter { it.id != item }, done = i.done.filter { it.id != item })
+                val open = i.items.firstOrNull { it.id == item }
+                i.copy(
+                    items = i.items.filter { it.id != item }, done = i.done.filter { it.id != item },
+                    bots = open?.let { counted(i.bots, it, deleted = true) } ?: i.bots,
+                )
             }
             "task-review" -> {
                 val t = terminals.firstOrNull { it.id == m.str("terminal") }
@@ -528,6 +537,15 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         null
     }
 
+    /** As the daemon counts: a Bot's item that ends Done, or is deleted while open. */
+    private fun counted(counts: List<BotCount>, item: InboxItem, deleted: Boolean): List<BotCount> {
+        val bot = item.bot ?: return counts
+        val ws = item.workspace ?: return counts
+        val old = counts.firstOrNull { it.workspace == ws && it.bot == bot } ?: BotCount(ws, bot, 0, 0)
+        val new = if (deleted) old.copy(deleted = old.deleted + 1) else old.copy(done = old.done + 1)
+        return counts.filter { it !== old } + new
+    }
+
     private fun newId() = "d${nextItem++}"
 
     private fun reply(id: Long, vararg fields: Pair<String, JsonElement>) = send(buildJsonObject {
@@ -584,13 +602,18 @@ private fun standardContent(): DemoContent {
         terminal: String? = null,
         routine: RoutineRef? = null,
         place: ItemPlace? = null,
+        links: List<ItemLink> = emptyList(),
+        proposal: ItemProposal? = null,
+        bot: String? = null,
     ) = InboxItem(
         id, kind, title, note, workspace, due, created = 1_764_000_000, source = source, terminal = terminal, routine = routine,
-        place = place,
+        place = place, links = links, proposal = proposal, bot = bot,
     )
 
-    fun routine(name: String, at: String?, last: RoutineLast?) =
-        Routine("app", name, enabled = true, at = at, timezone = at?.let { "Europe/Berlin" }, last = last)
+    fun routine(name: String, at: String?, last: RoutineLast?, schedule: String? = null, bot: String? = null) =
+        Routine("app", name, enabled = true, at = at, timezone = at?.let { "Europe/Berlin" }, schedule = schedule, last = last, bot = bot)
+
+    val scan = RoutineRef("app", "scan")
 
     val everyRoutine = listOf("dependency-digest", "nightly-backup", "release-notes")
     return DemoContent(
@@ -631,11 +654,23 @@ private fun standardContent(): DemoContent {
                 note = "From the old muxa. Resume Task starts the agent where it worked.", source = "v1",
                 place = ItemPlace("app", "/demo/tasks/tidy-the-release-notes-t-1a2b3c"),
             ),
+            item(
+                "d10", ItemKind.DECIDE, "Approve the vite 6.1 bump?", note = "CI passed. The changelog lists no breaking change.",
+                source = "routine", routine = scan, bot = "pr-watch",
+                links = listOf(ItemLink("https://github.com/example/app/pull/57", "PR #57: bump vite to 6.1")),
+                proposal = ItemProposal("review-approve", "example/app#57", "CI passed and the changelog lists no breaking change. Approving."),
+            ),
+            item(
+                "d11", ItemKind.REPLY, "Answer Sam on PR #61", note = "Sam asks why the retry waits 30 s.", due = "2026-11-26",
+                source = "routine", routine = scan, bot = "pr-watch",
+                links = listOf(ItemLink("https://github.com/example/app/pull/61")),
+            ),
         ),
         routines = listOf(
             routine("dependency-digest", "09:00", RoutineLast(1_764_000_000, ok = true, published = 1)),
             routine("nightly-backup", "02:00", RoutineLast(1_764_000_000, ok = false, reason = "gh login expired.")),
             routine("release-notes", null, null),
+            routine("scan", "09:00", RoutineLast(1_764_000_000, ok = true, published = 2), schedule = SCAN_SCHEDULE, bot = "pr-watch"),
         ),
         workspaces = listOf(
             Workspace(
@@ -689,8 +724,11 @@ private fun standardContent(): DemoContent {
         ),
         losesWork = mapOf("d8" to "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"),
         settings = DEMO_SETTINGS,
+        botCounts = listOf(BotCount("app", "pr-watch", done = 4, deleted = 1)),
     )
 }
+
+private const val SCAN_SCHEDULE = "*/30 9-18 * * 1-5"
 
 private val DEMO_PLAN = """
     # Plan
@@ -735,6 +773,18 @@ private val DEMO_SETTINGS = Settings(
                 SettingsRoutine(
                     "dependency-digest", at = "09:00", timezone = "Europe/Berlin", instructions = "routines/dependency-digest.md",
                     instructionsText = "List the dependency updates of the week.\n",
+                ),
+                SettingsRoutine(
+                    "scan", schedule = SCAN_SCHEDULE, timezone = "Europe/Berlin", instructions = "routines/scan.md",
+                    instructionsText = "Look at the open PRs of example/app since the last run.\n", bot = "pr-watch", readOnly = true,
+                ),
+            ),
+            bots = listOf(
+                SettingsBot(
+                    "pr-watch", "Watches the app's open PRs", dailyItems = 3,
+                    soulText = "You watch the open PRs of example/app.\nPropose a review only when CI passed. Write short items.\n",
+                    memoryText = "- Sam reviews the auth code.\n- Dependabot PRs merge on Fridays.\n",
+                    memoryVersions = 1,
                 ),
             ),
         ),

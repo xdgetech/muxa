@@ -57,7 +57,7 @@ class DemoTest {
         withTimeout(10_000) {
             val c = open()
             val (routines, _) = c.routines()
-            assertEquals(listOf("dependency-digest", "nightly-backup", "release-notes"), routines.map { it.name })
+            assertEquals(listOf("dependency-digest", "nightly-backup", "release-notes", "scan"), routines.map { it.name })
             c.runRoutine("app", "release-notes")
             try {
                 c.runRoutine("app", "release-notes")
@@ -391,6 +391,23 @@ class DemoTest {
     }
 
     @Test
+    fun aBotsItemsCarryLinksAndAProposalAndCountWhenDone() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val inbox = c.inbox()
+            val decide = inbox.items.first { it.id == "d10" }
+            assertEquals("pr-watch", decide.bot)
+            assertEquals("https://github.com/example/app/pull/57", decide.links.single().url)
+            assertEquals("example/app#57", decide.proposal?.target)
+            assertEquals(listOf(BotCount("app", "pr-watch", 4, 1)), inbox.bots)
+            assertEquals("pr-watch", c.routines().first.first { it.name == "scan" }.bot)
+            assertEquals(listOf(BotCount("app", "pr-watch", 5, 1)), c.inbox(V2Request.InboxDone("d10")).bots)
+            assertEquals(listOf(BotCount("app", "pr-watch", 5, 2)), c.inbox(V2Request.InboxDelete("d11")).bots)
+            c.close()
+        }
+    }
+
+    @Test
     fun theDemoShowsItsSettings() = runBlocking {
         withTimeout(10_000) {
             val c = open()
@@ -400,7 +417,11 @@ class DemoTest {
             val app = s.workspaces[0]
             assertEquals(SecretState.SET, app.connections.single().secret)
             assertEquals("docs", app.mcp.single().name)
-            assertTrue(app.routines.single().instructionsText.orEmpty().isNotEmpty())
+            assertTrue(app.routines.all { it.instructionsText.orEmpty().isNotEmpty() })
+            val bot = app.bots.single()
+            assertEquals("pr-watch", bot.name)
+            assertEquals(1, bot.memoryVersions)
+            assertEquals("pr-watch", app.routines.first { it.name == "scan" }.bot)
             assertEquals(listOf("reviewer"), s.workers.map { it.name })
             c.close()
         }

@@ -183,6 +183,68 @@ class NextTest {
     }
 
     @Test
+    fun aBotsDecideItemShowsItsLinkProposalAndBot() {
+        launch()
+        compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d10"))
+        compose.onNodeWithTag("item.d10.bot", useUnmergedTree = true).assert(hasText("from pr-watch"))
+        compose.onNodeWithTag("item.d10").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.proposal"), TIMEOUT)
+        compose.onNodeWithTag("detail.bot", useUnmergedTree = true).assert(hasText("from pr-watch"))
+        compose.onNodeWithTag("detail.link.0").performScrollTo().assert(hasText("PR #57: bump vite to 6.1"))
+        compose.onNodeWithTag("detail.proposal.action", useUnmergedTree = true).assert(hasText("review-approve"))
+        compose.onNodeWithTag("detail.proposal.target", useUnmergedTree = true).assert(hasText("example/app#57"))
+        compose.onNodeWithTag("detail.proposal.content", useUnmergedTree = true).assert(hasText("Approving.", substring = true))
+        compose.onNodeWithTag("detail.starttask").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.goal"), TIMEOUT)
+        compose.onNodeWithTag("task.goal").assert(hasText("review-approve on example/app#57:", substring = true))
+    }
+
+    @Test
+    fun routinesAreGroupedByTheirBot() {
+        launch()
+        compose.onNodeWithTag("home.part.Routines").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("routines.group.pr-watch"), TIMEOUT)
+        compose.onNodeWithTag("routine.scan").assertExists()
+        compose.onNodeWithTag("routines.group.other").assertExists()
+    }
+
+    @Test
+    fun aBotWithASoulIsAdded() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.BOTS").performClick()
+        compose.onNodeWithTag("settings.bot.app.pr-watch").performScrollTo().assert(hasText("4 done · 1 deleted", substring = true))
+        compose.onNodeWithTag("settings.bot.add").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.name"), TIMEOUT)
+        compose.onNodeWithTag("bot.name").performTextInput("issue-triage")
+        compose.onNodeWithTag("bot.description").performTextInput("Sorts new issues")
+        compose.onNodeWithTag("bot.soul").performScrollTo().performTextInput("You sort the new issues of example/app.")
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.bot.app.issue-triage"), TIMEOUT)
+        compose.onNodeWithTag("settings.bot.app.issue-triage").performScrollTo().assert(hasText("Sorts new issues", substring = true))
+        compose.onNodeWithTag("settings.bot.app.issue-triage").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.soul"), TIMEOUT)
+        compose.onNodeWithTag("bot.soul").assert(hasText("You sort the new issues of example/app."))
+    }
+
+    @Test
+    fun aRoutinesBotAndReadOnlyAreSaved() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.ROUTINES").performClick()
+        compose.onNodeWithTag("settings.routine.app.dependency-digest").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("routine.bot"), TIMEOUT)
+        compose.onNodeWithTag("routine.bot").performScrollTo().performClick()
+        compose.onNodeWithTag("routine.bot.pr-watch").performClick()
+        compose.onNodeWithTag("routine.readonly").performScrollTo().performClick()
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("routine.bot"), TIMEOUT)
+        compose.onNodeWithTag("settings.routine.app.dependency-digest").performScrollTo()
+            .assert(hasText("Bot pr-watch", substring = true))
+            .assert(hasText("read only", substring = true))
+    }
+
+    @Test
     fun requestChangesTypesTheCommentToTheAgent() {
         launch()
         compose.onNodeWithTag("item.d1").performClick()

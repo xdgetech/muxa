@@ -117,6 +117,8 @@ data class Routine(
     @SerialName("next_due") val nextDue: Long? = null,
     @SerialName("running_since") val runningSince: Long? = null,
     val last: RoutineLast? = null,
+    /** The Bot of [workspace] that owns it (ADR 0082). */
+    val bot: String? = null,
 ) {
     val id: String get() = "$workspace/$name"
 }

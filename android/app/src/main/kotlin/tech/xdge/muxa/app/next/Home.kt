@@ -196,8 +196,22 @@ private fun RoutineList(model: NextModel, selected: String?, select: (String) ->
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        items(model.routines, key = { it.id }) { r ->
-            RoutineRow(r, Modifier.clip(RoundedCornerShape(14.dp)).background(Palette.raised).selectable(r.id == selected) { select(r.id) })
+        val groups = routineGroups(model.routines)
+        for (group in groups) {
+            // Headers only once some Routine has a Bot.
+            if (groups.size > 1 || group.bot != null) {
+                item(key = "group-" + (group.bot ?: "")) {
+                    Text(
+                        group.bot ?: "Other",
+                        Modifier.padding(start = 6.dp, top = 10.dp, bottom = 2.dp).testTag("routines.group.${group.bot ?: "other"}"),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Palette.textSecondary,
+                    )
+                }
+            }
+            items(group.routines, key = { it.id }) { r ->
+                RoutineRow(r, Modifier.clip(RoundedCornerShape(14.dp)).background(Palette.raised).selectable(r.id == selected) { select(r.id) })
+            }
         }
         if (model.routineProblems.isNotEmpty()) {
             item { Text("Cannot read", Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall) }

@@ -31,7 +31,7 @@ import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsWorkspace
 import tech.xdge.muxa.v2.Workspace
 
-private enum class WorkspaceTab(val title: String) { GENERAL("General"), CONNECTIONS("Connections"), MCP("MCP"), ROUTINES("Routines") }
+private enum class WorkspaceTab(val title: String) { GENERAL("General"), CONNECTIONS("Connections"), MCP("MCP"), ROUTINES("Routines"), BOTS("Bots") }
 
 /** One Workspace's settings in tabs. [usage] is its entry of `workspaces`: who uses what, and when. */
 @Composable
@@ -57,6 +57,7 @@ fun WorkspaceSettings(editor: SettingsEditor, ws: SettingsWorkspace, usage: Work
             WorkspaceTab.CONNECTIONS -> ConnectionSettings(editor, ws, usage, model)
             WorkspaceTab.MCP -> McpSettings(editor, ws, usage, model)
             WorkspaceTab.ROUTINES -> RoutineSettings(editor, ws)
+            WorkspaceTab.BOTS -> BotSettings(editor, ws, model.inbox.bots)
         }
     }
 }

@@ -149,6 +149,7 @@ fun ItemRow(item: InboxItem, now: Long, modifier: Modifier = Modifier, selected:
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(whereFrom(item), Modifier.weight(1f), fontSize = 12.5.sp, color = Palette.textSecondary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+                item.bot?.let { BotChip(it, Modifier.testTag("item.${item.id}.bot")) }
                 if (item.isLater(now)) Icon(Icons.later, "Later", Modifier.size(14.dp), tint = Palette.textSecondary)
                 item.due?.let { DueLabel(it) }
             }
@@ -193,6 +194,7 @@ fun InboxItemPane(
             KindChip(item.kind, Modifier.width(56.dp))
             val meta = listOfNotNull(position?.let { "#$it" }, source(item), item.workspace).joinToString(" · ")
             Text(meta, Modifier.weight(1f, fill = false), fontSize = 13.sp, color = Palette.textSecondary, maxLines = 1)
+            item.bot?.let { BotChip(it, Modifier.testTag("detail.bot")) }
             item.due?.let { DueLabel(it) }
         }
         Text(item.title, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("detail.title"))
@@ -206,6 +208,8 @@ fun InboxItemPane(
                 MarkdownText(note, Modifier.testTag("detail.note"))
             }
         }
+        if (item.links.isNotEmpty()) ItemLinks(item.links)
+        item.proposal?.let { ProposalBox(it) }
         if (position == null) {
             SecondaryButton("Reopen", { model.inbox(V2Request.InboxReopen(item.id)) })
         } else {

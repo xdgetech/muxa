@@ -1,8 +1,10 @@
 package tech.xdge.muxa.app.next
 
+import tech.xdge.muxa.v2.BotSpec
 import tech.xdge.muxa.v2.ConnectionSpec
 import tech.xdge.muxa.v2.McpSpec
 import tech.xdge.muxa.v2.RoutineSpec
+import tech.xdge.muxa.v2.SettingsBot
 import tech.xdge.muxa.v2.SettingsConnection
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsRoutine
@@ -119,6 +121,9 @@ data class RoutineDraft(
     val items: String = "",
     val project: String? = null,
     val directWrites: Boolean = false,
+    /** The Bot that owns it; null: none. */
+    val bot: String? = null,
+    val readOnly: Boolean = false,
 ) {
     val problem: String?
         get() = when {
@@ -138,6 +143,8 @@ data class RoutineDraft(
         enabled = enabled,
         items = items.trim().toIntOrNull(),
         directWrites = directWrites,
+        bot = bot,
+        readOnly = readOnly,
     )
 
     /** The text goes only when it is new or changed, so an unreadable file is never emptied. */
@@ -150,7 +157,48 @@ data class RoutineDraft(
         fun of(r: SettingsRoutine) = RoutineDraft(
             false, r.name, r.schedule != null, r.at.orEmpty(), r.schedule.orEmpty(), r.timezone.orEmpty(), r.worker,
             r.instructions, r.instructionsText.orEmpty(), r.instructionsText, r.enabled, r.items?.toString().orEmpty(),
-            r.project, r.directWrites,
+            r.project, r.directWrites, r.bot, r.readOnly,
+        )
+    }
+}
+
+/** A Bot's fields (ADR 0082). [soul] is its `soul.md`; blank [dailyItems] is the host's default, 3. */
+data class BotDraft(
+    val isNew: Boolean,
+    val name: String = "",
+    val description: String = "",
+    val worker: String? = null,
+    val dailyItems: String = "",
+    val enabled: Boolean = true,
+    val soul: String = "",
+    /** The Soul as read; null when it could not be read. A new Bot has none. */
+    val originalSoul: String? = null,
+) {
+    val problem: String?
+        get() = when {
+            name.isBlank() -> "Give it a name."
+            !BOT_NAME.matches(name.trim()) -> "A name has only lowercase letters, digits, - and _."
+            dailyItems.isNotBlank() && dailyItems.trim().toIntOrNull() !in DAILY_ITEMS -> "Daily items is a number from 1 to 50."
+            soul.toByteArray(Charsets.UTF_8).size > SOUL_BYTES -> "The Soul is at most 12 KiB."
+            else -> null
+        }
+
+    fun spec() = BotSpec(name.trim(), description.trim().ifEmpty { null }, worker, dailyItems.trim().toIntOrNull(), enabled)
+
+    /** As a Routine's text: the Soul goes only when it is new or changed, so an unreadable file is never emptied. */
+    fun op(workspace: String): SettingsOp {
+        val sent = soul.takeIf { isNew || it != (originalSoul ?: "") }
+        return if (isNew) SettingsOp.BotAdd(workspace, spec(), sent) else SettingsOp.BotUpdate(workspace, spec(), sent)
+    }
+
+    companion object {
+        private val BOT_NAME = Regex("[a-z0-9_-]+")
+        private val DAILY_ITEMS = 1..50
+        private const val SOUL_BYTES = 12 * 1024
+
+        fun of(b: SettingsBot) = BotDraft(
+            false, b.name, b.description.orEmpty(), b.worker, b.dailyItems?.toString().orEmpty(), b.enabled,
+            b.soulText.orEmpty(), b.soulText,
         )
     }
 }
