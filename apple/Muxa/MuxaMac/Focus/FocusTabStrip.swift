@@ -16,6 +16,15 @@ struct FocusTabStrip: View {
     }
 
     var body: some View {
+        // Scrolls when the header is short, so the mode switch and Inbox keep their size.
+        ScrollView(.horizontal, showsIndicators: false) { strip }
+            .frame(minWidth: 0, maxHeight: .infinity, alignment: .leading)
+            .layoutPriority(-1)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(active?.workspace.map { "Tasks in \($0)" } ?? "Tasks")
+    }
+
+    private var strip: some View {
         HStack(spacing: 2) {
             ForEach(tasks) { t in tab(t, on: t.id == active?.id) }
             NewTaskButton(id: "focus.newtask", workspace: active?.workspace)
@@ -28,9 +37,6 @@ struct FocusTabStrip: View {
                 .help("New Task (\(Shortcut.newTask.display))")
         }
         .frame(maxHeight: .infinity, alignment: .leading)
-        .clipped()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(active?.workspace.map { "Tasks in \($0)" } ?? "Tasks")
     }
 
     private func tab(_ t: MuxaV2.Terminal, on: Bool) -> some View {

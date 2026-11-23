@@ -50,7 +50,8 @@ struct ModeSwitch: View {
             }
         }
         .padding(3)
-        .frame(width: 360)
+        // Its own width, so the header's Task tabs are what gives way.
+        .fixedSize()
         .background(Palette.ground, in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Palette.border))
     }
@@ -63,7 +64,8 @@ struct ModeSwitch: View {
             }
             .font(.system(size: 13))
             .foregroundStyle(on ? Palette.text : Palette.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: 30)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 30)
             .background(on ? Palette.selected : .clear, in: RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
         }
