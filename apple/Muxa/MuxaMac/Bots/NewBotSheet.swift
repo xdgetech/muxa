@@ -49,7 +49,10 @@ struct NewBotSheet: View {
                     }
                 }
                 .raisedCard()
-                Text(nameHint).font(.system(size: 12)).foregroundStyle(nameTaken ? Palette.late : Palette.textTertiary)
+                Text(hint.text)
+                    .font(.system(size: 12))
+                    .foregroundStyle(hint.problem ? Palette.late : Palette.textTertiary)
+                    .accessibilityIdentifier("newbot.hint")
                 if !workspace.isEmpty {
                     Text("It runs with \(workspace)'s access: its connections and MCP servers.")
                         .font(.system(size: 12))
@@ -58,8 +61,17 @@ struct NewBotSheet: View {
                 SaveError(text: error, id: "newbot.error")
             }
         }
-        .onAppear(perform: pickWorkspace)
+        .onAppear {
+            pickWorkspace()
+            // The Bots page may show before the settings are read; the Workspace list needs them.
+            if model.settings.settings == nil { Task { await model.settings.load() } }
+        }
         .onChange(of: workspaces) { pickWorkspace() }
+        // A Bot's name is lowercase; typing capitals or spaces would only leave Create disabled.
+        .onChange(of: name) { _, typed in
+            let fixed = typed.lowercased().replacingOccurrences(of: " ", with: "-")
+            if fixed != typed { name = fixed }
+        }
     }
 
     /// The picked Bot's Workspace, else the first, once the settings are read.
@@ -83,8 +95,20 @@ struct NewBotSheet: View {
         BotSpec.isValidName(trimmedName) && !nameTaken && !workspace.isEmpty && !model.settings.readOnly
     }
 
-    private var nameHint: String {
-        nameTaken ? "\(workspace) has a Bot named \(trimmedName)." : "Lowercase letters, digits, - and _."
+    /// Why Create is disabled, first reason first; else the naming rule.
+    private var hint: (text: String, problem: Bool) {
+        if model.settings.readOnly {
+            return ("The host's settings are read only, so no Bot can be added from here.", true)
+        }
+        if workspaces.isEmpty {
+            if let failure = model.settings.loadError { return ("The settings could not be read: \(failure)", true) }
+            return ("Reading the host's Workspaces…", false)
+        }
+        if nameTaken { return ("\(workspace) has a Bot named \(trimmedName).", true) }
+        if !trimmedName.isEmpty && !BotSpec.isValidName(trimmedName) {
+            return ("A name is 1 to 64 lowercase letters, digits, - and _.", true)
+        }
+        return ("Lowercase letters, digits, - and _.", false)
     }
 
     /// `bot-add`, then the first talk; a talk that cannot start leaves the Bot added.
