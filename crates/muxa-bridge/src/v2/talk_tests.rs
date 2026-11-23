@@ -114,6 +114,23 @@ fn the_brief_carries_the_soul_memory_routines_and_the_output() {
 }
 
 #[test]
+fn the_brief_says_what_runs_can_use_and_what_the_daily_limit_does() {
+    let mut w = ws();
+    w.mcp = serde_json::from_value(json!([{"name": "linear", "command": "npx"}])).unwrap();
+    let text = brief(&w, "b");
+    for part in [
+        "not Claude cloud routines",
+        "MCP servers of this Workspace: linear.",
+        "Connections of this Workspace, as environment variables: none.",
+        "claude.ai connectors do not",
+        "\"N more\"",
+        "one item per `key`",
+    ] {
+        assert!(text.contains(part), "{part}");
+    }
+}
+
+#[test]
 fn an_output_too_big_or_without_a_summary_is_refused() {
     assert!(parse(br#"{"memory": "ok"}"#).is_ok());
     assert!(parse(br#"{"proposal": {"summary": " ", "ops": []}}"#).is_err());

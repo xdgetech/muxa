@@ -220,6 +220,7 @@ pub fn brief(ws: &SettingsWorkspace, bot: &str) -> String {
             others.join("\n")
         ));
     }
+    out.push_str(&reach(ws));
     out.push_str(&format!(
         r#"
 ### How to change your settings
@@ -247,6 +248,35 @@ Routines you add are added turned off; the user turns them on. After you write t
         ws = ws.name
     ));
     out
+}
+
+/// Pure. What a Bot's Routine runs can use, so a talk does not have to guess.
+fn reach(ws: &SettingsWorkspace) -> String {
+    let names = |v: Vec<String>| {
+        if v.is_empty() {
+            "none".to_owned()
+        } else {
+            v.join(", ")
+        }
+    };
+    let connections = names(
+        ws.connections
+            .iter()
+            .map(|c| format!("{} (${})", c.spec.name, c.spec.env))
+            .collect(),
+    );
+    let mcp = names(ws.mcp.iter().map(|m| m.name.clone()).collect());
+    format!(
+        r#"
+### What your Routine runs can use
+
+Your Routines are muxa Routines: muxa runs Claude Code on this host on their schedule. They are not Claude cloud routines.
+- Connections of this Workspace, as environment variables: {connections}.
+- MCP servers of this Workspace: {mcp}. Only these load; the user's claude.ai connectors do not. A service with no connection or server here cannot be read; tell the user to add one in Settings › Connections or MCP servers.
+- Each run puts its items in the user's Inbox, one item per `key`; a key already published is skipped, so an item is never rewritten.
+- `daily_items` (1 to 50, now in your settings) is how many of your items reach the Inbox each day; the rest go into one "N more" item. A Bot that reports every to-do needs a higher number: propose it with bot-update.
+"#
+    )
 }
 
 fn text_or<'a>(text: Option<&'a str>, empty: &'a str) -> &'a str {
