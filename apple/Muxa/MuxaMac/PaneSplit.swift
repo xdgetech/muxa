@@ -48,13 +48,19 @@ struct PaneSplit: View {
         let chat = index == 0 && nav.showChat && t.isTaskAgent
         return VStack(spacing: 0) {
             header(t, index: index, active: active)
-            if chat {
-                ChatPanel(terminal: t).id("chat.\(t.id)")
-                    .background(Palette.surface)
-                    .onTapGesture { nav.activate(index) }
-            } else {
-                TerminalPane(terminal: t, active: active, focusRequest: nav.focusRequest) { nav.activate(index) }
+            // The terminal stays attached under Chat, at the pane's size: Chat's
+            // answers are typed into its channel, which exists only while attached.
+            ZStack {
+                TerminalPane(terminal: t, active: active && !chat, focusRequest: nav.focusRequest) { nav.activate(index) }
                     .id(t.id)
+                    .allowsHitTesting(!chat)
+                    .accessibilityHidden(chat)
+                if chat {
+                    ChatPanel(terminal: t).id("chat.\(t.id)")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Palette.surface)
+                        .onTapGesture { nav.activate(index) }
+                }
             }
         }
         .frame(minWidth: 240)

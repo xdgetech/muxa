@@ -114,6 +114,17 @@ struct BotConversation: View {
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let error = model.requestError {
+                // A send that could not reach the agent says so here, where it was typed.
+                Text(error)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.late)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Palette.surface)
+                    .accessibilityIdentifier("bot.conversation.error")
+            }
         }
         .background(Palette.ground)
         .accessibilityElement(children: .contain)
@@ -125,12 +136,26 @@ struct BotConversation: View {
         chrome.botView == .chat && !terminal.isTaskAgent ? .terminal : chrome.botView
     }
 
-    @ViewBuilder
+    /// The terminal stays attached under Chat and the Reader, at the pane's
+    /// size: Chat's answers are typed into its channel, which exists only while
+    /// the terminal is attached.
     private var content: some View {
-        switch view {
-        case .chat: ChatPanel(terminal: terminal).id("chat.\(terminal.id)").background(Palette.surface)
-        case .terminal: TerminalPane(terminal: terminal).id(terminal.id)
-        case .reader: ReaderPanel(terminal: terminal).id("reader.\(terminal.id)").background(Palette.surface)
+        ZStack {
+            TerminalPane(terminal: terminal, active: view == .terminal).id(terminal.id)
+                .allowsHitTesting(view == .terminal)
+                .accessibilityHidden(view != .terminal)
+            switch view {
+            case .chat:
+                ChatPanel(terminal: terminal).id("chat.\(terminal.id)")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Palette.surface)
+            case .reader:
+                ReaderPanel(terminal: terminal).id("reader.\(terminal.id)")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Palette.surface)
+            case .terminal:
+                EmptyView()
+            }
         }
     }
 
