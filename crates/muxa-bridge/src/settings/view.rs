@@ -45,6 +45,8 @@ pub struct FileWorkspace {
     connection: Vec<ConnectionSpec>,
     #[serde(default)]
     mcp: Vec<McpSpec>,
+    #[serde(default)]
+    claude_connectors: bool,
 }
 
 #[derive(Deserialize)]
@@ -325,6 +327,7 @@ pub fn workspace(
         task_loop: w.task_loop.map(|l| SettingsLoop { checks: l.checks }),
         routines_enabled: gate.enabled,
         direct_writes: gate.direct_writes,
+        claude_connectors: w.claude_connectors,
         connections,
         mcp: w.mcp,
         routines: list,

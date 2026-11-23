@@ -85,27 +85,32 @@ pub fn write(dir: &Path, servers: &[McpServer], known: &[Connection]) -> Result<
     git::write_file(dir, FILE, &config_text(servers, known))
 }
 
-/// The flags for a shell line.
-pub fn shell_flags(config: &Path) -> String {
+/// The flags for a shell line. `strict` keeps every other MCP server out,
+/// the user's claude.ai connectors too (ADR 0087).
+pub fn shell_flags(config: &Path, strict: bool) -> String {
     let path = config.to_string_lossy();
-    format!(
-        "{CONFIG_FLAG} '{}' {STRICT_FLAG}",
-        path.replace('\'', "'\\''")
-    )
+    let strict = if strict {
+        format!(" {STRICT_FLAG}")
+    } else {
+        String::new()
+    };
+    format!("{CONFIG_FLAG} '{}'{strict}", path.replace('\'', "'\\''"))
 }
 
 /// `command` with the flags, before any prompt the caller adds.
-pub fn with_flags(command: LaunchCommand, config: &Path) -> LaunchCommand {
+pub fn with_flags(command: LaunchCommand, config: &Path, strict: bool) -> LaunchCommand {
     match command {
         LaunchCommand::Shell(line) => {
-            LaunchCommand::Shell(format!("{line} {}", shell_flags(config)))
+            LaunchCommand::Shell(format!("{line} {}", shell_flags(config, strict)))
         }
         LaunchCommand::Native { program, mut args } => {
             args.extend([
                 CONFIG_FLAG.to_owned(),
                 config.to_string_lossy().into_owned(),
-                STRICT_FLAG.to_owned(),
             ]);
+            if strict {
+                args.push(STRICT_FLAG.to_owned());
+            }
             LaunchCommand::Native { program, args }
         }
     }

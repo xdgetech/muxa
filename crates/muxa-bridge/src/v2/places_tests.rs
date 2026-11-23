@@ -57,6 +57,7 @@ fn workspace(name: &str) -> Workspace {
         routines: None,
         connections: Vec::new(),
         mcp: Vec::new(),
+        claude_connectors: false,
     }
 }
 

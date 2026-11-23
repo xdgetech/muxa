@@ -346,7 +346,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 - `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
 - Paths and schedules are shown as written in the files, `~/` included.
 
-`SettingsWorkspace`: `{"name","root","repos":[...],"found_repos":[...],"hidden_repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"bots"?:[SettingsBot...],"routines_problem"}`. `repos` are the listed ones; `found_repos` are the repos the scan finds under the root (ADR 0031), hidden ones too, as named under it; `hidden_repos` are found repos the Workspace leaves out of its repo list, so `workspaces`, Start Task and `all-read` skip them. A listed repo is never hidden.
+`SettingsWorkspace`: `{"name","root","repos":[...],"found_repos":[...],"hidden_repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","claude_connectors","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"bots"?:[SettingsBot...],"routines_problem"}`. `repos` are the listed ones; `found_repos` are the repos the scan finds under the root (ADR 0031), hidden ones too, as named under it; `hidden_repos` are found repos the Workspace leaves out of its repo list, so `workspaces`, Start Task and `all-read` skip them. A listed repo is never hidden. `claude_connectors` (`claude_connectors = true` in the `[[workspace]]` table, ADR 0087): agents of a Workspace with MCP servers get them without `--strict-mcp-config`, so the user's claude.ai connectors load too.
 - `park_after`: `"30m"`, `"12h"`, `"2d"`, or `null` (ADR 0034). `agent.command`: `null` means the daemon's `--task-command`.
 - `agent.env` lists the keys of `[workspace.agent] env` with `"set": true`. A value never crosses the wire from the server.
 - `loop`: `null` (no Task Loops), else `{"checks":"any"}` or `{"checks":["make test",...]}`.
@@ -365,7 +365,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 
 `SettingsBot`: a `BotSpec` plus `"soul_text"` (`.muxa/bots/<name>/soul.md`, empty when there is none), `"memory_text"` (`memory.md`, which the Bot's runs write) `"memory_versions"`, how many earlier memories `bot-memory-restore` can bring back, and `"memory_history"`: `[{"version","at"}]`, newest first, `at` in Unix seconds when that memory was replaced (absent from servers before ADR 0086). A text is `null` when it cannot be read. The Soul counts in `revision`; the Memory does not, so a run does not make a client's edit stale.
 
-`BotSpec`: `{"name","description"?,"worker"?,"daily_items"?,"enabled","members"?,"handoffs_per_day"?}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. `daily_items` is 1 to 50, absent 3. A turned-off Bot turns off its Routines. `members` makes the Bot a team lead (ADR 0085): up to 6 other Bots of the same file, none of which leads a team. `handoffs_per_day` is 1 to 50, absent 10.
+`BotSpec`: `{"name","description"?,"worker"?,"daily_items"?,"enabled","members"?,"handoffs_per_day"?}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. `daily_items` is 1 to 50, absent 3. A turned-off Bot turns off its Routines. `members` makes the Bot a team lead (ADR 0085): up to 6 other Bots of the same file, none of which leads a team. `handoffs_per_day` is 1 to 50, absent 10. A Bot has its Workspace's access only (ADR 0087): it, its Routines, its talks and its members run as the Workspace's agent, and a `worker` on the Bot or on its Routines is ignored. Clients stop offering it.
 
 `SettingsWorker`, also `WorkerSpec` in ops: `{"name","description"?,"agent","args":[...],"instructions"?,"workspaces"?,"loop"?:{"check","max_attempts"?,"timeout"?}}`, as `[[worker]]`. `agent` is `claude-code` or `codex`.
 
@@ -374,7 +374,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `op` | Fields | Effect |
 |---|---|---|
 | `workspace-add` | `name`, `root`, `repos`? | A new `[[workspace]]` at the end |
-| `workspace-update` | `workspace`, `root`?, `repos`?, `hidden_repos`?, `agent_command`?, `park_after`? | Sets the fields that are present; `null` removes `agent_command` or `park_after` |
+| `workspace-update` | `workspace`, `root`?, `repos`?, `hidden_repos`?, `agent_command`?, `park_after`?, `claude_connectors`? | Sets the fields that are present; `null` removes `agent_command` or `park_after` |
 | `workspace-remove` | `workspace` | Removes the Workspace and the Keychain secrets of its connections. Its folder and `.muxa/` stay |
 | `env-set` | `workspace`, `key`, `value` | Sets one `[workspace.agent] env` variable |
 | `env-unset` | `workspace`, `key` | Removes it |

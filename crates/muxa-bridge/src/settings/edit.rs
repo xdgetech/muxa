@@ -59,8 +59,12 @@ pub fn apply(
             hidden_repos,
             agent_command,
             park_after,
+            claude_connectors,
         } => {
             let t = find_ws(workspaces, &workspace)?;
+            if let Some(on) = claude_connectors {
+                set_bool(t, "claude_connectors", on, false);
+            }
             if let Some(hidden) = hidden_repos {
                 set_list(t, "hidden_repos", &hidden);
             }

@@ -233,7 +233,7 @@ fn launch(
     super::git::write_file(&dir, "TASK.md", &text)?;
     // No MCP servers, and nothing to edit beside its folder.
     let config_file = mcp::write(&dir, &[], &[])?;
-    let command = mcp::with_flags(command, &config_file);
+    let command = mcp::with_flags(command, &config_file, true);
     let rules = [bot_run::deny(&files.bound)];
     let command = bot_run::with_settings(command, &dir, &rules, &[])?;
     Ok(Launch {

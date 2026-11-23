@@ -190,22 +190,15 @@ fn member_launch(
     let ws = workspaces.get(workspace).ok_or("the Workspace is gone")?;
     let dir = lead_dir.join("team").join(&member.name);
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    let choice = match member.worker.as_deref() {
-        None => WorkerChoice::WorkspaceDefault,
-        Some(name) => WorkerChoice::Named(name),
-    };
+    // A Bot runs with its Workspace's access only (ADR 0087).
+    let choice = WorkerChoice::WorkspaceDefault;
     let mut resolved = workspaces
         .resolve_worker(workspace, choice, None, fallback)
         .map_err(|e| e.to_string())?;
     if !crate::launch::is_claude_code(&resolved.command) {
         return Err("a member needs Claude Code".into());
     }
-    let described = member
-        .worker
-        .as_deref()
-        .and_then(|w| workspaces.worker(w))
-        .and_then(|w| w.description.as_deref());
-    let brief = bot_run::brief(member, &[], ws, described)?;
+    let brief = bot_run::brief(member, &[], ws)?;
     super::git::write_file(&dir, "TASK.md", &member_text(&brief, lead, h))?;
     let rules = [bot_run::deny(&member.dir)];
     let agent = runner::agent_in(ws, resolved.command, &dir, &rules, &[])?;

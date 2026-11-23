@@ -95,7 +95,7 @@ fn an_added_routine_is_turned_off_and_reads_as_one_line() {
 
 #[test]
 fn the_brief_carries_the_soul_memory_routines_and_the_output() {
-    let text = brief(&ws(), "b", &[]);
+    let text = brief(&ws(), "b");
     for part in [
         "I watch PRs.",
         "PR 3 seen.",
@@ -109,7 +109,7 @@ fn the_brief_carries_the_soul_memory_routines_and_the_output() {
         !text.contains("routines/other.md"),
         "another Routine is not shown"
     );
-    let new = brief(&ws(), "fresh", &[]);
+    let new = brief(&ws(), "fresh");
     assert!(new.contains("You do not exist yet") && new.contains("- b: Watches PRs"));
 }
 
@@ -117,7 +117,7 @@ fn the_brief_carries_the_soul_memory_routines_and_the_output() {
 fn the_brief_says_what_runs_can_use_and_what_the_daily_limit_does() {
     let mut w = ws();
     w.mcp = serde_json::from_value(json!([{"name": "linear", "command": "npx"}])).unwrap();
-    let text = brief(&w, "b", &[]);
+    let text = brief(&w, "b");
     for part in [
         "not Claude cloud routines",
         "its MCP servers: linear.",

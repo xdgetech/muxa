@@ -65,6 +65,7 @@ fn ws(root: &Path) -> Workspace {
             connection("docs", "DOCS_TOKEN"),
         ],
         mcp: vec![linear, docs, slack],
+        claude_connectors: false,
     }
 }
 
@@ -140,8 +141,13 @@ fn only_claude_code_takes_servers() {
 fn the_flags_follow_the_command_and_are_quoted_for_the_shell() {
     let config = Path::new("/w/it's/.muxa/mcp.json");
     assert_eq!(
-        shell_flags(config),
+        shell_flags(config, true),
         "--mcp-config '/w/it'\\''s/.muxa/mcp.json' --strict-mcp-config"
+    );
+    assert_eq!(
+        shell_flags(config, false),
+        "--mcp-config '/w/it'\\''s/.muxa/mcp.json'",
+        "claude.ai connectors allowed: no strict flag (ADR 0087)"
     );
     let LaunchCommand::Native { args, .. } = with_flags(
         LaunchCommand::Native {
@@ -149,6 +155,7 @@ fn the_flags_follow_the_command_and_are_quoted_for_the_shell() {
             args: vec!["--agent".into(), "r".into()],
         },
         config,
+        true,
     ) else {
         panic!("native stays native");
     };

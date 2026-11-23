@@ -139,6 +139,7 @@ impl BridgeHost {
         let command = self.agent_command(ws);
         let claude = crate::launch::is_claude_code(&LaunchCommand::Shell(command.clone()));
         let (managed, known) = (mcp::managed(ws), ws.connections.clone());
+        let strict = !ws.claude_connectors;
         let (made, flags) = blocking(move || {
             let mut flags = Vec::new();
             if claude {
@@ -155,7 +156,7 @@ impl BridgeHost {
                             mcp::write(made.working(), &servers, &known)?
                         }
                     };
-                    flags.push(mcp::shell_flags(&config));
+                    flags.push(mcp::shell_flags(&config, strict));
                 }
             }
             Ok((made, flags))
@@ -194,7 +195,7 @@ impl BridgeHost {
             .iter()
             .find(|w| w.name == ws.name)
             .ok_or_else(|| TaskError::Invalid(format!("no Workspace named {:?}", ws.name)))?;
-        Ok(super::talk_check::brief(found, bot, &view.workers))
+        Ok(super::talk_check::brief(found, bot))
     }
 }
 

@@ -1,7 +1,7 @@
 //! Pure parts of a talk with a Bot (ADR 0083): its brief, the check of the
 //! settings it proposes, and how each op reads in the Inbox.
 
-use muxa_protocol::settings::{SettingsBot, SettingsOp, SettingsWorkspace, WorkerSpec};
+use muxa_protocol::settings::{SettingsBot, SettingsOp, SettingsWorkspace};
 use serde::Deserialize;
 
 use crate::records::bots::{DEFAULT_DAILY_ITEMS, MAX_MEMORY};
@@ -170,11 +170,11 @@ fn when(r: &muxa_protocol::settings::RoutineSpec) -> String {
 
 /// The talk part of `.muxa/TASK.md`: who the Bot is, its settings now, and
 /// how to propose changes.
-pub fn brief(ws: &SettingsWorkspace, bot: &str, workers: &[WorkerSpec]) -> String {
+pub fn brief(ws: &SettingsWorkspace, bot: &str) -> String {
     let found = ws.bots.iter().find(|b| b.spec.name == bot);
     let mut out = format!(
         "\n{}",
-        identity::section(bot, &reach(ws, found, workers), Place::Talk)
+        identity::section(bot, &reach(ws, found), Place::Talk)
     );
     out.push_str("## This talk\n\n");
     out.push_str(&format!(
@@ -242,7 +242,7 @@ You never edit files in the Workspace's `.muxa/` folder: they are denied to you.
 ```
 
 Both keys are optional. The user applies a proposal from their Inbox; nothing changes before. Allowed ops, all with "workspace": {ws:?}:
-- {{"op":"bot-add"|"bot-update","workspace":…,"bot":{{"name":{bot:?},"description":…,"worker":…,"daily_items":3,"enabled":true,"members":[],"handoffs_per_day":10}},"soul_text":"…"}}
+- {{"op":"bot-add"|"bot-update","workspace":…,"bot":{{"name":{bot:?},"description":…,"daily_items":3,"enabled":true,"members":[],"handoffs_per_day":10}},"soul_text":"…"}}
 - {{"op":"routine-add"|"routine-update","workspace":…,"routine":{{"name":…,"bot":{bot:?},"instructions":"routines/<name>.md","enabled":false,"schedule":"*/30 9-18 * * 1-5","timezone":"Europe/Berlin","read_only":true}},"instructions_text":"…"}}
   (a schedule is five cron fields, runs at least 15 minutes apart; or "at":"09:00" daily; or "on":"review" to run when a Task asks for review)
 - {{"op":"routine-remove","workspace":…,"name":…}}
@@ -255,7 +255,7 @@ Routines you add are added turned off; the user turns them on. After you write t
 }
 
 /// Pure. What the Bot can use, from the settings the talk sees.
-fn reach(ws: &SettingsWorkspace, bot: Option<&SettingsBot>, workers: &[WorkerSpec]) -> Reach {
+fn reach(ws: &SettingsWorkspace, bot: Option<&SettingsBot>) -> Reach {
     Reach {
         workspace: ws.name.clone(),
         daily_items: bot
@@ -267,13 +267,7 @@ fn reach(ws: &SettingsWorkspace, bot: Option<&SettingsBot>, workers: &[WorkerSpe
             .map(|c| format!("{} (${})", c.spec.name, c.spec.env))
             .collect(),
         mcp: ws.mcp.iter().map(|m| m.name.clone()).collect(),
-        worker: bot.and_then(|b| b.spec.worker.as_deref()).map(|name| {
-            let described = workers
-                .iter()
-                .find(|w| w.name == name)
-                .and_then(|w| w.description.as_deref());
-            super::bot_run::worker_line(name, described)
-        }),
+        claude_connectors: ws.claude_connectors,
     }
 }
 

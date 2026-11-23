@@ -392,15 +392,7 @@ fn ready(
             let ws = workspaces.get(&routine.workspace).ok_or_else(|| {
                 fail(StartError::Failed("the Routine's Workspace is gone".into()))
             })?;
-            let described = found
-                .worker
-                .as_deref()
-                .and_then(|w| workspaces.worker(w))
-                .and_then(|w| w.description.as_deref());
-            Some(
-                bot_run::brief(found, &team, ws, described)
-                    .map_err(|e| fail(StartError::Failed(e)))?,
-            )
+            Some(bot_run::brief(found, &team, ws).map_err(|e| fail(StartError::Failed(e)))?)
         }
     };
     let goal = crate::routines::brief::goal(&routine, &instructions, bot.as_ref());
@@ -499,7 +491,7 @@ pub(crate) fn agent_in(
         command
     } else if crate::launch::is_claude_code(&command) {
         let config = mcp::write(dir, &servers, &ws.connections)?;
-        mcp::with_flags(command, &config)
+        mcp::with_flags(command, &config, !ws.claude_connectors)
     } else {
         mcp::only_claude(crate::launch::program(&command), &servers)?;
         command

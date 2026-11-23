@@ -317,8 +317,9 @@ impl RawRoutine {
                     .ok_or_else(|| at("bot is not a [[bot]] of this file"))?,
             ),
         };
-        // A Routine's own worker wins over its Bot's.
-        let worker = worker.or_else(|| bot.and_then(|b| b.worker.clone()));
+        // A Bot's Routine runs as the Workspace's agent, with the Workspace's
+        // access only; a worker named on it or its Bot is ignored (ADR 0087).
+        let worker = if bot.is_some() { None } else { worker };
         let instructions = dir.join(relative(&self.instructions).map_err(at)?);
         if let Some(project) = &self.project {
             line(project, MAX_PROJECT).map_err(|r| at(&format!("project {r}")))?;

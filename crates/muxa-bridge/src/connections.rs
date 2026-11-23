@@ -116,6 +116,7 @@ mod tests {
             routines: None,
             connections: vec![c("docs", "DOCS_TOKEN"), c("linear", "LINEAR_API_KEY")],
             mcp: Vec::new(),
+            claude_connectors: false,
         }
     }
 

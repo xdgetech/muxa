@@ -101,6 +101,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 task_loop: None,
                 routines_enabled: false,
                 direct_writes: false,
+                claude_connectors: false,
                 connections: Vec::new(),
                 mcp: Vec::new(),
                 routines: Vec::new(),
@@ -116,8 +117,12 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             hidden_repos,
             agent_command,
             park_after,
+            claude_connectors,
         } => {
             let w = workspace(s, &name)?;
+            if let Some(on) = claude_connectors {
+                w.claude_connectors = on;
+            }
             if let Some(hidden) = hidden_repos {
                 w.hidden_repos = hidden;
             }

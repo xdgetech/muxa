@@ -273,6 +273,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         routines: None,
         connections: Vec::new(),
         mcp: Vec::new(),
+        claude_connectors: false,
     };
     (dir, ws)
 }

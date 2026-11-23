@@ -312,6 +312,7 @@ fn start_settings() -> Settings {
             }),
             routines_enabled: true,
             direct_writes: false,
+            claude_connectors: false,
             connections: vec![SettingsConnection {
                 spec: ConnectionSpec {
                     name: "github".into(),

@@ -142,6 +142,7 @@ mod tests {
                 headers: Default::default(),
                 connections: vec!["github".into()],
             }],
+            claude_connectors: false,
         }
     }
 

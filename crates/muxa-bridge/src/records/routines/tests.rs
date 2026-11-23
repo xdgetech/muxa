@@ -299,7 +299,7 @@ fn instructions_are_read_on_each_run_and_stay_in_the_folder() {
 }
 
 #[test]
-fn a_bot_owns_routines_and_lends_them_its_worker() {
+fn a_bot_owns_routines_that_run_as_the_workspaces_agent() {
     let f = Fixture::new();
     let config = f
         .load(
@@ -315,7 +315,8 @@ fn a_bot_owns_routines_and_lends_them_its_worker() {
     assert_eq!(bot.description.as_deref(), Some("Watches my PRs"));
     let scan = config.routine("Company", "Scan").unwrap();
     assert_eq!(scan.bot.as_deref(), Some("pr-watch"));
-    assert_eq!(scan.worker.as_deref(), Some("Researcher"));
+    // ADR 0087: a Bot has its Workspace's access; a worker on it is ignored.
+    assert_eq!(scan.worker, None);
     assert!(scan.read_only && scan.enabled);
     let plain = config.routine("Company", "Plain").unwrap();
     assert_eq!((plain.bot.as_deref(), plain.read_only), (None, false));

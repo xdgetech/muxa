@@ -75,6 +75,8 @@ pub struct Workspace {
     pub connections: Vec<Connection>,
     /// MCP servers every agent of the workspace gets (ADR 0069, 0075).
     pub mcp: Vec<McpServer>,
+    /// The user's claude.ai connectors load beside `mcp` (ADR 0087).
+    pub claude_connectors: bool,
 }
 
 /// The configured workspaces, in file order.
@@ -133,6 +135,8 @@ struct RawWorkspace {
     connection: Vec<RawConnection>,
     #[serde(default)]
     mcp: Vec<RawMcp>,
+    #[serde(default)]
+    claude_connectors: bool,
     /// `[workspace.assistant]` and `memory` of the removed assistant layer
     /// (ADR 0066): read so an older file still loads, not used.
     assistant: Option<toml::Value>,
@@ -271,6 +275,7 @@ impl Workspaces {
                 routines,
                 connections,
                 mcp,
+                claude_connectors: w.claude_connectors,
             });
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);

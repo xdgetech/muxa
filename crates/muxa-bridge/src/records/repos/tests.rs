@@ -29,6 +29,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         routines: None,
         connections: Vec::new(),
         mcp: Vec::new(),
+        claude_connectors: false,
     }
 }
 

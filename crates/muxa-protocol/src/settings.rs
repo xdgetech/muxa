@@ -80,6 +80,10 @@ pub struct SettingsWorkspace {
     pub routines_enabled: bool,
     #[serde(default)]
     pub direct_writes: bool,
+    /// The user's claude.ai connectors load too, beside the Workspace's MCP
+    /// servers (ADR 0087).
+    #[serde(default)]
+    pub claude_connectors: bool,
     #[serde(default)]
     pub connections: Vec<SettingsConnection>,
     #[serde(default)]
@@ -326,6 +330,8 @@ pub enum SettingsOp {
             skip_serializing_if = "Option::is_none"
         )]
         park_after: Option<Option<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        claude_connectors: Option<bool>,
     },
     WorkspaceRemove {
         workspace: String,
