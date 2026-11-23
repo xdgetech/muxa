@@ -340,9 +340,12 @@ fn start_settings() -> Settings {
                     enabled: true,
                     items: None,
                     direct_writes: false,
+                    bot: None,
+                    read_only: false,
                 },
                 instructions_text: Some("Summarize the day.\n".into()),
             }],
+            bots: Vec::new(),
             routines_problem: None,
         }],
     }

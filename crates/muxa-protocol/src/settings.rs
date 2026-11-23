@@ -67,6 +67,9 @@ pub struct SettingsWorkspace {
     pub mcp: Vec<McpSpec>,
     #[serde(default)]
     pub routines: Vec<SettingsRoutine>,
+    /// The `[[bot]]` tables of `.muxa/routines.toml` (ADR 0082).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bots: Vec<SettingsBot>,
     /// Why `.muxa/routines.toml` cannot be used as it is now.
     #[serde(default)]
     pub routines_problem: Option<String>,
@@ -174,6 +177,41 @@ pub struct RoutineSpec {
     pub items: Option<u32>,
     #[serde(default)]
     pub direct_writes: bool,
+    /// The `[[bot]]` that owns it, in the same file (ADR 0082).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
+    /// Claude Code's edit tools are denied to the run's agent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
+}
+
+/// `[[bot]]` (ADR 0082). Its Soul and Memory live in `.muxa/bots/<name>/`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BotSpec {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<String>,
+    /// None: 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daily_items: Option<u32>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsBot {
+    #[serde(flatten)]
+    pub spec: BotSpec,
+    /// `soul.md`; None when it cannot be read, empty when there is none.
+    #[serde(default)]
+    pub soul_text: Option<String>,
+    /// `memory.md`, read only: the Bot writes it.
+    #[serde(default)]
+    pub memory_text: Option<String>,
+    /// How many earlier memories `bot-memory-restore` can bring back.
+    #[serde(default)]
+    pub memory_versions: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -318,6 +356,30 @@ pub enum SettingsOp {
         workspace: String,
         name: String,
     },
+    BotAdd {
+        workspace: String,
+        bot: BotSpec,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        soul_text: Option<String>,
+    },
+    BotUpdate {
+        workspace: String,
+        bot: BotSpec,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        soul_text: Option<String>,
+    },
+    /// Its Routines must go first; its folder stays.
+    BotRemove {
+        workspace: String,
+        name: String,
+    },
+    /// Brings back kept memory `version` (1 is the newest); the current one
+    /// is kept in its place.
+    BotMemoryRestore {
+        workspace: String,
+        name: String,
+        version: u32,
+    },
     WorkerAdd {
         worker: WorkerSpec,
     },
@@ -350,6 +412,10 @@ impl SettingsOp {
             Self::RoutineAdd { .. } => "routine-add",
             Self::RoutineUpdate { .. } => "routine-update",
             Self::RoutineRemove { .. } => "routine-remove",
+            Self::BotAdd { .. } => "bot-add",
+            Self::BotUpdate { .. } => "bot-update",
+            Self::BotRemove { .. } => "bot-remove",
+            Self::BotMemoryRestore { .. } => "bot-memory-restore",
             Self::WorkerAdd { .. } => "worker-add",
             Self::WorkerUpdate { .. } => "worker-update",
             Self::WorkerRemove { .. } => "worker-remove",
@@ -375,7 +441,11 @@ impl SettingsOp {
             | Self::McpRemove { workspace, .. }
             | Self::RoutineAdd { workspace, .. }
             | Self::RoutineUpdate { workspace, .. }
-            | Self::RoutineRemove { workspace, .. } => Some(workspace),
+            | Self::RoutineRemove { workspace, .. }
+            | Self::BotAdd { workspace, .. }
+            | Self::BotUpdate { workspace, .. }
+            | Self::BotRemove { workspace, .. }
+            | Self::BotMemoryRestore { workspace, .. } => Some(workspace),
             Self::WorkerAdd { .. } | Self::WorkerUpdate { .. } | Self::WorkerRemove { .. } => None,
         }
     }

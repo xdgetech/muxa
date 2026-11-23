@@ -351,6 +351,8 @@ fn a_routine_never_blocks_removing_a_connection_and_an_edit_drops_its_old_choice
         enabled: true,
         items: None,
         direct_writes: false,
+        bot: None,
+        read_only: false,
     };
     h.store
         .update(
@@ -386,6 +388,8 @@ fn a_new_routine_gets_its_file_and_its_instructions() {
         enabled: false,
         items: Some(5),
         direct_writes: false,
+        bot: None,
+        read_only: false,
     };
     let add = |instructions: &str| SettingsOp::RoutineAdd {
         workspace: "Home".into(),
@@ -523,4 +527,131 @@ fn a_secret_too_long_is_refused_without_quoting_it() {
         err.starts_with("ops[0] connection-secret: ") && !err.contains(&long),
         "{err}"
     );
+}
+
+#[test]
+fn a_bot_is_added_with_its_soul_and_owns_a_routine() {
+    let h = host("bot-add");
+    let rev = h.store.view().unwrap().revision;
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![
+                op(json!({"op": "bot-add", "workspace": "Work",
+                    "bot": {"name": "pr-watch", "description": "Watches PRs", "enabled": true},
+                    "soul_text": "I watch the PRs that wait for me.\n"})),
+                op(json!({"op": "routine-add", "workspace": "Work",
+                    "routine": {"name": "scan", "instructions": "routines/scan.md", "enabled": false,
+                        "bot": "pr-watch", "read_only": true, "schedule": "*/30 9-18 * * 1-5",
+                        "timezone": "Europe/Berlin"},
+                    "instructions_text": "List open PRs.\n"})),
+            ],
+        )
+        .unwrap();
+    let work = &s.workspaces[0];
+    let bot = &work.bots[0];
+    assert_eq!(bot.spec.name, "pr-watch");
+    assert_eq!(
+        bot.soul_text.as_deref(),
+        Some("I watch the PRs that wait for me.\n")
+    );
+    assert_eq!(
+        (bot.memory_text.as_deref(), bot.memory_versions),
+        (Some(""), 0)
+    );
+    let scan = work
+        .routines
+        .iter()
+        .find(|r| r.spec.name == "scan")
+        .unwrap();
+    assert_eq!(
+        (scan.spec.bot.as_deref(), scan.spec.read_only),
+        (Some("pr-watch"), true)
+    );
+    let soul = h.dir.join("work/.muxa/bots/pr-watch/soul.md");
+    assert_eq!(
+        fs::read_to_string(soul).unwrap(),
+        "I watch the PRs that wait for me.\n"
+    );
+    let file = fs::read_to_string(h.dir.join("work/.muxa/routines.toml")).unwrap();
+    assert!(
+        file.contains("[[bot]]") && file.contains("read_only = true"),
+        "{file}"
+    );
+}
+
+#[test]
+fn a_bot_with_routines_cannot_go_and_a_bad_name_is_refused() {
+    let h = host("bot-remove");
+    let rev = h.store.view().unwrap().revision;
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![
+                op(json!({"op": "bot-add", "workspace": "Work", "bot": {"name": "b", "enabled": true}})),
+                op(json!({"op": "routine-add", "workspace": "Work",
+                    "routine": {"name": "r", "instructions": "routines/digest.md", "enabled": true, "bot": "b"}})),
+            ],
+        )
+        .unwrap();
+    let before = text(&h);
+    let gone = h.store.update(
+        &s.revision,
+        vec![op(
+            json!({"op": "bot-remove", "workspace": "Work", "name": "b"}),
+        )],
+    );
+    assert!(matches!(gone, Err(SettingsError::Invalid(_))), "{gone:?}");
+    let bad = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "bot-add", "workspace": "Work",
+            "bot": {"name": "../x", "enabled": true}, "soul_text": "x"}))],
+    );
+    assert!(matches!(bad, Err(SettingsError::Invalid(_))), "{bad:?}");
+    assert_eq!(text(&h), before);
+}
+
+#[test]
+fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
+    let h = host("bot-memory");
+    let rev = h.store.view().unwrap().revision;
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![op(json!({"op": "bot-add", "workspace": "Work", "bot": {"name": "b", "enabled": true}}))],
+        )
+        .unwrap();
+    let all = crate::records::Workspaces::load(&h.file, Some(&h.dir.join("home"))).unwrap();
+    let bot = all.bot("Work", "b").unwrap();
+    bot.write_memory("first").unwrap();
+    bot.write_memory("second").unwrap();
+    let missing = h.store.update(
+        &s.revision,
+        vec![op(
+            json!({"op": "bot-memory-restore", "workspace": "Work", "name": "b", "version": 2}),
+        )],
+    );
+    assert!(
+        matches!(missing, Err(SettingsError::Invalid(_))),
+        "{missing:?}"
+    );
+    let s = h.store.view().unwrap();
+    assert_eq!(s.workspaces[0].bots[0].memory_versions, 1);
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "bot-memory-restore", "workspace": "Work", "name": "b", "version": 1}),
+            )],
+        )
+        .unwrap();
+    assert_eq!(
+        s.workspaces[0].bots[0].memory_text.as_deref(),
+        Some("first")
+    );
+    assert_eq!(bot.read_memory_version(1).unwrap(), "second");
 }

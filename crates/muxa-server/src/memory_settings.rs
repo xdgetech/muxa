@@ -6,8 +6,8 @@
 use std::sync::Mutex;
 
 use muxa_protocol::settings::{
-    EnvKey, SecretState, Settings, SettingsAgent, SettingsConnection, SettingsLoop, SettingsOp,
-    SettingsRoutine, SettingsWorkspace,
+    EnvKey, SecretState, Settings, SettingsAgent, SettingsBot, SettingsConnection, SettingsLoop,
+    SettingsOp, SettingsRoutine, SettingsWorkspace,
 };
 
 use crate::TaskError;
@@ -104,6 +104,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 connections: Vec::new(),
                 mcp: Vec::new(),
                 routines: Vec::new(),
+                bots: Vec::new(),
                 routines_problem: None,
             };
             put(&mut s.workspaces, fresh, true, |w| &w.name)
@@ -252,6 +253,65 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
         }
         SettingsOp::RoutineRemove { workspace: w, name } => {
             remove(&mut workspace(s, &w)?.routines, &name, |r| &r.spec.name)
+        }
+        SettingsOp::BotAdd {
+            workspace: w,
+            bot,
+            soul_text,
+        } => {
+            let item = SettingsBot {
+                spec: bot,
+                soul_text: Some(soul_text.unwrap_or_default()),
+                memory_text: Some(String::new()),
+                memory_versions: 0,
+            };
+            put(&mut workspace(s, &w)?.bots, item, true, |b| &b.spec.name)
+        }
+        SettingsOp::BotUpdate {
+            workspace: w,
+            bot,
+            soul_text,
+        } => {
+            let list = &mut workspace(s, &w)?.bots;
+            let old = list
+                .iter()
+                .find(|b| b.spec.name == bot.name)
+                .cloned()
+                .ok_or_else(|| format!("there is no {:?}", bot.name))?;
+            let item = SettingsBot {
+                spec: bot,
+                soul_text: soul_text.or(old.soul_text),
+                ..old
+            };
+            put(list, item, false, |b| &b.spec.name)
+        }
+        SettingsOp::BotRemove { workspace: w, name } => {
+            let ws = workspace(s, &w)?;
+            if ws
+                .routines
+                .iter()
+                .any(|r| r.spec.bot.as_deref() == Some(&name))
+            {
+                return Err(format!(
+                    "bot {name:?} still owns Routines; remove them first"
+                ));
+            }
+            remove(&mut ws.bots, &name, |b| &b.spec.name)
+        }
+        SettingsOp::BotMemoryRestore {
+            workspace: w,
+            name,
+            version,
+        } => {
+            let bot = workspace(s, &w)?
+                .bots
+                .iter_mut()
+                .find(|b| b.spec.name == name)
+                .ok_or_else(|| format!("there is no {name:?}"))?;
+            if version == 0 || version > bot.memory_versions {
+                return Err(format!("bot {name:?} has no kept memory {version}"));
+            }
+            Ok(())
         }
         SettingsOp::WorkerAdd { worker } => put(&mut s.workers, worker, true, |w| &w.name),
         SettingsOp::WorkerUpdate { worker } => put(&mut s.workers, worker, false, |w| &w.name),

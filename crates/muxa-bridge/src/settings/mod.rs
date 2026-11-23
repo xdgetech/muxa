@@ -284,6 +284,17 @@ impl SettingsStore {
         all: &Workspaces,
     ) -> Result<(), SettingsError> {
         let failed = |e: String| SettingsError::Failed(e);
+        // All or none: a memory that cannot come back stops the whole update.
+        for (name, bot, version) in &effects.memory_restores {
+            let kept = all
+                .bot(name, bot)
+                .map(|b| b.read_memory_version(*version as usize));
+            if !matches!(kept, Some(Ok(text)) if !text.is_empty()) {
+                return Err(SettingsError::Invalid(format!(
+                    "bot {bot:?} in {name:?} has no kept memory {version}"
+                )));
+            }
+        }
         let mut writes: Vec<(PathBuf, String)> = Vec::new();
         for (name, rel, text) in &effects.instructions {
             let ws = all
@@ -311,6 +322,9 @@ impl SettingsStore {
         for (target, text) in &writes {
             files::write_atomic(target, text).map_err(|e| failed(e.to_string()))?;
         }
+        for (name, bot, version) in &effects.memory_restores {
+            restore_memory(all, name, bot, *version).map_err(failed)?;
+        }
         for account in &effects.forget {
             if let Err(e) = self.secrets.delete(account) {
                 tracing::warn!(account = %account, error = %e, "a removed connection's secret stays in the Keychain");
@@ -318,6 +332,27 @@ impl SettingsStore {
         }
         Ok(())
     }
+}
+
+/// Puts kept memory `version` back; the current memory is kept in turn.
+fn restore_memory(
+    all: &Workspaces,
+    workspace: &str,
+    bot: &str,
+    version: u32,
+) -> Result<(), String> {
+    let found = all
+        .bot(workspace, bot)
+        .ok_or_else(|| format!("there is no bot {bot:?} in {workspace:?}"))?;
+    let text = found
+        .read_memory_version(version as usize)
+        .map_err(|e| e.to_string())?;
+    if text.is_empty() {
+        return Err(format!("bot {bot:?} has no kept memory {version}"));
+    }
+    found.write_memory(&text).map_err(|e| e.to_string())?;
+    tracing::info!(bot, version, "bot memory restored");
+    Ok(())
 }
 
 /// Printing the edited document and reading it back must give the same

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use muxa_protocol::settings::{
-    Access, ConnectionSpec, McpSpec, RoutineSpec, SettingsOp, WorkerSpec, WriteOnly,
+    Access, BotSpec, ConnectionSpec, McpSpec, RoutineSpec, SettingsOp, WorkerSpec, WriteOnly,
 };
 use muxa_protocol::v2::LoopChecks;
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, value};
@@ -22,6 +22,8 @@ pub struct Effects {
     pub forget: Vec<String>,
     /// Workspace, path relative to `.muxa/`, and the new content.
     pub instructions: Vec<(String, String, String)>,
+    /// Workspace, Bot and the kept memory to bring back (ADR 0082).
+    pub memory_restores: Vec<(String, String, u32)>,
 }
 
 pub fn account(workspace: &str, name: &str) -> String {
@@ -247,6 +249,52 @@ pub fn apply(
             let doc = routines_doc(routines, changed_routines, &workspace)?;
             remove_named(doc.as_table_mut(), "routine", &name)
         }
+        SettingsOp::BotAdd {
+            workspace,
+            bot,
+            soul_text,
+        } => {
+            find_ws(workspaces, &workspace)?;
+            let doc = routines_doc(routines, changed_routines, &workspace)?;
+            if find_named(doc.as_table_mut(), "bot", &bot.name)?.is_some() {
+                return Err(format!("bot {:?} exists already", bot.name));
+            }
+            let mut t = Table::new();
+            t.insert("name", value(bot.name.clone()));
+            write_bot(&mut t, &bot);
+            aot(doc.as_table_mut(), "bot")?.push(t);
+            keep_soul(effects, &workspace, &bot.name, soul_text)
+        }
+        SettingsOp::BotUpdate {
+            workspace,
+            bot,
+            soul_text,
+        } => {
+            find_ws(workspaces, &workspace)?;
+            let doc = routines_doc(routines, changed_routines, &workspace)?;
+            let t = find_named(doc.as_table_mut(), "bot", &bot.name)?
+                .ok_or_else(|| format!("there is no bot {:?}", bot.name))?;
+            write_bot(t, &bot);
+            keep_soul(effects, &workspace, &bot.name, soul_text)
+        }
+        SettingsOp::BotRemove { workspace, name } => {
+            find_ws(workspaces, &workspace)?;
+            let doc = routines_doc(routines, changed_routines, &workspace)?;
+            remove_named(doc.as_table_mut(), "bot", &name)
+        }
+        SettingsOp::BotMemoryRestore {
+            workspace,
+            name,
+            version,
+        } => {
+            find_ws(workspaces, &workspace)?;
+            let keep = crate::records::bots::KEEP_MEMORIES;
+            if !(1..=keep).contains(&(version as usize)) {
+                return Err(format!("version must be 1 to {keep}"));
+            }
+            effects.memory_restores.push((workspace, name, version));
+            Ok(())
+        }
         SettingsOp::WorkerAdd { worker } => {
             let root = workspaces.as_table_mut();
             if find_named(root, "worker", &worker.name)?.is_some() {
@@ -313,6 +361,30 @@ fn keep_instructions(
     effects
         .instructions
         .push((workspace.to_owned(), routine.instructions.clone(), text));
+    Ok(())
+}
+
+/// The Soul is written like an instruction file, at `bots/<name>/soul.md`.
+fn keep_soul(
+    effects: &mut Effects,
+    workspace: &str,
+    bot: &str,
+    text: Option<String>,
+) -> Result<(), String> {
+    let Some(text) = text else { return Ok(()) };
+    crate::records::bots::name(bot)?;
+    if text.len() > crate::records::bots::MAX_SOUL {
+        return Err("soul_text is larger than 12 KiB".into());
+    }
+    if text.contains('\0') {
+        return Err("soul_text has a NUL byte".into());
+    }
+    let rel = format!(
+        "{}/{bot}/{}",
+        crate::records::bots::BOTS_DIR,
+        crate::records::bots::SOUL_FILE
+    );
+    effects.instructions.push((workspace.to_owned(), rel, text));
     Ok(())
 }
 
@@ -499,6 +571,8 @@ fn write_routine(t: &mut Table, r: &RoutineSpec) -> Result<(), String> {
     set_str(t, "worker", r.worker.as_deref());
     set_str(t, "instructions", Some(&r.instructions));
     set_str(t, "project", r.project.as_deref());
+    set_str(t, "bot", r.bot.as_deref());
+    set_bool(t, "read_only", r.read_only, false);
     // Ignored since ADR 0075: an edit drops them.
     t.remove("connections");
     t.remove("mcp");
@@ -519,6 +593,21 @@ fn write_routine(t: &mut Table, r: &RoutineSpec) -> Result<(), String> {
     }
     set_bool(out, "direct_writes", r.direct_writes, false);
     Ok(())
+}
+
+fn write_bot(t: &mut Table, b: &BotSpec) {
+    set_str(t, "description", b.description.as_deref());
+    set_str(t, "worker", b.worker.as_deref());
+    match b.daily_items {
+        Some(n) if t.get("daily_items").and_then(Item::as_integer) != Some(i64::from(n)) => {
+            t.insert("daily_items", value(i64::from(n)));
+        }
+        Some(_) => {}
+        None => {
+            t.remove("daily_items");
+        }
+    }
+    set_bool(t, "enabled", b.enabled, true);
 }
 
 fn write_worker(t: &mut Table, w: &WorkerSpec) {

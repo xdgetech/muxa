@@ -308,7 +308,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 - `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
 - Paths and schedules are shown as written in the files, `~/` included.
 
-`SettingsWorkspace`: `{"name","root","repos":[...],"found_repos":[...],"hidden_repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"routines_problem"}`. `repos` are the listed ones; `found_repos` are the repos the scan finds under the root (ADR 0031), hidden ones too, as named under it; `hidden_repos` are found repos the Workspace leaves out of its repo list, so `workspaces`, Start Task and `all-read` skip them. A listed repo is never hidden.
+`SettingsWorkspace`: `{"name","root","repos":[...],"found_repos":[...],"hidden_repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"bots"?:[SettingsBot...],"routines_problem"}`. `repos` are the listed ones; `found_repos` are the repos the scan finds under the root (ADR 0031), hidden ones too, as named under it; `hidden_repos` are found repos the Workspace leaves out of its repo list, so `workspaces`, Start Task and `all-read` skip them. A listed repo is never hidden.
 - `park_after`: `"30m"`, `"12h"`, `"2d"`, or `null` (ADR 0034). `agent.command`: `null` means the daemon's `--task-command`.
 - `agent.env` lists the keys of `[workspace.agent] env` with `"set": true`. A value never crosses the wire from the server.
 - `loop`: `null` (no Task Loops), else `{"checks":"any"}` or `{"checks":["make test",...]}`.
@@ -323,7 +323,11 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 
 `SettingsRoutine`: a `RoutineSpec` plus `"instructions_text"`, the instruction file's content, or `null` when it cannot be read.
 
-`RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?}`, as `[[routine]]` with `[routine.output]` flattened. Editing a connection, an MCP server or a Routine removes the ignored `default`, `connections` and `mcp` keys from the file. `instructions` is the file's path relative to `.muxa/`.
+`RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?,"bot"?,"read_only"?}`, as `[[routine]]` with `[routine.output]` flattened. `bot` names a `[[bot]]` of the same file; `read_only` denies Claude Code's edit tools to the run (ADR 0082). Editing a connection, an MCP server or a Routine removes the ignored `default`, `connections` and `mcp` keys from the file. `instructions` is the file's path relative to `.muxa/`.
+
+`SettingsBot`: a `BotSpec` plus `"soul_text"` (`.muxa/bots/<name>/soul.md`, empty when there is none), `"memory_text"` (`memory.md`, which the Bot's runs write) and `"memory_versions"`, how many earlier memories `bot-memory-restore` can bring back. A text is `null` when it cannot be read. The Soul counts in `revision`; the Memory does not, so a run does not make a client's edit stale.
+
+`BotSpec`: `{"name","description"?,"worker"?,"daily_items"?,"enabled"}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. `daily_items` is 1 to 50, absent 3. A turned-off Bot turns off its Routines.
 
 `SettingsWorker`, also `WorkerSpec` in ops: `{"name","description"?,"agent","args":[...],"instructions"?,"workspaces"?,"loop"?:{"check","max_attempts"?,"timeout"?}}`, as `[[worker]]`. `agent` is `claude-code` or `codex`.
 
@@ -345,6 +349,9 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `mcp-remove` | `workspace`, `name` | |
 | `routine-add`, `routine-update` | `workspace`, `routine`: RoutineSpec, `instructions_text`? | Adds a Routine, or changes the one named `routine.name`. `instructions_text` replaces the instruction file's content |
 | `routine-remove` | `workspace`, `name` | Removes the Routine. Its instruction file stays |
+| `bot-add`, `bot-update` | `workspace`, `bot`: BotSpec, `soul_text`? | Adds a Bot, or changes the one named `bot.name`. `soul_text` replaces its `soul.md` |
+| `bot-remove` | `workspace`, `name` | Removes the Bot. Its Routines must go first; its folder stays |
+| `bot-memory-restore` | `workspace`, `name`, `version` | Brings back kept memory `version`, 1 the newest of 5; the current one is kept in its place |
 | `worker-add`, `worker-update` | `worker`: WorkerSpec | Adds a worker, or replaces the one named `worker.name` |
 | `worker-remove` | `name` | |
 
@@ -354,7 +361,7 @@ Rules:
 1. `revision` must be the current one, else `conflict` and nothing changes. The client reads `settings` again and shows the user what changed.
 2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, the connections an MCP server needs, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
 3. `value` and `secret` are write-only. They are never sent back, never logged, and never in an error message. A `secret` goes only to the host's macOS Keychain (service `muxa`, account `<workspace>/<name>`), at most 1800 bytes of one line. An env `value` goes only into `workspaces.toml`, as before.
-4. An `instructions_text` is at most 12 KiB of UTF-8 without NUL. The file must stay inside `.muxa/`, also through a symlink.
+4. An `instructions_text` or `soul_text` is at most 12 KiB of UTF-8 without NUL. The file must stay inside `.muxa/`, also through a symlink.
 5. Each file is written whole to a temporary file and renamed over the old one; the old one is kept as `<file>.bak`. A file keeps its mode; a new file gets 0600.
 6. With `--settings-read-only`, `settings-update` is `read-only` and nothing changes.
 7. A Keychain or file failure is `backend`. The Keychain is written before the files, so a failed file write can leave a new secret without its connection.

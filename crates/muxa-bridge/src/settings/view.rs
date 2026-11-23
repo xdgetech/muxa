@@ -6,14 +6,15 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
-    ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SettingsAgent, SettingsConnection, SettingsLoop,
-    SettingsRoutine, SettingsWorkspace, WorkerSpec,
+    BotSpec, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SettingsAgent, SettingsBot,
+    SettingsConnection, SettingsLoop, SettingsRoutine, SettingsWorkspace, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
 use serde::Deserialize;
 
 use super::files::{self, Revision};
 use super::secrets::Secrets;
+use crate::records::bots::{BOTS_DIR, KEEP_MEMORIES, MAX_MEMORY, MAX_SOUL, MEMORY_FILE, SOUL_FILE};
 use crate::records::routines::{MAX_INSTRUCTIONS, ROUTINES_FILE, WORKSPACE_DIR};
 use crate::records::workspaces::expand;
 
@@ -69,6 +70,8 @@ struct FileGate {
 struct FileRoutines {
     #[serde(default)]
     routine: Vec<FileRoutine>,
+    #[serde(default)]
+    bot: Vec<BotSpec>,
 }
 
 #[derive(Deserialize)]
@@ -83,6 +86,9 @@ struct FileRoutine {
     #[serde(default)]
     enabled: bool,
     output: Option<FileOutput>,
+    bot: Option<String>,
+    #[serde(default)]
+    read_only: bool,
 }
 
 #[derive(Deserialize)]
@@ -118,16 +124,54 @@ pub fn read_routines(dir: &Path) -> Result<RoutinesFile, files::FileError> {
 
 /// The instruction file's text, when it stays inside `dir` and fits.
 fn instructions_text(dir: &Path, rel: &str) -> Option<String> {
+    text_in(dir, rel, MAX_INSTRUCTIONS)
+}
+
+/// A file's text under `dir`, when it stays inside and fits.
+fn text_in(dir: &Path, rel: &str, max: usize) -> Option<String> {
     let real_dir = dir.canonicalize().ok()?;
     let real = dir.join(rel).canonicalize().ok()?;
     if !real.starts_with(&real_dir) || !real.is_file() {
         return None;
     }
     let bytes = files::read(&real).ok()??;
-    if bytes.len() > MAX_INSTRUCTIONS || bytes.contains(&0) {
+    if bytes.len() > max || bytes.contains(&0) {
         return None;
     }
     String::from_utf8(bytes).ok()
+}
+
+/// A Bot file's text: empty when it does not exist yet.
+fn bot_text(dir: &Path, rel: &str, max: usize) -> Option<String> {
+    if dir.join(rel).symlink_metadata().is_err() {
+        return Some(String::new());
+    }
+    text_in(dir, rel, max)
+}
+
+/// The Bots of a routines file. The Soul counts in the revision; the
+/// Memory does not, because runs write it.
+fn bots(raw: Vec<BotSpec>, dir: &Path, revision: &mut Revision) -> Vec<SettingsBot> {
+    raw.into_iter()
+        .map(|spec| {
+            let folder = format!("{BOTS_DIR}/{}", spec.name);
+            let soul = format!("{folder}/{SOUL_FILE}");
+            let path = dir.join(&soul);
+            revision.add(&path, files::read(&path).ok().flatten().as_deref());
+            let memory_versions = (1..=KEEP_MEMORIES)
+                .take_while(|n| {
+                    dir.join(format!("{folder}/history/memory-{n}.md"))
+                        .is_file()
+                })
+                .count();
+            SettingsBot {
+                soul_text: bot_text(dir, &soul, MAX_SOUL),
+                memory_text: bot_text(dir, &format!("{folder}/{MEMORY_FILE}"), MAX_MEMORY),
+                memory_versions: u32::try_from(memory_versions).unwrap_or(0),
+                spec,
+            }
+        })
+        .collect()
 }
 
 /// The Routines in a routines file's text, and why they cannot be shown.
@@ -135,17 +179,24 @@ fn routines(
     file: &RoutinesFile,
     dir: &Path,
     revision: &mut Revision,
-) -> (Vec<SettingsRoutine>, Option<String>) {
+) -> (Vec<SettingsRoutine>, Vec<SettingsBot>, Option<String>) {
     let Some(bytes) = &file.bytes else {
-        return (Vec::new(), None);
+        return (Vec::new(), Vec::new(), None);
     };
     let parsed = std::str::from_utf8(bytes)
         .map_err(|_| "is not UTF-8".to_owned())
         .and_then(|t| toml::from_str::<FileRoutines>(t).map_err(|e| e.message().to_owned()));
     let raw = match parsed {
         Ok(raw) => raw,
-        Err(why) => return (Vec::new(), Some(format!(".muxa/routines.toml: {why}"))),
+        Err(why) => {
+            return (
+                Vec::new(),
+                Vec::new(),
+                Some(format!(".muxa/routines.toml: {why}")),
+            );
+        }
     };
+    let bot_list = bots(raw.bot, dir, revision);
     let list = raw
         .routine
         .into_iter()
@@ -169,12 +220,14 @@ fn routines(
                     enabled: r.enabled,
                     items: output.items,
                     direct_writes: output.direct_writes,
+                    bot: r.bot,
+                    read_only: r.read_only,
                 },
                 instructions_text: text,
             }
         })
         .collect();
-    (list, None)
+    (list, bot_list, None)
 }
 
 /// One Workspace of the view. `routines_problem` comes from the loader.
@@ -186,11 +239,12 @@ pub fn workspace(
 ) -> SettingsWorkspace {
     let mut problem = None;
     let mut list = Vec::new();
+    let mut bot_list = Vec::new();
     if let Some(dir) = w.muxa_dir(home) {
         match read_routines(&dir) {
             Ok(file) => {
                 revision.add(&file.path, file.bytes.as_deref());
-                (list, problem) = routines(&file, &dir, revision);
+                (list, bot_list, problem) = routines(&file, &dir, revision);
             }
             Err(e) => problem = Some(e.to_string()),
         }
@@ -232,6 +286,7 @@ pub fn workspace(
         connections,
         mcp: w.mcp,
         routines: list,
+        bots: bot_list,
         routines_problem: problem,
     }
 }
