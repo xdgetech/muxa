@@ -3,13 +3,13 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant|focus-talk|bots[-chats|-routines|-files|-new]|bots[-chat|-run` in the environment, the app
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant|focus-talk|bots[-chats|-routines|-files|-new]|bots[-chat|-run|-new|-routine-edit|-soul-edit]` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
 @MainActor
 enum Snapshot {
-    static func runIfAsked(nav: NextNavigation, chrome: MacChrome) async {
+    static func runIfAsked(model: NextModel, nav: NextNavigation, chrome: MacChrome) async {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["MUXA_SNAPSHOT"] else { return }
         switch env["MUXA_SCREEN"] {
@@ -19,11 +19,12 @@ enum Snapshot {
             nav.tab = .bots
             chrome.botPick = .bot(workspace: "app", name: "pr-watch")
             let tabs: [String: BotTab] = ["bots-chat": .chats, "bots-run": .chats, "bots-routines": .routines,
-                                          "bots-files": .files]
+                                          "bots-files": .files, "bots-routine-edit": .routines, "bots-soul-edit": .files]
             chrome.botTab = tabs[screen] ?? .home
             chrome.botTerminal = screen == "bots-run" ? "t8" : "t7"
             chrome.botView = screen == "bots-run" ? .terminal : .chat
             chrome.showNewBot = screen == "bots-new"
+            if screen.hasSuffix("-edit") { await openEditor(screen, model: model, chrome: chrome) }
         case "shortcuts": chrome.showShortcuts = true
         case "palette":
             nav.focus = true
@@ -46,6 +47,17 @@ enum Snapshot {
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }
         exit(0)
+    }
+
+    /// pr-watch's `scan` or its Soul in the editor over the Bot page, once the settings are read.
+    private static func openEditor(_ screen: String, model: NextModel, chrome: MacChrome) async {
+        for _ in 0..<30 where model.settings.workspace("app") == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        guard let app = model.settings.workspace("app") else { return }
+        if screen == "bots-soul-edit", let bot = app.bots.first(where: { $0.name == "pr-watch" }) {
+            chrome.botSheet = .soul(workspace: app, draft: BotDraft(bot))
+        } else if let scan = app.routines.first(where: { $0.name == "scan" }) {
+            chrome.botSheet = .routine(workspace: "app", draft: RoutineDraft(scan))
+        }
     }
 
     /// `settings` or `settings-<tab>` (connections, mcp, agent, routines, bots):

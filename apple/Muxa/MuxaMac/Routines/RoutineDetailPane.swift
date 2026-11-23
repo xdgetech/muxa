@@ -6,7 +6,7 @@ struct RoutineDetailPane: View {
     enum Tab: Hashable { case overview, brief }
 
     @Environment(NextModel.self) private var model
-    @Environment(\.openSettings) private var openSettings
+    @Environment(MacChrome.self) private var chrome
     let routine: Routine
     @State private var tab = Tab.overview
 
@@ -115,13 +115,10 @@ struct RoutineDetailPane: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     Text(".muxa/\(spec.spec.instructions)").frame(maxWidth: .infinity, alignment: .leading)
-                    Button { openSettings() } label: {
-                        HStack(spacing: 6) {
-                            Text("Edit in Settings")
-                            KeyHint(Shortcut.settings.display)
-                        }
-                    }
-                    .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
+                    Button("Edit") { edit(spec) }
+                        .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
+                        .disabled(model.settings.readOnly)
+                        .accessibilityIdentifier("routine.edit.brief")
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.textTertiary)
@@ -155,6 +152,17 @@ struct RoutineDetailPane: View {
                 .disabled(model.settings.saving)
                 .accessibilityIdentifier("routine.pause")
             }
+            if let settings = model.routineSettings(routine) {
+                Button("Edit") { edit(settings) }
+                    .buttonStyle(ActionButtonStyle(kind: .secondary))
+                    .disabled(model.settings.readOnly)
+                    .accessibilityIdentifier("routine.edit")
+            }
         }
+    }
+
+    /// Settings' Routine editor, over this page.
+    private func edit(_ spec: SettingsRoutine) {
+        chrome.botSheet = .routine(workspace: routine.workspace, draft: RoutineDraft(spec))
     }
 }

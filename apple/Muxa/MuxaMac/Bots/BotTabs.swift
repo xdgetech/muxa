@@ -1,13 +1,14 @@
 import MuxaV2
 import SwiftUI
 
-/// A Bot's Routines with their last run, on/off and Run now. Edit opens
-/// Settings at the Routine.
+/// A Bot's Routines with their last run, on/off, Run now and Edit. Edit and
+/// Add Routine open Settings' Routine editor over this page. Most Routines
+/// come from a chat, so asking in one comes first.
 struct BotRoutinesTab: View {
     @Environment(NextModel.self) private var model
     @Environment(MacChrome.self) private var chrome
-    @Environment(\.openSettings) private var openSettings
     let entry: BotEntry
+    let newChat: () -> Void
 
     var body: some View {
         let routines = model.routines(of: entry)
@@ -16,6 +17,21 @@ struct BotRoutinesTab: View {
                 Text("No Routines yet. A chat with \(entry.name) can propose them.").foregroundStyle(Palette.textSecondary)
             }
             ForEach(routines) { row($0) }
+            HStack(spacing: 8) {
+                Button("Ask in a chat", action: newChat)
+                    .buttonStyle(ActionButtonStyle(kind: .primary, compact: true))
+                    .disabled(!model.isConnected)
+                    .accessibilityIdentifier("bot.routines.ask")
+                Button("Add Routine") {
+                    var draft = RoutineDraft()
+                    draft.bot = entry.name
+                    chrome.botSheet = .routine(workspace: entry.workspace.name, draft: draft)
+                }
+                .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
+                .disabled(model.settings.readOnly || model.settings.settings == nil)
+                .accessibilityIdentifier("bot.routines.add")
+            }
+            .padding(.top, 6)
         }
     }
 
@@ -44,10 +60,12 @@ struct BotRoutinesTab: View {
                 .disabled(!r.enabled || !entry.bot.spec.enabled || r.runningSince != nil)
                 .accessibilityIdentifier("bot.routine.run.\(r.name)")
             Button("Edit") {
-                chrome.editRoutine = RoutineRef(workspace: r.workspace, name: r.name)
-                openSettings()
+                if let spec = model.routineSettings(r) {
+                    chrome.botSheet = .routine(workspace: r.workspace, draft: RoutineDraft(spec))
+                }
             }
             .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
+            .disabled(model.settings.readOnly || model.routineSettings(r) == nil)
             .accessibilityIdentifier("bot.routine.edit.\(r.name)")
         }
         .padding(.horizontal, 12)
@@ -70,7 +88,7 @@ struct BotRoutinesTab: View {
 struct BotFilesTab: View {
     @Environment(NextModel.self) private var model
     let entry: BotEntry
-    @State private var editing: BotDraft?
+    @Environment(MacChrome.self) private var chrome
     @State private var restoring: MemoryVersion?
     @State private var error: String?
 
@@ -78,7 +96,7 @@ struct BotFilesTab: View {
         HStack(alignment: .top, spacing: 12) {
             panel(title: "Soul · who it is · yours to write", file: "soul.md") {
                 text(entry.bot.soulText, empty: "No soul yet.", id: "bot.files.soul")
-                Button("Edit") { editing = BotDraft(entry.bot) }
+                Button("Edit") { chrome.botSheet = .soul(workspace: entry.workspace, draft: BotDraft(entry.bot)) }
                     .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
                     .disabled(model.settings.readOnly)
                     .accessibilityIdentifier("bot.files.editsoul")
@@ -106,7 +124,6 @@ struct BotFilesTab: View {
                 SaveError(text: error, id: "bot.files.error")
             }
         }
-        .sheet(item: $editing) { BotEditor(workspace: entry.workspace, draft: $0) }
         .confirmationDialog("Restore memory version \(restoring?.version ?? 0)?", isPresented: restoringBinding,
                             titleVisibility: .visible) {
             Button("Restore") {

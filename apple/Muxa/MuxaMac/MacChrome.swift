@@ -24,8 +24,8 @@ final class MacChrome {
     /// The talk, run or member open on the Chats tab, and how it shows.
     var botTerminal: String?
     var botView = BotView.chat
-    /// Settings opens on this Routine's editor; Settings clears it.
-    var editRoutine: RoutineRef?
+    /// The Routine or Soul editor open over the Bot page.
+    var botSheet: BotSheet?
 }
 
 extension MacChrome {
@@ -41,6 +41,20 @@ extension MacChrome {
         botTerminal = t.id
         botView = t.isTaskAgent ? .chat : .terminal
         return true
+    }
+}
+
+/// An editor Settings also uses, as a sheet over the Bot page: the user stays
+/// where the Routine or the Bot is.
+enum BotSheet: Identifiable {
+    case routine(workspace: String, draft: RoutineDraft)
+    case soul(workspace: SettingsWorkspace, draft: BotDraft)
+
+    var id: String {
+        switch self {
+        case let .routine(w, d): "routine.\(w).\(d.id)"
+        case let .soul(w, d): "soul.\(w.name).\(d.id)"
+        }
     }
 }
 

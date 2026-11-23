@@ -40,6 +40,12 @@ struct BotsView: View {
         .background(Palette.ground)
         .sheet(isPresented: Bindable(chrome).showNewBot) { NewBotSheet() }
         .modifier(CloseTaskConfirm())
+        .sheet(item: Bindable(chrome).botSheet) { sheet in
+            switch sheet {
+            case let .routine(workspace, draft): RoutineEditor(workspace: workspace, draft: draft)
+            case let .soul(workspace, draft): BotEditor(workspace: workspace, draft: draft)
+            }
+        }
         .task {
             await model.refreshRoutines()
             await model.settings.load()

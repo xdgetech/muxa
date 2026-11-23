@@ -18,11 +18,7 @@ struct MacSettingsView: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     @Environment(\.openWindow) private var openWindow
-    @Environment(MacChrome.self) private var chrome
     @State private var picked: MacSettingsPlace? = Self.firstPlace
-    /// Edit on a Bot's page: the Routine whose editor opens, and a new pane for it.
-    @State private var editRoutine: RoutineRef?
-    @State private var paneNonce = 0
     /// The place Settings opens on; snapshots set it.
     static var firstPlace: MacSettingsPlace?
 
@@ -30,10 +26,7 @@ struct MacSettingsView: View {
         VStack(spacing: 0) {
             header
             HStack(spacing: 0) {
-                MacSettingsSidebar(current: current) {
-                    picked = $0
-                    editRoutine = nil
-                }
+                MacSettingsSidebar(current: current) { picked = $0 }
                     .column(width: 260)
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -46,13 +39,6 @@ struct MacSettingsView: View {
         .background(Palette.ground)
         .tint(Palette.accent)
         .task(id: model.isConnected) { if model.isConnected { await model.settings.load() } }
-        .onChange(of: chrome.editRoutine, initial: true) { _, r in
-            guard let r else { return }
-            editRoutine = r
-            picked = .workspace(r.workspace)
-            paneNonce += 1
-            chrome.editRoutine = nil
-        }
     }
 
     /// The picked place while it still exists, else the first Workspace.
@@ -91,9 +77,7 @@ struct MacSettingsView: View {
     @ViewBuilder
     private var detail: some View {
         switch current {
-        case .workspace(let name):
-            let edit = editRoutine?.workspace == name ? editRoutine?.name : nil
-            MacWorkspacePane(name: name, tab: edit == nil ? nil : .routines, editRoutine: edit).id("\(name)#\(paneNonce)")
+        case .workspace(let name): MacWorkspacePane(name: name).id(name)
         case .workers:
             VStack(alignment: .leading, spacing: 0) {
                 MacPaneTitle(title: "Workers", subtitle: "Agents a Routine can run as, on this host.")

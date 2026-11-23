@@ -79,3 +79,28 @@ extension MacNextTests {
         XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
     }
 }
+
+/// Editing a Bot's Routine stays on the Bot page: the editor is a sheet over
+/// the main window, not the Settings window.
+extension MacNextTests {
+    @MainActor
+    func testARoutineIsEditedInASheetOnTheBotPage() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["bot.app.pr-watch"].waitForExistence(timeout: 10))
+        app.typeKey("3", modifierFlags: .command)
+        let edit = app.buttons["bot.routine.edit.scan"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.click()
+        let main = app.windows.firstMatch
+        let timing = main.sheets.firstMatch.popUpButtons["routine.timing"]
+        XCTAssertTrue(timing.waitForExistence(timeout: 5), "the editor is a sheet of the main window")
+        timing.click()
+        app.menuItems["On review"].click()
+        main.sheets.firstMatch.buttons["editor.save"].click()
+        let row = app.descendants(matching: .any)["bot.routine.scan"]
+        let line = row.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'On review'")).firstMatch
+        XCTAssertTrue(line.waitForExistence(timeout: 10), "the Routine's line says it runs on review")
+        XCTAssertFalse(app.descendants(matching: .any)["settings.workspace.app"].exists, "Settings did not open")
+    }
+}

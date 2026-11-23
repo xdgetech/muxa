@@ -9,8 +9,6 @@ struct MacRoutinesTable: View {
     let workspace: SettingsWorkspace
     @State private var editing: RoutineDraft?
     @State private var error: String?
-    /// A Routine to open in its editor when the table shows: Edit on a Bot's page.
-    var edit: String?
 
     private enum Width {
         static let name: CGFloat = 240
@@ -33,9 +31,6 @@ struct MacRoutinesTable: View {
             MacAddButton(title: "+ Add Routine", id: "routine.add") { editing = RoutineDraft() }
         }
         .sheet(item: $editing) { RoutineEditor(workspace: workspace.name, draft: $0) }
-        .onAppear {
-            if let edit, let r = workspace.routines.first(where: { $0.name == edit }) { editing = RoutineDraft(r) }
-        }
     }
 
     private var gate: some View {

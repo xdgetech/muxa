@@ -23,7 +23,7 @@ struct BotDetailPane: View {
                     Group {
                         switch chrome.botTab {
                         case .home, .chats: BotHomeTab(entry: entry, newChat: newChat)
-                        case .routines: BotRoutinesTab(entry: entry)
+                        case .routines: BotRoutinesTab(entry: entry, newChat: newChat)
                         case .files: BotFilesTab(entry: entry)
                         }
                     }

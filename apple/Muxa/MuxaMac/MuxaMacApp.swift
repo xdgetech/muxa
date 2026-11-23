@@ -51,7 +51,7 @@ struct MuxaMacApp: App {
                     if ProcessInfo.processInfo.arguments.contains("-demo") {
                         await model.startDemo()
                         #if DEBUG
-                        await Snapshot.runIfAsked(nav: nav, chrome: chrome)
+                        await Snapshot.runIfAsked(model: model, nav: nav, chrome: chrome)
                         #endif
                     } else if model.prefersLocal, model.serverIsLocal {
                         await model.connectLocal()

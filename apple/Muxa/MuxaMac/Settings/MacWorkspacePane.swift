@@ -6,18 +6,11 @@ import SwiftUI
 struct MacWorkspacePane: View {
     @Environment(NextModel.self) private var model
     let name: String
-    @State private var tab: WorkspaceSettings.Tab
-    /// The Routine whose editor opens on the Routines tab.
-    var editRoutine: String?
+    @State private var tab = MacWorkspacePane.firstTab
 
     /// The tab a pane opens on; the debug snapshot sets it.
     @MainActor static var firstTab = WorkspaceSettings.Tab.general
 
-    init(name: String, tab: WorkspaceSettings.Tab? = nil, editRoutine: String? = nil) {
-        self.name = name
-        self.editRoutine = editRoutine
-        _tab = State(initialValue: tab ?? Self.firstTab)
-    }
 
     var body: some View {
         if let w = model.settings.workspace(name) {
@@ -62,7 +55,7 @@ struct MacWorkspacePane: View {
         case .agent: form { WorkspaceAgentForm(workspace: w) }
         case .connections: page { MacConnectionsTable(workspace: w) }
         case .mcp: page { MacMcpCards(workspace: w) }
-        case .routines: page { MacRoutinesTable(workspace: w, edit: editRoutine) }
+        case .routines: page { MacRoutinesTable(workspace: w) }
         case .bots: page { MacBotsTable(workspace: w) }
         }
     }
