@@ -80,8 +80,9 @@ struct ChatView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .accessibilityIdentifier("chat.list")
-                .onAppear { proxy.scrollTo("end") }
-                .onChange(of: entries.count) { proxy.scrollTo("end") }
+                .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+                // The last entry also changes in place: a reply grows, a tool gets its result.
+                .onChange(of: entries.last) { proxy.scrollTo("end", anchor: .bottom) }
             }
             if let prompt { PromptCard(prompt: prompt) { send($0) } }
             composer
@@ -109,6 +110,9 @@ struct ChatView: View {
         let text = draft.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         draft = ""
+        // A field still composing (Japanese input) writes its text back after
+        // this; clear again once it has.
+        Task { @MainActor in draft = "" }
         send(text + "\r")
     }
 

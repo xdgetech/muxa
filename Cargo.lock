@@ -448,6 +448,7 @@ dependencies = [
 name = "muxa-server"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "muxa-backend",
  "muxa-herdr",
  "muxa-inbox",

@@ -141,9 +141,13 @@ fn update_of(events: Vec<ChatEvent>, source: &dyn ChatSource) -> ChatUpdate {
                 update.truncated = truncated;
                 update.entries = entries;
             }
+            // In place: a later change to an entry must not move it below
+            // entries the agent wrote after it.
             ChatEvent::Upsert(entry) => {
-                update.entries.retain(|e| e.id != entry.id);
-                update.entries.push(entry);
+                match update.entries.iter_mut().find(|e| e.id == entry.id) {
+                    Some(e) => *e = entry,
+                    None => update.entries.push(entry),
+                }
             }
         }
     }

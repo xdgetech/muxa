@@ -142,3 +142,33 @@ fn an_unknown_key_drops_the_prompt() {
     };
     assert_eq!(prompt(p), None);
 }
+
+#[tokio::test]
+async fn an_entry_changed_in_the_same_poll_keeps_its_place() {
+    let f = Fixture::new("order", "busy", &sample("transcript.jsonl"));
+    let chats = f.chats();
+    let (handle, _) = chats.open(&f.task).await.unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(f.transcript())
+        .unwrap();
+    // Two calls in parallel; the second finishes first. Claude Code writes
+    // each block and each result as its own line.
+    for line in [
+        r#"{"type":"assistant","uuid":"a1","message":{"id":"m-1","content":[{"type":"text","text":"Looking"}]}}"#,
+        r#"{"type":"assistant","uuid":"a2","message":{"id":"m-1","content":[{"type":"tool_use","id":"tu-1","name":"Bash","input":{"command":"ls"}}]}}"#,
+        r#"{"type":"assistant","uuid":"a3","message":{"id":"m-1","content":[{"type":"tool_use","id":"tu-2","name":"Bash","input":{"command":"pwd"}}]}}"#,
+        r#"{"type":"user","uuid":"u1","message":{"content":[{"type":"tool_result","tool_use_id":"tu-2","content":"/"}]}}"#,
+        r#"{"type":"user","uuid":"u2","message":{"content":[{"type":"tool_result","tool_use_id":"tu-1","content":"ok"}]}}"#,
+        r#"{"type":"assistant","uuid":"a4","message":{"id":"m-2","content":[{"type":"text","text":"Done"}]}}"#,
+    ] {
+        writeln!(file, "{line}").unwrap();
+    }
+    let next = chats.poll(handle).await.unwrap().unwrap();
+    let ids: Vec<&str> = next.entries.iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["a:m-1", "t:tu-1", "t:tu-2", "a:m-2"]);
+    assert_eq!(
+        next.entries[1].tool.as_ref().unwrap().result.as_deref(),
+        Some("ok")
+    );
+}
