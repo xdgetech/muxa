@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use muxa_protocol::v2::{Place, PlaceKind};
-use muxa_server::tasks::{BRANCH, CHECKOUT, DIR, PLACES, REPO, WORKSPACE};
+use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::adopt::{self, AgentLookup};
@@ -169,6 +169,55 @@ impl BridgeHost {
     }
 }
 
+impl BridgeHost {
+    /// The talk part of a talk Task's brief (ADR 0083). The Task is one
+    /// folder; the Bot is one of the Workspace's, or a name for a new one.
+    async fn talk_brief(
+        &self,
+        ws: &Workspace,
+        bot: &str,
+        places: &[muxa_protocol::v2::PlaceSpec],
+    ) -> Result<String, TaskError> {
+        crate::records::bots::name(bot).map_err(TaskError::Invalid)?;
+        if places
+            .iter()
+            .any(|p| !matches!(p, muxa_protocol::v2::PlaceSpec::Folder))
+        {
+            return Err(TaskError::Invalid(
+                "a talk with a Bot is one folder; send no other places".into(),
+            ));
+        }
+        let store = self.settings_store()?;
+        let view = settings_call(move || store.view()).await?;
+        let found = view
+            .workspaces
+            .iter()
+            .find(|w| w.name == ws.name)
+            .ok_or_else(|| TaskError::Invalid(format!("no Workspace named {:?}", ws.name)))?;
+        Ok(super::talk_check::brief(found, bot))
+    }
+}
+
+/// Claude Code may not edit the Workspace's `.muxa/` in a talk: the Bot
+/// proposes changes instead (ADR 0083).
+async fn talk_line(ws: &Workspace, dir: &Path, line: String) -> Result<String, TaskError> {
+    let launch = LaunchCommand::Shell(line.clone());
+    if !crate::launch::is_claude_code(&launch) {
+        return Ok(line);
+    }
+    let (ws, dir) = (ws.clone(), dir.to_owned());
+    blocking(move || {
+        let muxa = crate::records::routines::routines_dir(&ws)?
+            .unwrap_or_else(|| ws.root.join(crate::records::routines::WORKSPACE_DIR));
+        let rules = [super::bot_run::deny(&muxa)];
+        match super::bot_run::with_settings(launch, &dir, &rules, &[])? {
+            LaunchCommand::Shell(line) => Ok(line),
+            LaunchCommand::Native { .. } => Ok(line),
+        }
+    })
+    .await
+}
+
 /// The places of an ended agent from its labels; its working place must
 /// still be there.
 fn made_of(ended: &muxa_backend::TerminalInfo, dir: &str) -> Result<places::Made, TaskError> {
@@ -259,6 +308,7 @@ fn prepared(
         connections: given.connections,
         mcp: given.mcp,
         argv: shell_line(line),
+        bot: None,
         env: {
             let mut env = ws.agent.map(|a| a.env).unwrap_or_default();
             crate::connections::merge(&mut env, given.env);
@@ -335,16 +385,27 @@ impl Host for BridgeHost {
             mcp::only_claude(crate::launch::program(&launch), &servers)
                 .map_err(TaskError::Invalid)?;
         }
+        let talk = match &spec.bot {
+            Some(bot) => Some(self.talk_brief(&ws, bot, &spec.places).await?),
+            None => None,
+        };
         // Before any place is made: a missing secret stops the start.
         let given = given(&ws).await?;
         let made = places::make(&ws, title, checked).await?;
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
+        let talk_text = talk.clone();
         let made = blocking(move || {
             places::brief(&made, &title_owned, goal.as_deref())?;
+            if let Some(text) = &talk_text {
+                super::git::append_file(made.working(), "TASK.md", text)?;
+            }
             Ok(made)
         })
         .await?;
         let (made, mut line) = self.agent_line(&ws, made, Some(servers)).await?;
+        if talk.is_some() {
+            line = talk_line(&ws, made.working(), line).await?;
+        }
         let adopts = spec.existing().is_some() || spec.checkout().is_some();
         if adopts && self.resumes(&ws, &line, made.working()) {
             line.push_str(" --continue");
@@ -355,6 +416,7 @@ impl Host for BridgeHost {
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
         let mut prepared = prepared(ws, title, made, line, given);
         prepared.checkout = spec.checkout().map(str::to_owned);
+        prepared.bot = spec.bot.clone();
         Ok(prepared)
     }
 
@@ -371,7 +433,10 @@ impl Host for BridgeHost {
         let made = made_of(ended, &label(DIR)?)?;
         // The Workspace's connections and servers as they are now.
         let given = given(&ws).await?;
-        let (made, line) = self.agent_line(&ws, made, Some(mcp::chosen(&ws))).await?;
+        let (made, mut line) = self.agent_line(&ws, made, Some(mcp::chosen(&ws))).await?;
+        if ended.labels.contains_key(BOT) {
+            line = talk_line(&ws, made.working(), line).await?;
+        }
         let title = ended
             .name
             .clone()
@@ -379,7 +444,25 @@ impl Host for BridgeHost {
             .unwrap_or_else(|| "Task".into());
         let mut prepared = prepared(ws, &title, made, line, given);
         prepared.checkout = ended.labels.get(CHECKOUT).cloned();
+        prepared.bot = ended.labels.get(BOT).cloned();
         Ok(prepared)
+    }
+
+    async fn suggestion_decided(
+        &self,
+        item: &muxa_protocol::v2::InboxItem,
+        suggestion: &muxa_protocol::v2::ItemSuggestion,
+        accepted: bool,
+    ) {
+        let (records, item, suggestion) =
+            (Arc::clone(&self.records), item.clone(), suggestion.clone());
+        let noted = tokio::task::spawn_blocking(move || {
+            super::assistant::note_decision(&records, &item, &suggestion, accepted)
+        })
+        .await;
+        if let Ok(Err(e)) = noted {
+            tracing::warn!(error = %e, "the assistant's decision was not kept");
+        }
     }
 
     async fn v1_tasks(&self) -> Result<Vec<muxa_protocol::v2::V1Task>, TaskError> {
@@ -634,6 +717,7 @@ mod tests {
             connections: Vec::new(),
             mcp: Vec::new(),
             plan: false,
+            bot: None,
         };
         assert!(matches!(
             host.prepare(&spec).await,
@@ -673,6 +757,7 @@ mod tests {
             connections: Vec::new(),
             mcp: mcp.iter().map(|m| (*m).to_owned()).collect(),
             plan: false,
+            bot: None,
         }
     }
 

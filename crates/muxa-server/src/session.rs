@@ -23,7 +23,7 @@ use crate::shells;
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::uploads;
 use crate::wire::{self, Incoming};
-use crate::{inbox, migrate, task_actions, task_items, usage};
+use crate::{inbox, item_actions, migrate, task_actions, task_items, usage};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -354,6 +354,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 mcp,
                 plan,
                 task_loop,
+                bot,
             } => {
                 let spec = TaskSpec {
                     workspace,
@@ -363,6 +364,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     connections,
                     mcp,
                     plan,
+                    bot,
                 };
                 self.start_task(id, &spec, task_loop).await;
             }
@@ -534,6 +536,14 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
             ClientMsg::MigrateV1 { id, dry_run } => self.migrate_v1(id, dry_run).await,
             ClientMsg::InboxRetry { id, item } => {
                 let done = task_actions::retry(self.backend, self.host, self.inbox, &item).await;
+                self.inbox_reply(id, done);
+            }
+            ClientMsg::InboxApply { id, item } => {
+                let done = item_actions::apply(self.host, self.inbox, &item).await;
+                self.inbox_reply(id, done);
+            }
+            ClientMsg::InboxSuggestion { id, item, accept } => {
+                let done = item_actions::suggestion(self.host, self.inbox, &item, accept).await;
                 self.inbox_reply(id, done);
             }
             other => match inbox::handle(other, self.inbox, self.host).await {

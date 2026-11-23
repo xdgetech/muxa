@@ -124,6 +124,7 @@ pub fn info(r: &Routine, state: &RoutineState, at: u64) -> RoutineInfo {
         last_failure: state.last_failure.clone(),
         running: state.running.clone(),
         bot: r.bot.clone(),
+        on: r.on.map(|e| e.as_str().to_owned()),
     }
 }
 

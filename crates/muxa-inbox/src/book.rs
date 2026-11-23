@@ -5,19 +5,22 @@ use std::collections::{BTreeMap, VecDeque};
 
 use muxa_protocol::v2::{
     self, BotCount, InboxItem, ItemKind, ItemLink, ItemPlace, ItemProposal, RoutineRef,
+    SettingsProposal,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::bots::{self, Ledger};
 
 pub const FORMAT_VERSION: u32 = 1;
-const MAX_TITLE: usize = 300;
-const MAX_NOTE: usize = 4096;
-const MAX_WORKSPACE: usize = 100;
+pub(crate) const MAX_TITLE: usize = 300;
+pub(crate) const MAX_NOTE: usize = 4096;
+pub(crate) const MAX_WORKSPACE: usize = 100;
 const MAX_LINKS: usize = 10;
 const MAX_URL: usize = 2048;
 const MAX_PROPOSAL: usize = 8192;
 const MAX_BOT: usize = 64;
+/// Ops in one settings proposal.
+const MAX_PROPOSAL_OPS: usize = 20;
 /// Done items kept for Reopen.
 pub const KEEP_DONE: usize = 100;
 /// Keys remembered for [`NewItem::once`].
@@ -65,6 +68,8 @@ pub struct Extra {
     pub proposal: Option<ItemProposal>,
     /// The Bot in the item's Workspace.
     pub bot: Option<String>,
+    /// Settings a Bot proposed in a talk (ADR 0083).
+    pub settings_proposal: Option<SettingsProposal>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -175,6 +180,8 @@ impl Book {
             links: new.extra.links,
             proposal: new.extra.proposal,
             bot: new.extra.bot,
+            settings_proposal: new.extra.settings_proposal,
+            suggestion: None,
         };
         self.items.insert(0, Stored { item, key: new.key });
         self.revision += 1;
@@ -446,8 +453,16 @@ fn check_extra(extra: &Extra) -> Result<(), InboxError> {
             return bad("a bot name is 1 to 64 bytes without /");
         }
     }
+    if let Some(p) = &extra.settings_proposal {
+        if p.ops.is_empty() || p.ops.len() > MAX_PROPOSAL_OPS {
+            return bad("a settings proposal has 1 to 20 ops");
+        }
+    }
     Ok(())
 }
+
+#[path = "suggest.rs"]
+mod suggest;
 
 #[cfg(test)]
 mod tests {
@@ -590,6 +605,7 @@ mod tests {
                     title: None,
                 }],
                 proposal: None,
+                settings_proposal: None,
             },
             ..todo(title)
         }

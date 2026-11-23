@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
+use super::assistant::{self, Assistant};
 use super::bots::Bot;
 use super::connections::{self, Connection, RawConnection};
 use super::is_valid_id;
@@ -86,6 +87,8 @@ pub struct Workspaces {
     problems: Vec<RoutineProblem>,
     /// `[codex] owned_threads` (ADR 0028); off without it.
     codex_threads: bool,
+    /// `[assistant]` (ADR 0084).
+    assistant: Assistant,
 }
 
 #[derive(Deserialize)]
@@ -98,7 +101,8 @@ struct RawConfig {
     /// Refused: Routines moved to each workspace (ADR 0036).
     #[serde(default)]
     routine: Vec<toml::Value>,
-    /// `[assistant]` of the removed assistant layer (ADR 0066): read, not used.
+    /// The Capture assistant (ADR 0084). Keys of the removed assistant layer
+    /// (ADR 0066) are read and ignored.
     assistant: Option<toml::Value>,
     codex: Option<RawCodex>,
 }
@@ -279,9 +283,7 @@ impl Workspaces {
             }
             workers.push(worker);
         }
-        if raw.assistant.is_some() {
-            tracing::warn!("[assistant] is no longer used; remove it");
-        }
+        let assistant = assistant::parse(raw.assistant.as_ref(), &workers).map_err(invalid)?;
         let mut all_routines = Vec::new();
         let mut all_bots = Vec::new();
         let mut problems = Vec::new();
@@ -305,7 +307,12 @@ impl Workspaces {
             bots: all_bots,
             problems,
             codex_threads,
+            assistant,
         })
+    }
+
+    pub fn assistant(&self) -> &Assistant {
+        &self.assistant
     }
 
     /// Whether a background Codex run gets a thread muxa creates and sends

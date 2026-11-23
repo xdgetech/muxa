@@ -140,22 +140,36 @@ async fn serve(setup: Setup, path: &Path) -> std::io::Result<()> {
         Arc::clone(&inbox),
     ));
     let chats = Arc::new(crate::v2::chat::Chats::new(Arc::clone(&setup.agents)));
+    let settings = Arc::new(crate::settings::SettingsStore::new(
+        config.workspaces.clone(),
+        config.home.clone(),
+        setup.settings_read_only,
+        Box::new(crate::settings::secrets::Keychain),
+    ));
+    let talks = Arc::new(crate::v2::talk::Talks::new(
+        Arc::clone(&config),
+        Arc::clone(&settings),
+        Arc::clone(&inbox),
+    ));
+    let assistant = Arc::new(crate::v2::assistant::Assistant::new(
+        Arc::clone(&config),
+        Arc::clone(&inbox),
+        setup.task_command.clone(),
+    ));
     let host = crate::v2::BridgeHost::new(setup.task_command, Arc::clone(&config))
         .with_claude_dirs(setup.claude_dirs)
         .with_runner(Arc::clone(&runner))
         .with_loops(Arc::clone(&loops))
         .with_chats(chats)
-        .with_settings(Arc::new(crate::settings::SettingsStore::new(
-            config.workspaces.clone(),
-            config.home.clone(),
-            setup.settings_read_only,
-            Box::new(crate::settings::secrets::Keychain),
-        )));
+        .with_settings(settings);
     crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&config));
     let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
     crate::v2::spawn_task_watch(Arc::clone(&herdr));
+    crate::v2::spawn_review_runs(Arc::clone(&herdr), Arc::clone(&runner));
     crate::v2::spawn_runner(Arc::clone(&herdr), runner);
+    crate::v2::assistant::spawn(Arc::clone(&herdr), assistant);
     crate::v2::spawn_loops(Arc::clone(&herdr), loops);
+    crate::v2::spawn_talks(Arc::clone(&herdr), talks);
     tokio::spawn(crate::v2::accept(listener, herdr));
     tracing::info!(version = env!("CARGO_PKG_VERSION"), socket = %path.display(), "daemon started");
     let mut term = signal(SignalKind::terminate())?;

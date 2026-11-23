@@ -291,6 +291,13 @@ pub fn write_file(dir: &Path, name: &str, text: &str) -> Result<PathBuf, String>
     Ok(path)
 }
 
+/// Adds `text` to the end of `.muxa/<name>` in `dir`. Blocking.
+pub fn append_file(dir: &Path, name: &str, text: &str) -> Result<PathBuf, String> {
+    let path = dir.join(DIR).join(name);
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
+    write_file(dir, name, &format!("{before}{text}"))
+}
+
 /// Adds `.muxa/` to the repo's `info/exclude`, shared by all its worktrees.
 /// Blocking.
 pub fn exclude(dir: &Path) -> Result<(), String> {

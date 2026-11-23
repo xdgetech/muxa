@@ -24,6 +24,8 @@ pub struct Effects {
     pub instructions: Vec<(String, String, String)>,
     /// Workspace, Bot and the kept memory to bring back (ADR 0082).
     pub memory_restores: Vec<(String, String, u32)>,
+    /// The Capture assistant's new Soul (ADR 0084).
+    pub assistant_soul: Option<String>,
 }
 
 pub fn account(workspace: &str, name: &str) -> String {
@@ -295,6 +297,25 @@ pub fn apply(
             effects.memory_restores.push((workspace, name, version));
             Ok(())
         }
+        SettingsOp::AssistantUpdate {
+            enabled,
+            worker,
+            soul_text,
+        } => {
+            let t = workspaces
+                .as_table_mut()
+                .entry("assistant")
+                .or_insert_with(|| Item::Table(Table::new()))
+                .as_table_like_mut()
+                .ok_or("assistant is not a table; edit it by hand")?;
+            set_bool(t, "enabled", enabled, true);
+            set_str(t, "worker", worker.as_deref());
+            if let Some(text) = soul_text {
+                check_soul(&text)?;
+                effects.assistant_soul = Some(text);
+            }
+            Ok(())
+        }
         SettingsOp::WorkerAdd { worker } => {
             let root = workspaces.as_table_mut();
             if find_named(root, "worker", &worker.name)?.is_some() {
@@ -373,18 +394,23 @@ fn keep_soul(
 ) -> Result<(), String> {
     let Some(text) = text else { return Ok(()) };
     crate::records::bots::name(bot)?;
-    if text.len() > crate::records::bots::MAX_SOUL {
-        return Err("soul_text is larger than 12 KiB".into());
-    }
-    if text.contains('\0') {
-        return Err("soul_text has a NUL byte".into());
-    }
+    check_soul(&text)?;
     let rel = format!(
         "{}/{bot}/{}",
         crate::records::bots::BOTS_DIR,
         crate::records::bots::SOUL_FILE
     );
     effects.instructions.push((workspace.to_owned(), rel, text));
+    Ok(())
+}
+
+fn check_soul(text: &str) -> Result<(), String> {
+    if text.len() > crate::records::bots::MAX_SOUL {
+        return Err("soul_text is larger than 12 KiB".into());
+    }
+    if text.contains('\0') {
+        return Err("soul_text has a NUL byte".into());
+    }
     Ok(())
 }
 
@@ -573,6 +599,7 @@ fn write_routine(t: &mut Table, r: &RoutineSpec) -> Result<(), String> {
     set_str(t, "project", r.project.as_deref());
     set_str(t, "bot", r.bot.as_deref());
     set_bool(t, "read_only", r.read_only, false);
+    set_str(t, "on", r.on.as_deref());
     // Ignored since ADR 0075: an edit drops them.
     t.remove("connections");
     t.remove("mcp");
@@ -608,6 +635,16 @@ fn write_bot(t: &mut Table, b: &BotSpec) {
         }
     }
     set_bool(t, "enabled", b.enabled, true);
+    set_list(t, "members", &b.members);
+    match b.handoffs_per_day {
+        Some(n) if t.get("handoffs_per_day").and_then(Item::as_integer) != Some(i64::from(n)) => {
+            t.insert("handoffs_per_day", value(i64::from(n)));
+        }
+        Some(_) => {}
+        None => {
+            t.remove("handoffs_per_day");
+        }
+    }
 }
 
 fn write_worker(t: &mut Table, w: &WorkerSpec) {

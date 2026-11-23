@@ -62,6 +62,7 @@ impl Host for FakeTasks {
             // Every agent gets all the Workspace's (ADR 0075); a choice is ignored.
             connections: vec!["github".into()],
             mcp: vec!["docs".into()],
+            bot: None,
         })
     }
 
@@ -156,6 +157,7 @@ impl Host for FakeTasks {
             running_since: None,
             last: None,
             bot: None,
+            on: None,
         };
         Ok(RoutineList {
             routines: vec![routine("digest", Some("09:00")), routine("audit", None)],

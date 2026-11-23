@@ -353,6 +353,7 @@ fn a_routine_never_blocks_removing_a_connection_and_an_edit_drops_its_old_choice
         direct_writes: false,
         bot: None,
         read_only: false,
+        on: None,
     };
     h.store
         .update(
@@ -390,6 +391,7 @@ fn a_new_routine_gets_its_file_and_its_instructions() {
         direct_writes: false,
         bot: None,
         read_only: false,
+        on: None,
     };
     let add = |instructions: &str| SettingsOp::RoutineAdd {
         workspace: "Home".into(),
@@ -655,3 +657,6 @@ fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
     );
     assert_eq!(bot.read_memory_version(1).unwrap(), "second");
 }
+
+#[path = "tests_bots.rs"]
+mod bots;

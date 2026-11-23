@@ -150,6 +150,7 @@ fn publish_stores_new_keys_commits_state_and_closes_the_run() {
             .items,
         state: None,
         memory: None,
+        handoffs: Vec::new(),
     };
     let mut fresh = ids();
     for _ in 0..2 {

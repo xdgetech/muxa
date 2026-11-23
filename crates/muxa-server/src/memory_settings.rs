@@ -313,6 +313,19 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             }
             Ok(())
         }
+        SettingsOp::AssistantUpdate {
+            enabled,
+            worker,
+            soul_text,
+        } => {
+            let a = s.assistant.get_or_insert_with(Default::default);
+            a.enabled = enabled;
+            a.worker = worker;
+            if let Some(text) = soul_text {
+                a.soul_text = Some(text);
+            }
+            Ok(())
+        }
         SettingsOp::WorkerAdd { worker } => put(&mut s.workers, worker, true, |w| &w.name),
         SettingsOp::WorkerUpdate { worker } => put(&mut s.workers, worker, false, |w| &w.name),
         SettingsOp::WorkerRemove { name } => remove(&mut s.workers, &name, |w| &w.name),

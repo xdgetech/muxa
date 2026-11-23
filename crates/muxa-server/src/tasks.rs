@@ -37,6 +37,8 @@ pub const MCP: &str = "muxa.mcp";
 /// The repo of a `checkout` Task as the request named it: a second start
 /// finds the running agent by it.
 pub const CHECKOUT: &str = "muxa.checkout";
+/// The Bot a talk Task talks with (ADR 0083).
+pub const BOT: &str = "muxa.bot";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
@@ -50,6 +52,8 @@ pub struct TaskSpec {
     /// Deprecated and ignored (ADR 0075).
     pub mcp: Vec<String>,
     pub plan: bool,
+    /// Talk to this Bot of the Workspace (ADR 0083).
+    pub bot: Option<String>,
 }
 
 impl TaskSpec {
@@ -98,6 +102,8 @@ pub struct Prepared {
     pub mcp: Vec<String>,
     pub argv: Vec<String>,
     pub env: BTreeMap<String, String>,
+    /// The Bot of a talk Task (ADR 0083).
+    pub bot: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -303,6 +309,17 @@ pub trait Host: Send + Sync {
 
     /// A listed file of `dir` as it is now. Called again while it is open, so
     /// it checks again that the file is listed.
+    /// The user accepted or dismissed the Capture assistant's suggestion on
+    /// `item` (ADR 0084), so the assistant can learn from it.
+    fn suggestion_decided(
+        &self,
+        _item: &muxa_protocol::v2::InboxItem,
+        _suggestion: &muxa_protocol::v2::ItemSuggestion,
+        _accepted: bool,
+    ) -> impl Future<Output = ()> + Send {
+        async {}
+    }
+
     fn reader_read(
         &self,
         _dir: &Path,
@@ -357,6 +374,9 @@ fn labels(p: &Prepared) -> Labels {
     }
     if let Some(repo) = &p.checkout {
         labels.insert(CHECKOUT.to_owned(), repo.clone());
+    }
+    if let Some(bot) = &p.bot {
+        labels.insert(BOT.to_owned(), bot.clone());
     }
     if let Ok(places) = serde_json::to_string(&p.places) {
         labels.insert(PLACES.to_owned(), places);

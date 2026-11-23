@@ -346,3 +346,131 @@ async fn a_routine_of_a_turned_off_bot_does_not_start() {
     assert!(matches!(refused, Err(StartError::Bad(_))), "{refused:?}");
     assert!(backend.launches().is_empty());
 }
+
+const TEAM: &str = "bot = \"lead\"\n\
+    [[bot]]\nname = \"lead\"\nenabled = true\nmembers = [\"scout\"]\n\
+    [[bot]]\nname = \"scout\"\ndescription = \"Reads the issues\"\nenabled = true\n";
+
+#[tokio::test]
+async fn a_lead_hands_off_and_runs_again_with_its_members_results() {
+    let h = Host::with("team", TEAM);
+    let backend = FakeBackend::new();
+    let lead = h.started(&backend).await;
+    let brief =
+        std::fs::read_to_string(PathBuf::from(&lead.labels["muxa.dir"]).join(".muxa/TASK.md"))
+            .unwrap();
+    assert!(brief.contains("## Your team") && brief.contains("scout: Reads the issues"));
+    write_output(
+        &lead,
+        json!({"version": 1, "items": [], "handoffs": [{"to": "scout", "brief": "Read issue 7."}]}),
+    );
+    h.runner.turn_ended(&backend, &lead).await;
+    assert_eq!(h.state().last_success.unwrap().published, 0);
+
+    let launches = backend.launches();
+    assert_eq!(launches.len(), 2, "the member started");
+    let member = &launches[1];
+    assert_eq!(member.labels["muxa.kind"], "handoff");
+    assert_eq!(member.labels["muxa.bot"], "scout");
+    let member_dir = member.cwd.clone().unwrap();
+    assert!(member_dir.starts_with(&lead.labels["muxa.dir"]));
+    let task = std::fs::read_to_string(member_dir.join(".muxa/TASK.md")).unwrap();
+    assert!(task.contains("Read issue 7.") && task.contains("result.json"));
+
+    std::fs::write(
+        member_dir.join(".muxa/result.json"),
+        r#"{"summary": "Issue 7 is a crash on start.", "memory": "Issue 7 seen."}"#,
+    )
+    .unwrap();
+    let member_t = backend
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|t| t.labels.get("muxa.kind").map(String::as_str) == Some("handoff"))
+        .unwrap();
+    super::super::team::member_done(&h.runner, &backend, &member_t).await;
+    assert!(
+        !backend.get(&member_t.id).await.unwrap().live,
+        "the member ended"
+    );
+    let memory = std::fs::read_to_string(h.base.join("root/.muxa/bots/scout/memory.md")).unwrap();
+    assert_eq!(memory, "Issue 7 seen.");
+
+    let launches = backend.launches();
+    assert_eq!(launches.len(), 3, "the lead's next step started");
+    let next = launches[2].cwd.clone().unwrap();
+    let brief = std::fs::read_to_string(next.join(".muxa/TASK.md")).unwrap();
+    assert!(brief.contains("This is step 2 of 3"), "{brief}");
+    assert!(brief.contains("Issue 7 is a crash on start."));
+    assert_eq!(
+        std::fs::read_to_string(next.join(".muxa/team-step")).unwrap(),
+        "2"
+    );
+}
+
+#[tokio::test]
+async fn only_a_lead_hands_off_and_never_in_its_last_step() {
+    let h = Host::new("no-team");
+    let backend = FakeBackend::new();
+    let t = h.started(&backend).await;
+    write_output(
+        &t,
+        json!({"version": 1, "handoffs": [{"to": "scout", "brief": "x"}]}),
+    );
+    h.runner.turn_ended(&backend, &t).await;
+    assert!(h.state().last_success.is_none(), "refused: not a lead");
+
+    let h = Host::with("last-step", TEAM);
+    let backend = FakeBackend::new();
+    h.runner
+        .start_with(
+            &backend,
+            "w",
+            "Brief",
+            When::Now(now()),
+            Some(RunExtra {
+                step: 3,
+                ..RunExtra::default()
+            }),
+        )
+        .await
+        .unwrap();
+    let t = backend.list().await.unwrap().into_iter().next().unwrap();
+    write_output(
+        &t,
+        json!({"version": 1, "handoffs": [{"to": "scout", "brief": "x"}]}),
+    );
+    h.runner.turn_ended(&backend, &t).await;
+    assert!(h.state().last_success.is_none(), "refused: the last step");
+    assert_eq!(backend.launches().len(), 1, "no member started");
+}
+
+#[tokio::test]
+async fn a_run_for_a_review_may_read_the_tasks_places() {
+    let h = Host::new("review");
+    let backend = FakeBackend::new();
+    let place = h.base.join("root/tasks/fix-1");
+    let extra = RunExtra {
+        text: "## The Task to review\n".into(),
+        read_dirs: vec![place.clone()],
+        step: 1,
+    };
+    h.runner
+        .start_with(&backend, "w", "Brief", When::Now(now()), Some(extra))
+        .await
+        .unwrap();
+    let dir = backend.launches()[0].cwd.clone().unwrap();
+    let settings: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap(),
+    )
+    .unwrap();
+    let path = place.to_string_lossy().into_owned();
+    assert_eq!(settings["permissions"]["additionalDirectories"][0], path);
+    assert_eq!(
+        settings["permissions"]["deny"][0],
+        format!("Edit(/{path}/**)")
+    );
+    let brief = std::fs::read_to_string(dir.join(".muxa/TASK.md")).unwrap();
+    assert!(brief.contains("## The Task to review"));
+}

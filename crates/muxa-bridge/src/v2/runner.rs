@@ -32,7 +32,7 @@ pub const KIND: &str = "routine";
 const RUN: &str = "muxa.run";
 const ROUTINE: &str = "muxa.routine";
 const OCCURRENCE: &str = "muxa.occurrence";
-const START_PROMPT: &str = "Read .muxa/TASK.md and start.";
+pub(crate) const START_PROMPT: &str = "Read .muxa/TASK.md and start.";
 /// A run that has not published by then fails and its agent ends.
 const RUN_LIMIT: u64 = 2 * 60 * 60;
 /// The size a run's terminal starts at; nobody views it unless asked.
@@ -40,6 +40,21 @@ const SIZE: Size = Size {
     cols: 120,
     rows: 40,
 };
+
+/// More for one run than its Routine says: a review it was started for
+/// (ADR 0084), or its team's results (ADR 0085).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RunExtra {
+    /// Markdown added to `.muxa/TASK.md`.
+    pub text: String,
+    /// Folders the agent may read, never edit.
+    pub read_dirs: Vec<PathBuf>,
+    /// A team lead's step in this occurrence, from 1.
+    pub step: u32,
+}
+
+/// `.muxa/team-step` in a run's folder: the lead's step (ADR 0085).
+pub const STEP_FILE: &str = "team-step";
 
 pub struct Runner {
     config: Arc<crate::config::Config>,
@@ -65,6 +80,14 @@ impl Runner {
         Runner { config, fallback }
     }
 
+    pub(crate) fn config(&self) -> Arc<crate::config::Config> {
+        Arc::clone(&self.config)
+    }
+
+    pub(crate) fn fallback(&self) -> String {
+        self.fallback.clone()
+    }
+
     /// Starts one run: claims it, makes its folder and runs its agent.
     pub async fn start<B: SessionBackend>(
         &self,
@@ -73,11 +96,24 @@ impl Runner {
         name: &str,
         when: When,
     ) -> Result<RoutineState, StartError> {
+        self.start_with(backend, workspace, name, when, None).await
+    }
+
+    /// [`Runner::start`] with more for this run.
+    pub async fn start_with<B: SessionBackend>(
+        &self,
+        backend: &B,
+        workspace: &str,
+        name: &str,
+        when: When,
+        extra: Option<RunExtra>,
+    ) -> Result<RoutineState, StartError> {
         let (config, fallback) = (Arc::clone(&self.config), self.fallback.clone());
         let (ws, nm) = (workspace.to_owned(), name.to_owned());
-        let ready = tokio::task::spawn_blocking(move || ready(&config, &ws, &nm, when, &fallback))
-            .await
-            .map_err(|_| StartError::Failed("the routine start stopped".into()))??;
+        let ready =
+            tokio::task::spawn_blocking(move || ready(&config, &ws, &nm, when, &fallback, extra))
+                .await
+                .map_err(|_| StartError::Failed("the routine start stopped".into()))??;
         let launch = Launch {
             argv: ready.argv.clone(),
             cwd: Some(ready.dir.clone()),
@@ -131,6 +167,7 @@ impl Runner {
         let passed = matches!(end, CheckEnd::Exited { code: 0, .. });
         if passed {
             end_terminal(backend, &t.id).await;
+            super::team::after_lead(self, backend, &run).await;
         } else if attempt >= MAX_ATTEMPTS {
             let why = format!("The output check failed {attempt} times.");
             self.fail(&run, &why).await;
@@ -154,16 +191,18 @@ impl Runner {
     /// The daemon's tick: starts due runs, and fails open runs whose agent
     /// is gone or that ran past [`RUN_LIMIT`].
     pub async fn tick<B: SessionBackend>(&self, backend: &B) {
-        let live: Vec<TerminalInfo> = match backend.list().await {
-            Ok(list) => list
-                .into_iter()
-                .filter(|t| t.live && t.labels.get("muxa.kind").map(String::as_str) == Some(KIND))
-                .collect(),
+        let all: Vec<TerminalInfo> = match backend.list().await {
+            Ok(list) => list.into_iter().filter(|t| t.live).collect(),
             Err(e) => {
                 tracing::info!(error = %e, "cannot list run terminals");
                 return;
             }
         };
+        super::team::tick(self, backend, &all).await;
+        let live: Vec<TerminalInfo> = all
+            .into_iter()
+            .filter(|t| t.labels.get("muxa.kind").map(String::as_str) == Some(KIND))
+            .collect();
         let config = Arc::clone(&self.config);
         let at = now();
         let running: Vec<String> = live
@@ -314,6 +353,7 @@ fn ready(
     name: &str,
     when: When,
     fallback: &str,
+    extra: Option<RunExtra>,
 ) -> Result<Ready, StartError> {
     let workspaces = runs::load(config)?;
     let routine = workspaces.routine(workspace, name).cloned().ok_or_else(|| {
@@ -343,7 +383,12 @@ fn ready(
                     "the Routine's bot {b:?} is gone"
                 )))
             })?;
-            Some(bot_run::brief(found).map_err(|e| fail(StartError::Failed(e)))?)
+            let team: Vec<_> = found
+                .members
+                .iter()
+                .filter_map(|m| workspaces.bot(&routine.workspace, m))
+                .collect();
+            Some(bot_run::brief(found, &team).map_err(|e| fail(StartError::Failed(e)))?)
         }
     };
     let goal = crate::routines::brief::goal(&routine, &instructions, bot.as_ref());
@@ -356,6 +401,7 @@ fn ready(
         occurrence.clone(),
         &goal,
         fallback,
+        extra.unwrap_or_default(),
     )
     .map_err(|why| {
         let _ = runs::finish_start(config, &routine, &occurrence, None, Some(why.clone()));
@@ -375,6 +421,7 @@ fn made(
     occurrence: String,
     goal: &str,
     fallback: &str,
+    extra: RunExtra,
 ) -> Result<Ready, String> {
     let ws = workspaces
         .get(&routine.workspace)
@@ -395,28 +442,19 @@ fn made(
     if let Some(instructions) = &resolved.instructions {
         text.push_str(&format!("\n## Your role\n\n{}\n", instructions.trim_end()));
     }
+    if !extra.text.is_empty() {
+        text.push_str(&format!("\n{}\n", extra.text.trim_end()));
+    }
     brief::write_file(&dir, "TASK.md", &text)?;
+    brief::write_file(&dir, STEP_FILE, &extra.step.max(1).to_string())?;
     crate::routines::prepare_at(config, &routine.workspace, &routine.name, &dir)?;
-    let servers = mcp::chosen(ws);
-    let command = if !mcp::managed(ws) {
-        resolved.command
-    } else if crate::launch::is_claude_code(&resolved.command) {
-        let config = mcp::write(&dir, &servers, &ws.connections)?;
-        mcp::with_flags(resolved.command, &config)
-    } else {
-        mcp::only_claude(crate::launch::program(&resolved.command), &servers)?;
-        resolved.command
-    };
-    let command = if crate::launch::is_claude_code(&command) {
-        bot_run::with_settings(command, &dir, &bot_run::deny_rules(ws, &routine, &dir))?
-    } else {
-        command
-    };
-    let given = crate::connections::env(ws)?;
-    crate::connections::merge(&mut resolved.environment.env, given);
+    let mut rules = bot_run::deny_rules(ws, &routine, &dir);
+    rules.extend(extra.read_dirs.iter().map(|d| bot_run::deny(d)));
+    let agent = agent_in(ws, resolved.command, &dir, &rules, &extra.read_dirs)?;
+    crate::connections::merge(&mut resolved.environment.env, agent.env);
     let (connections, mcp) = crate::usage::given(ws);
     Ok(Ready {
-        argv: argv(&command, START_PROMPT),
+        argv: agent.argv,
         env: resolved.environment.env.into_iter().collect(),
         connections,
         mcp,
@@ -427,8 +465,46 @@ fn made(
     })
 }
 
+/// How a background agent of `ws` starts in `dir`.
+pub(crate) struct Agent {
+    pub argv: Vec<String>,
+    /// The Workspace's connections.
+    pub env: Vec<(String, String)>,
+}
+
+/// Blocking. `command` in `dir` with the Workspace's MCP servers and
+/// connections (ADR 0075), and for Claude Code the deny `rules` and the
+/// folders it may read.
+pub(crate) fn agent_in(
+    ws: &crate::records::Workspace,
+    command: LaunchCommand,
+    dir: &Path,
+    rules: &[String],
+    read_dirs: &[PathBuf],
+) -> Result<Agent, String> {
+    let servers = mcp::chosen(ws);
+    let command = if !mcp::managed(ws) {
+        command
+    } else if crate::launch::is_claude_code(&command) {
+        let config = mcp::write(dir, &servers, &ws.connections)?;
+        mcp::with_flags(command, &config)
+    } else {
+        mcp::only_claude(crate::launch::program(&command), &servers)?;
+        command
+    };
+    let command = if crate::launch::is_claude_code(&command) {
+        bot_run::with_settings(command, dir, rules, read_dirs)?
+    } else {
+        command
+    };
+    Ok(Agent {
+        argv: argv(&command, START_PROMPT),
+        env: crate::connections::env(ws)?,
+    })
+}
+
 /// Pure. The agent with its first prompt as the last argument.
-fn argv(command: &LaunchCommand, prompt: &str) -> Vec<String> {
+pub(crate) fn argv(command: &LaunchCommand, prompt: &str) -> Vec<String> {
     match command {
         LaunchCommand::Shell(line) => vec![
             "/bin/sh".into(),
@@ -559,13 +635,13 @@ pub(crate) async fn type_line<B: SessionBackend>(
     typed
 }
 
-async fn end_terminal<B: SessionBackend>(backend: &B, id: &TerminalId) {
+pub(crate) async fn end_terminal<B: SessionBackend>(backend: &B, id: &TerminalId) {
     if let Err(e) = backend.kill(id).await {
         tracing::info!(terminal = %id, error = %e, "cannot end a run's agent");
     }
 }
 
-fn new_id() -> Option<String> {
+pub(crate) fn new_id() -> Option<String> {
     let id = format!("t-{:06x}", getrandom::u32().ok()? & 0x00ff_ffff);
     is_valid_id(&id).then_some(id)
 }

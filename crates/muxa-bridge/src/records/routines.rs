@@ -84,6 +84,32 @@ pub struct Routine {
     pub bot: Option<String>,
     /// Claude Code's edit tools are denied to the run's agent.
     pub read_only: bool,
+    /// An event that runs it (ADR 0084).
+    pub on: Option<Event>,
+}
+
+/// What runs a Routine besides its schedule and Run now (ADR 0084).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+    /// A Task of its Workspace asks for review.
+    Review,
+}
+
+impl Event {
+    pub const REVIEW: &str = "review";
+
+    pub fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            Self::REVIEW => Ok(Self::Review),
+            _ => Err("on must be \"review\"".into()),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Review => Self::REVIEW,
+        }
+    }
 }
 
 /// What one routines file holds.
@@ -124,6 +150,7 @@ struct RawRoutine {
     bot: Option<String>,
     #[serde(default)]
     read_only: bool,
+    on: Option<String>,
     output: Option<RawOutput>,
     /// Read and ignored: a run gets all its workspace's connections and
     /// MCP servers (ADR 0075).
@@ -228,6 +255,7 @@ pub fn parse_text(
         }
         bots.push(bot);
     }
+    super::bots::check_teams(&bots).map_err(|r| at(&r))?;
     let mut routines: Vec<Routine> = Vec::with_capacity(raw.routine.len());
     for r in raw.routine {
         let routine = r
@@ -259,6 +287,15 @@ impl RawRoutine {
             self.timezone.as_deref(),
         )
         .map_err(|r| at(&r))?;
+        let on = self
+            .on
+            .as_deref()
+            .map(Event::parse)
+            .transpose()
+            .map_err(|r| at(&r))?;
+        if on.is_some() && trigger.is_some() {
+            return Err(at("a Routine with on has no at or schedule"));
+        }
         let worker = match self.worker.as_deref() {
             None | Some(super::workers::DEFAULT_WORKER) => None,
             Some(name) => {
@@ -318,6 +355,7 @@ impl RawRoutine {
             enabled: self.enabled && bot.is_none_or(|b| b.enabled),
             bot: bot.map(|b| b.name.clone()),
             read_only: self.read_only,
+            on,
         })
     }
 }

@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
-    BotSpec, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SettingsAgent, SettingsBot,
-    SettingsConnection, SettingsLoop, SettingsRoutine, SettingsWorkspace, WorkerSpec,
+    BotSpec, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SettingsAgent, SettingsAssistant,
+    SettingsBot, SettingsConnection, SettingsLoop, SettingsRoutine, SettingsWorkspace, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
 use serde::Deserialize;
@@ -24,6 +24,7 @@ pub struct FileConfig {
     pub workspace: Vec<FileWorkspace>,
     #[serde(default)]
     pub worker: Vec<WorkerSpec>,
+    pub assistant: Option<toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -89,6 +90,7 @@ struct FileRoutine {
     bot: Option<String>,
     #[serde(default)]
     read_only: bool,
+    on: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +149,33 @@ fn bot_text(dir: &Path, rel: &str, max: usize) -> Option<String> {
         return Some(String::new());
     }
     text_in(dir, rel, max)
+}
+
+/// `[assistant]` as written, and its Soul and Memory beside the file. The
+/// Soul counts in the revision; the Memory does not.
+pub fn assistant(
+    raw: Option<&toml::Value>,
+    config: &Path,
+    revision: &mut Revision,
+) -> SettingsAssistant {
+    let table = raw.and_then(toml::Value::as_table);
+    let get = |k: &str| table.and_then(|t| t.get(k));
+    let files = crate::records::assistant::files(config);
+    let text = |file: &str, max: usize| files.as_ref().and_then(|f| f.read(file, max).ok());
+    if let Some(f) = &files {
+        let soul = f.folder.join(SOUL_FILE);
+        revision.add(&soul, files::read(&soul).ok().flatten().as_deref());
+    }
+    SettingsAssistant {
+        enabled: get("enabled")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false),
+        worker: get("worker")
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned),
+        soul_text: text(SOUL_FILE, MAX_SOUL),
+        memory_text: text(MEMORY_FILE, MAX_MEMORY),
+    }
 }
 
 /// The Bots of a routines file. The Soul counts in the revision; the
@@ -222,6 +251,7 @@ fn routines(
                     direct_writes: output.direct_writes,
                     bot: r.bot,
                     read_only: r.read_only,
+                    on: r.on,
                 },
                 instructions_text: text,
             }

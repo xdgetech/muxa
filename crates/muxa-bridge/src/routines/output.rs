@@ -42,7 +42,22 @@ struct RawOutput {
     /// A Bot's whole new memory (ADR 0082).
     #[serde(default)]
     memory: Option<String>,
+    /// A team lead's work for its members (ADR 0085).
+    #[serde(default)]
+    handoffs: Vec<Handoff>,
 }
+
+/// Work a team lead hands to a member (ADR 0085).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Handoff {
+    pub to: String,
+    pub brief: String,
+}
+
+/// Handoffs in one output, and the bytes of one brief.
+pub const MAX_HANDOFFS: usize = 6;
+const MAX_BRIEF: usize = 4096;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -87,6 +102,7 @@ pub struct Output {
     pub state: Option<serde_json::Value>,
     /// None keeps the Bot's memory.
     pub memory: Option<String>,
+    pub handoffs: Vec<Handoff>,
 }
 
 /// Reads the stage in `dir`. The reasons are for the agent's check log.
@@ -173,11 +189,25 @@ pub fn validate(bytes: &[u8], limit: u32) -> Result<Output, Vec<String>> {
     if let Some(memory) = &raw.memory {
         text("memory", memory, MAX_MEMORY, true, &mut reasons);
     }
+    if raw.handoffs.len() > MAX_HANDOFFS {
+        reasons.push(format!("handoffs has more than {MAX_HANDOFFS} entries."));
+    }
+    for (i, h) in raw.handoffs.iter().enumerate() {
+        bytes_line(&format!("handoffs[{i}].to"), &h.to, MAX_KEY, &mut reasons);
+        text(
+            &format!("handoffs[{i}].brief"),
+            &h.brief,
+            MAX_BRIEF,
+            false,
+            &mut reasons,
+        );
+    }
     if reasons.is_empty() {
         Ok(Output {
             items,
             state: raw.state,
             memory: raw.memory,
+            handoffs: raw.handoffs,
         })
     } else {
         Err(reasons)

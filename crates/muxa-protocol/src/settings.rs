@@ -36,6 +36,25 @@ pub struct Settings {
     pub problem: Option<String>,
     pub workspaces: Vec<SettingsWorkspace>,
     pub workers: Vec<WorkerSpec>,
+    /// The Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant: Option<SettingsAssistant>,
+}
+
+/// The Capture assistant: no Workspace, no connections (ADR 0084).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsAssistant {
+    pub enabled: bool,
+    /// None: the default agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<String>,
+    /// `assistant/soul.md` beside `workspaces.toml`; None when it cannot be
+    /// read, empty when there is none.
+    #[serde(default)]
+    pub soul_text: Option<String>,
+    /// `assistant/memory.md`, read only: the assistant writes it.
+    #[serde(default)]
+    pub memory_text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +202,10 @@ pub struct RoutineSpec {
     /// Claude Code's edit tools are denied to the run's agent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_only: bool,
+    /// An event that runs it (ADR 0084): only `review`, a Task of its
+    /// Workspace asking for review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on: Option<String>,
 }
 
 /// `[[bot]]` (ADR 0082). Its Soul and Memory live in `.muxa/bots/<name>/`.
@@ -197,6 +220,13 @@ pub struct BotSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub daily_items: Option<u32>,
     pub enabled: bool,
+    /// A team lead's members (ADR 0085): Bots of the same Workspace that
+    /// lead no team themselves.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<String>,
+    /// A lead's handoffs a day, all members together. None: 10.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoffs_per_day: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -380,6 +410,14 @@ pub enum SettingsOp {
         name: String,
         version: u32,
     },
+    /// The Capture assistant's settings and Soul (ADR 0084).
+    AssistantUpdate {
+        enabled: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        soul_text: Option<String>,
+    },
     WorkerAdd {
         worker: WorkerSpec,
     },
@@ -416,13 +454,14 @@ impl SettingsOp {
             Self::BotUpdate { .. } => "bot-update",
             Self::BotRemove { .. } => "bot-remove",
             Self::BotMemoryRestore { .. } => "bot-memory-restore",
+            Self::AssistantUpdate { .. } => "assistant-update",
             Self::WorkerAdd { .. } => "worker-add",
             Self::WorkerUpdate { .. } => "worker-update",
             Self::WorkerRemove { .. } => "worker-remove",
         }
     }
 
-    /// The Workspace the op changes; None for a worker op.
+    /// The Workspace the op changes; None for a worker or assistant op.
     pub fn workspace(&self) -> Option<&str> {
         match self {
             Self::WorkspaceAdd { name, .. } => Some(name),
@@ -446,7 +485,10 @@ impl SettingsOp {
             | Self::BotUpdate { workspace, .. }
             | Self::BotRemove { workspace, .. }
             | Self::BotMemoryRestore { workspace, .. } => Some(workspace),
-            Self::WorkerAdd { .. } | Self::WorkerUpdate { .. } | Self::WorkerRemove { .. } => None,
+            Self::AssistantUpdate { .. }
+            | Self::WorkerAdd { .. }
+            | Self::WorkerUpdate { .. }
+            | Self::WorkerRemove { .. } => None,
         }
     }
 }

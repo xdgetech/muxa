@@ -33,6 +33,16 @@ pub enum SettingsError {
     Failed(String),
 }
 
+/// What `ops` would write, checked by the loading rules.
+struct Plan {
+    doc: DocumentMut,
+    changed: BTreeMap<String, DocumentMut>,
+    effects: edit::Effects,
+    /// The Workspaces after the ops.
+    current: Workspaces,
+    names: Vec<&'static str>,
+}
+
 pub struct SettingsStore {
     /// None: neither `--workspaces` nor `HOME` names a file.
     path: Option<PathBuf>,
@@ -180,12 +190,14 @@ impl SettingsStore {
                 w.routines_problem = checked.err();
             }
         }
+        let assistant = view::assistant(config.assistant.as_ref(), path, &mut revision);
         Ok(Settings {
             revision: revision.finish(),
             read_only: self.read_only,
             problem,
             workspaces,
             workers: config.worker,
+            assistant: Some(assistant),
         })
     }
 
@@ -202,13 +214,33 @@ impl SettingsStore {
             return Err(SettingsError::Stale);
         }
         let path = self.path()?.to_owned();
-        let home = self.home.clone();
         let original = self.read_text()?;
+        let plan = self.plan(&path, &original, ops)?;
+        self.write(&path, &original, &plan)?;
+        tracing::info!(ops = ?plan.names, "settings changed");
+        self.view()
+    }
+
+    /// Checks `ops` against the current files with the loading rules, as
+    /// `update` would, and writes nothing. Blocking.
+    pub fn check_ops(&self, ops: Vec<SettingsOp>) -> Result<(), SettingsError> {
+        let path = self.path()?.to_owned();
+        let original = self.read_text()?;
+        self.plan(&path, &original, ops).map(drop)
+    }
+
+    /// The edited documents, their effects and the Workspaces after `ops`.
+    fn plan(
+        &self,
+        path: &Path,
+        original: &str,
+        ops: Vec<SettingsOp>,
+    ) -> Result<Plan, SettingsError> {
         let mut doc: DocumentMut = original.parse().map_err(|e| {
             SettingsError::Invalid(format!("workspaces.toml cannot be edited: {e}"))
         })?;
         // A file the loader refuses now can still be fixed by the ops.
-        let before = Workspaces::parse(&original, &path, home.as_deref()).unwrap_or_default();
+        let before = Workspaces::parse(original, path, self.home.as_deref()).unwrap_or_default();
         // Routines that load now must still load after each op.
         let mut keep: BTreeSet<String> = before
             .all()
@@ -241,9 +273,13 @@ impl SettingsStore {
             edit::apply(&mut doc, &mut load, &mut changed, &mut effects, op).map_err(tag)?;
             current = self.check(&doc, &changed, &keep).map_err(tag)?;
         }
-        self.write(&path, &original, &doc, &changed, &effects, &current)?;
-        tracing::info!(ops = ?names, "settings changed");
-        self.view()
+        Ok(Plan {
+            doc,
+            changed,
+            effects,
+            current,
+            names,
+        })
     }
 
     /// The loading rules on the edited documents; the new Workspaces.
@@ -274,15 +310,8 @@ impl SettingsStore {
     }
 
     /// Secrets first, then the files, then the secrets that went.
-    fn write(
-        &self,
-        path: &Path,
-        original: &str,
-        doc: &DocumentMut,
-        changed: &BTreeMap<String, DocumentMut>,
-        effects: &edit::Effects,
-        all: &Workspaces,
-    ) -> Result<(), SettingsError> {
+    fn write(&self, path: &Path, original: &str, plan: &Plan) -> Result<(), SettingsError> {
+        let (doc, changed, effects, all) = (&plan.doc, &plan.changed, &plan.effects, &plan.current);
         let failed = |e: String| SettingsError::Failed(e);
         // All or none: a memory that cannot come back stops the whole update.
         for (name, bot, version) in &effects.memory_restores {
@@ -311,6 +340,14 @@ impl SettingsStore {
             let target = dir.join(ROUTINES_FILE);
             inside(&dir, &target).map_err(SettingsError::Invalid)?;
             writes.push((target, routines_doc.to_string()));
+        }
+        if let Some(soul) = &effects.assistant_soul {
+            let files = crate::records::assistant::files(path).ok_or_else(|| {
+                SettingsError::Invalid("the assistant's folder cannot be resolved".into())
+            })?;
+            let target = files.folder.join(crate::records::bots::SOUL_FILE);
+            inside(&files.bound, &target).map_err(SettingsError::Invalid)?;
+            writes.push((target, soul.clone()));
         }
         let text = doc.to_string();
         if text != original {

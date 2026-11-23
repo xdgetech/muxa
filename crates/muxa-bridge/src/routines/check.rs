@@ -62,6 +62,10 @@ fn publish(config: &Config, run: &RunAt) -> Result<u32, Vec<String>> {
     if bot.is_none() && out.memory.is_some() {
         return Err(one("memory is only for a Bot's Routine; remove it.".into()));
     }
+    let handoffs = std::mem::take(&mut out.handoffs);
+    if !handoffs.is_empty() {
+        check_handoffs(bot, &handoffs, step(&run.dir))?;
+    }
     let memory = out.memory.take();
     let state_dir = runs::dir(config).map_err(|e| one(e.to_string()))?;
     let store = RoutineStore::open(&state_dir).map_err(|e| one(e.to_string()))?;
@@ -87,6 +91,12 @@ fn publish(config: &Config, run: &RunAt) -> Result<u32, Vec<String>> {
             Err(e) => tracing::warn!(bot = %bot.name, error = %e, "cannot write bot memory"),
         }
     }
+    if stored.is_ok() && !handoffs.is_empty() {
+        let text = serde_json::to_string(&handoffs).unwrap_or_default();
+        if let Err(e) = std::fs::write(run.dir.join(HANDOFFS), text) {
+            tracing::warn!(task = %run.id, error = %e, "cannot keep a lead's handoffs");
+        }
+    }
     match stored {
         Ok(n) => Ok(n),
         Err(Failure::Publish(PublishError::NotCurrent(_))) => Err(one(
@@ -98,6 +108,51 @@ fn publish(config: &Config, run: &RunAt) -> Result<u32, Vec<String>> {
                 "muxa could not store the output. It checks again after your next turn.".into(),
             ))
         }
+    }
+}
+
+/// A passed lead run's handoffs, for the runner to start (ADR 0085).
+pub const HANDOFFS: &str = ".muxa/routine/handoffs.json";
+
+/// The lead's step this run is, from `.muxa/team-step`; 1 when missing.
+pub fn step(dir: &Path) -> u32 {
+    std::fs::read_to_string(dir.join(".muxa").join(crate::v2::runner::STEP_FILE))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(1)
+}
+
+/// Only a team lead hands off, only to its members, and not in its last step.
+fn check_handoffs(
+    bot: Option<&crate::records::bots::Bot>,
+    handoffs: &[output::Handoff],
+    step: u32,
+) -> Result<(), Vec<String>> {
+    let Some(lead) = bot.filter(|b| !b.members.is_empty()) else {
+        return Err(vec![
+            "handoffs are only for a team lead's Routine; remove them.".into(),
+        ]);
+    };
+    if step >= super::brief::MAX_STEPS {
+        return Err(vec![format!(
+            "this is step {step} of {}, the last; leave out handoffs.",
+            super::brief::MAX_STEPS
+        )]);
+    }
+    let mut reasons = Vec::new();
+    for (i, h) in handoffs.iter().enumerate() {
+        if !lead.members.contains(&h.to) {
+            reasons.push(format!("handoffs[{i}].to is not one of your members."));
+        } else if handoffs[..i].iter().any(|o| o.to == h.to) {
+            reasons.push(format!(
+                "handoffs[{i}].to repeats a member; one handoff each."
+            ));
+        }
+    }
+    if reasons.is_empty() {
+        Ok(())
+    } else {
+        Err(reasons)
     }
 }
 

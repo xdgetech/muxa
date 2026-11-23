@@ -94,6 +94,7 @@ fn existing(path: &Path) -> TaskSpec {
         connections: Vec::new(),
         mcp: Vec::new(),
         plan: false,
+        bot: None,
     }
 }
 

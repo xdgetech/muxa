@@ -130,6 +130,7 @@ fn collect(states: &[RoutineState], since: i64) -> (Vec<NewItem>, Option<i64>) {
                         content: p.content.clone(),
                     }),
                     bot: e.bot.clone(),
+                    settings_proposal: None,
                 },
             });
         }

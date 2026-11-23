@@ -34,6 +34,7 @@ pub fn to_v2(r: RoutineInfo) -> v2::Routine {
         running_since: r.running.map(|run| at(run.started_at)),
         last,
         bot: r.bot,
+        on: r.on,
     }
 }
 

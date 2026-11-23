@@ -13,12 +13,16 @@ use crate::routines::brief::BotBrief;
 const SETTINGS_FILE: &str = "claude-settings.json";
 const SETTINGS_FLAG: &str = "--settings";
 
-/// Blocking. The Bot's files as they are now.
-pub fn brief(bot: &Bot) -> Result<BotBrief, String> {
+/// Blocking. The Bot's files as they are now, and its team when it leads one.
+pub fn brief(bot: &Bot, team: &[&Bot]) -> Result<BotBrief, String> {
     Ok(BotBrief {
         name: bot.name.clone(),
         soul: bot.read_soul().map_err(|e| e.to_string())?,
         memory: bot.read_memory().map_err(|e| e.to_string())?,
+        team: team
+            .iter()
+            .map(|m| (m.name.clone(), m.description.clone()))
+            .collect(),
     })
 }
 
@@ -27,7 +31,7 @@ pub fn brief(bot: &Bot) -> Result<BotBrief, String> {
 /// routines file; a read-only run edits no repo either, except one that
 /// holds `run_dir`, where it must write its output.
 pub fn deny_rules(ws: &Workspace, routine: &Routine, run_dir: &Path) -> Vec<String> {
-    let rule = |path: &Path| format!("Edit(/{}/**)", path.to_string_lossy().trim_end_matches('/'));
+    let rule = deny;
     let mut rules = Vec::new();
     if routine.bot.is_some() || routine.read_only {
         rules.push(rule(&routine.dir));
@@ -43,17 +47,28 @@ pub fn deny_rules(ws: &Workspace, routine: &Routine, run_dir: &Path) -> Vec<Stri
     rules
 }
 
+/// Pure. The rule that denies Claude Code's edit tools under `path`.
+pub fn deny(path: &Path) -> String {
+    format!("Edit(/{}/**)", path.to_string_lossy().trim_end_matches('/'))
+}
+
 /// Blocking. Writes the settings into the run's `.muxa/` and adds the flag
-/// that loads them; the command as it was when there is nothing to deny.
+/// that loads them; the command as it was when there is nothing to set.
+/// `dirs` are folders the agent may read besides its own.
 pub fn with_settings(
     command: LaunchCommand,
     dir: &Path,
     rules: &[String],
+    dirs: &[std::path::PathBuf],
 ) -> Result<LaunchCommand, String> {
-    if rules.is_empty() {
+    if rules.is_empty() && dirs.is_empty() {
         return Ok(command);
     }
-    let value = serde_json::json!({"permissions": {"deny": rules}});
+    let dirs: Vec<String> = dirs
+        .iter()
+        .map(|d| d.to_string_lossy().into_owned())
+        .collect();
+    let value = serde_json::json!({"permissions": {"deny": rules, "additionalDirectories": dirs}});
     let mut text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     text.push('\n');
     let path = git::write_file(dir, SETTINGS_FILE, &text)?;
@@ -89,6 +104,7 @@ mod tests {
             enabled: true,
             bot: bot.map(str::to_owned),
             read_only,
+            on: None,
         }
     }
 
@@ -167,7 +183,7 @@ mod tests {
             program: "claude",
             args: vec![],
         };
-        let LaunchCommand::Native { args, .. } = with_settings(native, &dir, &rules).unwrap()
+        let LaunchCommand::Native { args, .. } = with_settings(native, &dir, &rules, &[]).unwrap()
         else {
             panic!("native stays native");
         };
@@ -175,12 +191,13 @@ mod tests {
         let text = std::fs::read_to_string(&args[1]).unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["permissions"]["deny"][0], "Edit(//ws/.muxa/**)");
-        let shell = with_settings(LaunchCommand::Shell("claude".into()), &dir, &rules).unwrap();
+        let shell =
+            with_settings(LaunchCommand::Shell("claude".into()), &dir, &rules, &[]).unwrap();
         let LaunchCommand::Shell(line) = shell else {
             panic!("shell stays shell");
         };
         assert!(line.starts_with("claude --settings '"), "{line}");
-        let same = with_settings(LaunchCommand::Shell("claude".into()), &dir, &[]).unwrap();
+        let same = with_settings(LaunchCommand::Shell("claude".into()), &dir, &[], &[]).unwrap();
         assert!(matches!(same, LaunchCommand::Shell(l) if l == "claude"));
     }
 }

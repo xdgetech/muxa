@@ -1,0 +1,220 @@
+//! Settings of Bot talks, teams, review Routines and the Capture assistant
+//! (ADR 0083 to 0085).
+use muxa_inbox::Inbox;
+use muxa_protocol::v2::ItemKind;
+
+use super::*;
+use crate::v2::talk::Talk;
+
+fn add_bot(h: &Host, name: &str, extra: serde_json::Value) -> Settings {
+    let rev = h.store.view().unwrap().revision;
+    let mut bot = json!({"name": name, "enabled": true});
+    bot.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    h.store
+        .update(
+            &rev,
+            vec![op(
+                json!({"op": "bot-add", "workspace": "Work", "bot": bot}),
+            )],
+        )
+        .unwrap()
+}
+
+#[test]
+fn the_assistant_has_its_table_and_its_soul_beside_the_file() {
+    let h = host("assistant");
+    let s = h.store.view().unwrap();
+    assert_eq!(s.assistant.as_ref().map(|a| a.enabled), Some(false));
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(json!({"op": "assistant-update", "enabled": true,
+                "soul_text": "Sort my captures by Workspace.\n"}))],
+        )
+        .unwrap();
+    let a = s.assistant.unwrap();
+    assert!(a.enabled);
+    assert_eq!(
+        a.soul_text.as_deref(),
+        Some("Sort my captures by Workspace.\n")
+    );
+    assert!(
+        text(&h).contains("[assistant]\nenabled = true"),
+        "{}",
+        text(&h)
+    );
+    let soul = fs::read_to_string(h.dir.join("assistant/soul.md")).unwrap();
+    assert_eq!(soul, "Sort my captures by Workspace.\n");
+    let all = crate::records::Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert!(all.assistant().enabled);
+}
+
+#[test]
+fn a_lead_names_its_members_and_teams_stay_one_level_deep() {
+    let h = host("team");
+    add_bot(&h, "scout", json!({}));
+    let s = add_bot(
+        &h,
+        "lead",
+        json!({"members": ["scout"], "handoffs_per_day": 4}),
+    );
+    let lead = s.workspaces[0]
+        .bots
+        .iter()
+        .find(|b| b.spec.name == "lead")
+        .unwrap();
+    assert_eq!(lead.spec.members, ["scout"]);
+    assert_eq!(lead.spec.handoffs_per_day, Some(4));
+    let nested = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "bot-update", "workspace": "Work",
+            "bot": {"name": "scout", "enabled": true, "members": ["lead"]}}))],
+    );
+    assert!(
+        matches!(nested, Err(SettingsError::Invalid(_))),
+        "{nested:?}"
+    );
+    let missing = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "bot-update", "workspace": "Work",
+            "bot": {"name": "lead", "enabled": true, "members": ["nobody"]}}))],
+    );
+    assert!(
+        matches!(missing, Err(SettingsError::Invalid(_))),
+        "{missing:?}"
+    );
+}
+
+#[test]
+fn a_review_routine_runs_on_review_and_has_no_schedule() {
+    let h = host("on-review");
+    let rev = h.store.view().unwrap().revision;
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![op(json!({"op": "routine-add", "workspace": "Work",
+                "routine": {"name": "check", "instructions": "routines/digest.md",
+                    "enabled": true, "on": "review"}}))],
+        )
+        .unwrap();
+    let check = s.workspaces[0]
+        .routines
+        .iter()
+        .find(|r| r.spec.name == "check")
+        .unwrap();
+    assert_eq!(check.spec.on.as_deref(), Some("review"));
+    let both = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "routine-update", "workspace": "Work",
+            "routine": {"name": "check", "instructions": "routines/digest.md",
+                "enabled": true, "on": "review", "at": "09:00", "timezone": "UTC"}}))],
+    );
+    assert!(matches!(both, Err(SettingsError::Invalid(_))), "{both:?}");
+}
+
+fn talk(h: &Host, bot: &str) -> Talk {
+    let dir = h.dir.join("work/tasks/talk-1");
+    fs::create_dir_all(dir.join(".muxa")).unwrap();
+    Talk {
+        workspace: "Work".into(),
+        bot: bot.into(),
+        terminal: "t1".into(),
+        dir,
+    }
+}
+
+fn records(h: &Host) -> crate::config::Config {
+    crate::config::Config {
+        state_dir: None,
+        workspaces: Some(h.file.clone()),
+        home: Some(h.dir.clone()),
+    }
+}
+
+#[test]
+fn a_talks_proposal_becomes_one_decide_item_that_applies() {
+    let h = host("talk");
+    add_bot(&h, "b", json!({}));
+    let t = talk(&h, "b");
+    let inbox = Inbox::memory();
+    let output = json!({
+        "memory": "The user wants PRs at 9.",
+        "proposal": {"summary": "a morning scan", "ops": [
+            {"op": "routine-add", "workspace": "Work",
+             "routine": {"name": "scan", "instructions": "routines/scan.md", "enabled": true,
+                 "bot": "b", "at": "09:00", "timezone": "Europe/Berlin"},
+             "instructions_text": "List the PRs.\n"}
+        ]}
+    });
+    fs::write(t.dir.join(".muxa/bot.json"), output.to_string()).unwrap();
+    t.handle(&records(&h), &h.store, &inbox);
+    t.handle(&records(&h), &h.store, &inbox);
+
+    let items = inbox.view().items;
+    assert_eq!(items.len(), 1, "handled once");
+    let item = &items[0];
+    assert_eq!(item.kind, ItemKind::Decide);
+    assert_eq!(item.title, "b proposes: a morning scan");
+    assert_eq!(item.bot.as_deref(), Some("b"));
+    assert_eq!(item.terminal.as_deref(), Some("t1"));
+    assert_eq!(
+        item.note.as_deref(),
+        Some("- Add Routine scan (daily at 09:00, off)\n")
+    );
+    let proposal = item.settings_proposal.clone().unwrap();
+    let memory = fs::read_to_string(h.dir.join("work/.muxa/bots/b/memory.md")).unwrap();
+    assert_eq!(memory, "The user wants PRs at 9.");
+    let check = fs::read_to_string(t.dir.join(".muxa/CHECK.md")).unwrap();
+    assert!(check.contains("passed"), "{check}");
+
+    let s = h.store.update(&proposal.revision, proposal.ops).unwrap();
+    let scan = s.workspaces[0]
+        .routines
+        .iter()
+        .find(|r| r.spec.name == "scan")
+        .unwrap();
+    assert!(!scan.spec.enabled, "a proposed Routine is added turned off");
+}
+
+#[test]
+fn a_talk_may_not_touch_connections_or_another_bots_routines() {
+    let h = host("talk-refused");
+    add_bot(&h, "b", json!({}));
+    let t = talk(&h, "b");
+    let inbox = Inbox::memory();
+    for ops in [
+        json!([{"op": "connection-remove", "workspace": "Work", "name": "linear"}]),
+        json!([{"op": "routine-remove", "workspace": "Work", "name": "digest"}]),
+        json!([{"op": "bot-update", "workspace": "Home", "bot": {"name": "b", "enabled": true}}]),
+    ] {
+        let output = json!({"memory": "x", "proposal": {"summary": "s", "ops": ops}});
+        fs::write(t.dir.join(".muxa/bot.json"), output.to_string()).unwrap();
+        t.handle(&records(&h), &h.store, &inbox);
+        let check = fs::read_to_string(t.dir.join(".muxa/CHECK.md")).unwrap();
+        assert!(check.contains("refused"), "{check}");
+    }
+    assert!(inbox.view().items.is_empty());
+    assert!(
+        !h.dir.join("work/.muxa/bots/b/memory.md").exists(),
+        "a refused output writes no memory"
+    );
+}
+
+#[test]
+fn a_talk_about_a_new_bot_may_propose_adding_it() {
+    let h = host("talk-new");
+    let t = talk(&h, "fresh");
+    let inbox = Inbox::memory();
+    let output = json!({"proposal": {"summary": "me", "ops": [
+        {"op": "bot-add", "workspace": "Work", "bot": {"name": "fresh", "enabled": true},
+         "soul_text": "I am new.\n"}
+    ]}});
+    fs::write(t.dir.join(".muxa/bot.json"), output.to_string()).unwrap();
+    t.handle(&records(&h), &h.store, &inbox);
+    let item = &inbox.view().items[0];
+    assert_eq!(item.note.as_deref(), Some("- Add Bot fresh, with a Soul\n"));
+}

@@ -69,6 +69,7 @@ impl Host for FakeHost {
             places: Vec::new(),
             connections: spec.connections.clone(),
             mcp: spec.mcp.clone(),
+            bot: spec.bot.clone(),
         })
     }
 
@@ -116,6 +117,7 @@ impl Host for FakeHost {
             running_since: None,
             last: None,
             bot: None,
+            on: None,
         };
         Ok(RoutineList {
             routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
@@ -343,12 +345,14 @@ fn start_settings() -> Settings {
                     direct_writes: false,
                     bot: None,
                     read_only: false,
+                    on: None,
                 },
                 instructions_text: Some("Summarize the day.\n".into()),
             }],
             bots: Vec::new(),
             routines_problem: None,
         }],
+        assistant: None,
     }
 }
 

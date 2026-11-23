@@ -305,6 +305,11 @@ pub enum ClientMsg {
         /// A Task Loop on the agent from its start.
         #[serde(default, rename = "loop")]
         task_loop: Option<LoopSpec>,
+        /// Talk to this Bot of the Workspace (ADR 0083): a folder Task whose
+        /// agent starts from the Bot's Soul and Memory. A name with no Bot
+        /// yet: the talk may propose adding it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bot: Option<String>,
     },
     /// Asks for `changed`, `removed`, `resync` and `inbox` notifications.
     Watch {
@@ -475,6 +480,18 @@ pub enum ClientMsg {
     InboxRetry {
         id: u64,
         item: String,
+    },
+    /// Applies an item's settings proposal with its revision, and marks the
+    /// item Done (ADR 0083).
+    InboxApply {
+        id: u64,
+        item: String,
+    },
+    /// Accepts or dismisses an item's suggestion (ADR 0084).
+    InboxSuggestion {
+        id: u64,
+        item: String,
+        accept: bool,
     },
     /// The host's editable settings (ADR 0074).
     Settings {
@@ -834,6 +851,43 @@ pub struct InboxItem {
     /// The Bot whose run made the item, in `workspace`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot: Option<String>,
+    /// Settings a Bot proposes in a talk (ADR 0083): `inbox-apply` applies
+    /// them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_proposal: Option<SettingsProposal>,
+    /// What the Capture assistant suggests (ADR 0084).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<ItemSuggestion>,
+}
+
+/// Settings changes a Bot proposed, against the settings at `revision`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsProposal {
+    pub revision: String,
+    pub ops: Vec<SettingsOp>,
+}
+
+/// The Capture assistant's suggestion for an item. Each part is optional.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemSuggestion {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ItemKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// `YYYY-MM-DD`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Titles of the items to make instead of this one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub split: Vec<String>,
+    /// A goal for Start Task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_goal: Option<String>,
+    /// A Bot of the suggested (or the item's) Workspace to ask.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
 }
 
 /// A page an item is about. `http` or `https` only.
@@ -935,6 +989,9 @@ pub struct Routine {
     /// The Bot that owns it (ADR 0082).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot: Option<String>,
+    /// The event that runs it, e.g. `review` (ADR 0084).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on: Option<String>,
 }
 
 /// How the last run ended.

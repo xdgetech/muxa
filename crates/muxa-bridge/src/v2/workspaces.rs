@@ -218,6 +218,7 @@ mod tests {
             enabled: true,
             bot: None,
             read_only: false,
+            on: None,
         }
     }
 

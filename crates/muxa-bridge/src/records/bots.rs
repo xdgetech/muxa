@@ -22,6 +22,10 @@ pub const MAX_MEMORY: usize = 16 * 1024;
 pub const KEEP_MEMORIES: usize = 5;
 const HISTORY_DIR: &str = "history";
 const MAX_NAME: usize = 64;
+/// A lead's members (ADR 0085).
+pub const MAX_MEMBERS: usize = 6;
+pub const DEFAULT_HANDOFFS: u32 = 10;
+pub const MAX_HANDOFFS: u32 = 50;
 const MAX_DESCRIPTION: usize = 300;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +40,9 @@ pub struct Bot {
     pub enabled: bool,
     /// The canonical `.muxa/` folder its files must stay in.
     pub dir: PathBuf,
+    /// Its team when it leads one (ADR 0085).
+    pub members: Vec<String>,
+    pub handoffs_per_day: u32,
 }
 
 #[derive(Deserialize)]
@@ -46,6 +53,9 @@ pub(super) struct RawBot {
     worker: Option<String>,
     daily_items: Option<u32>,
     enabled: bool,
+    #[serde(default)]
+    members: Vec<String>,
+    handoffs_per_day: Option<u32>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -90,6 +100,13 @@ impl RawBot {
         if !(1..=MAX_DAILY_ITEMS).contains(&daily_items) {
             return Err(at(&format!("daily_items must be 1 to {MAX_DAILY_ITEMS}")));
         }
+        if self.members.len() > MAX_MEMBERS {
+            return Err(at(&format!("members has at most {MAX_MEMBERS} Bots")));
+        }
+        let handoffs_per_day = self.handoffs_per_day.unwrap_or(DEFAULT_HANDOFFS);
+        if !(1..=MAX_HANDOFFS).contains(&handoffs_per_day) {
+            return Err(at(&format!("handoffs_per_day must be 1 to {MAX_HANDOFFS}")));
+        }
         Ok(Bot {
             workspace: workspace.name.clone(),
             name: self.name,
@@ -98,8 +115,37 @@ impl RawBot {
             daily_items,
             enabled: self.enabled,
             dir: dir.to_owned(),
+            members: self.members,
+            handoffs_per_day,
         })
     }
+}
+
+/// Teams are one level deep (ADR 0085): a member is another Bot of the file
+/// that leads no team, named once.
+pub(super) fn check_teams(bots: &[Bot]) -> Result<(), String> {
+    for lead in bots.iter().filter(|b| !b.members.is_empty()) {
+        let at = |m: &str| format!("bot {:?}: member {m:?}", lead.name);
+        for (i, m) in lead.members.iter().enumerate() {
+            let member = bots
+                .iter()
+                .find(|b| &b.name == m)
+                .ok_or_else(|| format!("{} is not a [[bot]] of this file", at(m)))?;
+            if member.name == lead.name {
+                return Err(format!("bot {:?}: a Bot is not its own member", lead.name));
+            }
+            if !member.members.is_empty() {
+                return Err(format!(
+                    "{} leads a team itself; teams are one level deep",
+                    at(m)
+                ));
+            }
+            if lead.members[..i].contains(m) {
+                return Err(format!("{} appears twice", at(m)));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A Bot's name is its folder's name: lowercase letters, digits, `-` and
@@ -126,12 +172,48 @@ impl Bot {
         self.dir.join(BOTS_DIR).join(&self.name)
     }
 
+    pub fn files(&self) -> SoulFiles {
+        SoulFiles {
+            bound: self.dir.clone(),
+            folder: self.folder(),
+        }
+    }
+
     /// The Soul as it is now; empty when the file is missing.
+    pub fn read_soul(&self) -> Result<String, BotFileError> {
+        self.files().read_soul()
+    }
+
+    /// The Memory as it is now; empty when the file is missing.
+    pub fn read_memory(&self) -> Result<String, BotFileError> {
+        self.files().read_memory()
+    }
+
+    /// Blocking. See [`SoulFiles::write_memory`].
+    pub fn write_memory(&self, text: &str) -> Result<(), BotFileError> {
+        self.files().write_memory(text)
+    }
+
+    /// The kept memory `n` (1 is the newest); empty when there is none.
+    pub fn read_memory_version(&self, n: usize) -> Result<String, BotFileError> {
+        self.files().read_memory_version(n)
+    }
+}
+
+/// A folder with a `soul.md`, a `memory.md` and the kept memories: a Bot's,
+/// or the Capture assistant's (ADR 0084). Nothing may lead out of `bound`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoulFiles {
+    /// Canonical.
+    pub bound: PathBuf,
+    pub folder: PathBuf,
+}
+
+impl SoulFiles {
     pub fn read_soul(&self) -> Result<String, BotFileError> {
         self.read(SOUL_FILE, MAX_SOUL)
     }
 
-    /// The Memory as it is now; empty when the file is missing.
     pub fn read_memory(&self) -> Result<String, BotFileError> {
         self.read(MEMORY_FILE, MAX_MEMORY)
     }
@@ -139,18 +221,18 @@ impl Bot {
     /// Blocking. Replaces the memory with `text` atomically and keeps the
     /// one before as `history/memory-1.md`, the older ones shifted down.
     pub fn write_memory(&self, text: &str) -> Result<(), BotFileError> {
-        let folder = self.folder();
+        let folder = &self.folder;
         let io_err = |path: &Path| {
             let path = path.to_owned();
             move |source| BotFileError::Read { path, source }
         };
         let history = folder.join(HISTORY_DIR);
         std::fs::create_dir_all(&history).map_err(io_err(&history))?;
-        let real = folder.canonicalize().map_err(io_err(&folder))?;
-        if !real.starts_with(&self.dir) {
+        let real = folder.canonicalize().map_err(io_err(folder))?;
+        if !real.starts_with(&self.bound) {
             return Err(BotFileError::Invalid {
-                path: folder,
-                reason: "leads outside .muxa/".into(),
+                path: folder.clone(),
+                reason: "leads outside its folder".into(),
             });
         }
         if text.len() > MAX_MEMORY {
@@ -176,20 +258,20 @@ impl Bot {
         std::fs::rename(&tmp, &current).map_err(io_err(&current))
     }
 
-    /// The kept memory `n` (1 is the newest); empty when there is none.
     pub fn read_memory_version(&self, n: usize) -> Result<String, BotFileError> {
         if !(1..=KEEP_MEMORIES).contains(&n) {
             return Err(BotFileError::Invalid {
-                path: self.folder(),
+                path: self.folder.clone(),
                 reason: format!("a kept memory is 1 to {KEEP_MEMORIES}"),
             });
         }
         self.read(&format!("{HISTORY_DIR}/{}", version_file(n)), MAX_MEMORY)
     }
 
-    /// A symlink may not lead out of `.muxa/`.
-    fn read(&self, file: &str, max: usize) -> Result<String, BotFileError> {
-        let path = self.folder().join(file);
+    /// Reads `file` in the folder; empty when it is missing. A symlink may
+    /// not lead out of `bound`.
+    pub fn read(&self, file: &str, max: usize) -> Result<String, BotFileError> {
+        let path = self.folder.join(file);
         let invalid = |reason: String| BotFileError::Invalid {
             path: path.clone(),
             reason,
@@ -204,8 +286,8 @@ impl Bot {
                 });
             }
         };
-        if !real.starts_with(&self.dir) {
-            return Err(invalid("leads outside .muxa/".into()));
+        if !real.starts_with(&self.bound) {
+            return Err(invalid("leads outside its folder".into()));
         }
         let bytes = match read_regular(&real, max) {
             Ok(bytes) => bytes,
@@ -256,6 +338,8 @@ mod tests {
             daily_items: 3,
             enabled: true,
             dir: dir.canonicalize().unwrap(),
+            members: Vec::new(),
+            handoffs_per_day: DEFAULT_HANDOFFS,
         }
     }
 

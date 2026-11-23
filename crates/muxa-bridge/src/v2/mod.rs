@@ -3,6 +3,8 @@
 //! relays an SSH client's stdin and stdout to it.
 
 mod adopt;
+pub mod assistant;
+mod assistant_brief;
 mod bot_run;
 pub mod chat;
 mod close;
@@ -11,10 +13,14 @@ mod git;
 mod mcp;
 mod places;
 pub mod reader;
+pub mod review_runs;
 mod routines;
 pub mod runner;
+pub mod talk;
+mod talk_check;
 pub mod task_loop;
 mod tasks;
+mod team;
 mod uploads;
 mod v1;
 mod workspaces;
@@ -168,6 +174,11 @@ pub fn spawn_runner(herdr: Arc<Herdr>, runner: Arc<runner::Runner>) {
         let r = Arc::clone(&r);
         async move { r.watch(&backend).await }
     });
+    let r = Arc::clone(&runner);
+    keep_watching(Arc::clone(&herdr), "team members", move |backend| {
+        let r = Arc::clone(&r);
+        async move { team::watch(&r, &backend).await }
+    });
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(RUNNER_TICK);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -177,6 +188,20 @@ pub fn spawn_runner(herdr: Arc<Herdr>, runner: Arc<runner::Runner>) {
                 runner.tick(&backend).await;
             }
         }
+    });
+}
+
+/// Runs the review Routines (ADR 0084).
+pub fn spawn_review_runs(herdr: Arc<Herdr>, runner: Arc<runner::Runner>) {
+    let inbox = Arc::clone(&herdr.inbox);
+    review_runs::spawn(herdr, runner, inbox);
+}
+
+/// Turns talks' proposals into Inbox items (ADR 0083).
+pub fn spawn_talks(herdr: Arc<Herdr>, talks: Arc<talk::Talks>) {
+    keep_watching(herdr, "bot talks", move |backend| {
+        let talks = Arc::clone(&talks);
+        async move { talks.watch(&backend).await }
     });
 }
 
