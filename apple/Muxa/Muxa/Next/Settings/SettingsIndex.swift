@@ -39,6 +39,7 @@ struct SettingsIndex: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("settings.list")
         .sheet(isPresented: $addingWorkspace) { WorkspaceAddSheet() }
         .sheet(item: $editingHost) { NextHostEditor(draft: $0) }
         .refreshable { await model.settings.load() }

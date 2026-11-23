@@ -18,7 +18,11 @@ struct NextRoot: View {
                         StartTaskSheet(seed: seed, onClose: nav.taskStarted)
                     }
                     .background { modeKeys }
+                    #if os(macOS)
+                    .overlay { if nav.showPalette { PaletteOverlay() } }
+                    #else
                     .sheet(isPresented: Bindable(nav).showPalette) { GoToTask() }
+                    #endif
             default:
                 #if os(macOS)
                 MacConnectView()
@@ -82,3 +86,25 @@ extension NextModel {
         }
     }
 }
+
+#if os(macOS)
+/// Go to Task floating over the window, near its top, as VS Code shows quick
+/// open. A click outside closes it.
+private struct PaletteOverlay: View {
+    @Environment(NextNavigation.self) private var nav
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(0.3)
+                .contentShape(Rectangle())
+                .onTapGesture { nav.showPalette = false }
+            GoToTask()
+                .frame(width: 600)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.borderStrong))
+                .shadow(color: .black.opacity(0.45), radius: 24, y: 8)
+                .padding(.top, 72)
+        }
+    }
+}
+#endif

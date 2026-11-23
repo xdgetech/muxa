@@ -19,9 +19,12 @@ extension NextTests {
     func testTerminalColorsArePickedOnThisDevice() throws {
         let app = launch()
         showSettings(app)
+        // The row is last, and a list loads its rows only once they scroll in.
+        let list = app.descendants(matching: .any)["settings.list"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
         let row = app.buttons["settings.terminal"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
-        for _ in 0..<4 where !row.isHittable { app.swipeUp() }
+        for _ in 0..<5 where !(row.exists && row.isHittable) { list.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
         let dracula = app.buttons["terminal.theme.dracula"]
         XCTAssertTrue(dracula.waitForExistence(timeout: 5))

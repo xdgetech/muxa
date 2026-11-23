@@ -311,6 +311,23 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testGoToTaskPicksARowWithTheArrowKeys() throws {
+        let app = launch()
+        app.typeKey("p", modifierFlags: .command)
+        let field = app.textFields["goto.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        // docs-audit needs the user, so it is first; ↓ picks fix-login.
+        XCTAssertEqual(app.descendants(matching: .any)["goto.t2"].value as? String, "selected")
+        app.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertEqual(app.descendants(matching: .any)["goto.t1"].value as? String, "selected")
+        XCTAssertNotEqual(app.descendants(matching: .any)["goto.t2"].value as? String, "selected")
+        field.typeText("\n")
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "session now refreshes"))
+    }
+
+    @MainActor
     func testGoToTaskOpensItInFocus() throws {
         let app = launch()
         app.typeKey("p", modifierFlags: .command)
