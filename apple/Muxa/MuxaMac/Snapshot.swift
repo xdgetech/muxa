@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant|focus-talk|bots[-chats|-routines|-files|-new]|bots[-chat|-run|-new|-routine-edit|-soul-edit]|-settings` in the environment, the app
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|palette|reader|settings[-tab]|settings-terminal|settings-assistant|bots[-chat|-chats|-run|-routines|-files|-settings|-new|-routine-edit|-soul-edit]` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
