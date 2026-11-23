@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use jiff::civil::Date;
+use jiff::civil::DateTime;
 use muxa_backend::{
     Change, ChangeStream, Labels, Launch, SessionBackend, Size, TerminalId, TerminalInfo,
     TerminalStream,
@@ -186,8 +186,8 @@ impl Runner {
                 end_terminal(backend, &t.id).await;
             }
         }
-        for (workspace, name, date) in due {
-            self.start_scheduled(backend, &workspace, &name, date).await;
+        for (workspace, name, slot) in due {
+            self.start_scheduled(backend, &workspace, &name, slot).await;
         }
     }
 
@@ -196,9 +196,9 @@ impl Runner {
         backend: &B,
         ws: &str,
         name: &str,
-        date: Date,
+        slot: DateTime,
     ) {
-        match self.start(backend, ws, name, When::Scheduled(date)).await {
+        match self.start(backend, ws, name, When::Scheduled(slot)).await {
             Ok(_) | Err(StartError::Handled | StartError::Busy(_)) => {}
             Err(e) => tracing::info!(routine = %name, error = %e, "scheduled run not started"),
         }

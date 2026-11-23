@@ -229,7 +229,7 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ### Routines
 
-`Routine`: `{"workspace","name","enabled","at"?,"timezone"?,"schedule"?,"next_due"?,"running_since"?,"last"?}`. `at` is `HH:MM` in `timezone`; `schedule` the five cron fields (absent: every day). A Routine without `at` runs only on `run-routine`. `off` lists the Workspaces whose `.muxa/routines.toml` has Routines while `[workspace.routines] enabled` is not true: none of them run or appear in `routines`. `count` is the number of `[[routine]]` tables. A client turns them on with the `routines-gate` op of `settings-update`. `last`: `{"at","ok","reason"?,"published"?}`, the newer of the last success and failure. Times are Unix seconds.
+`Routine`: `{"workspace","name","enabled","at"?,"timezone"?,"schedule"?,"next_due"?,"running_since"?,"last"?}`. `at` is `HH:MM` in `timezone`, the earliest time of the day; `schedule` the five cron fields (absent: every day). Minute and hour may be lists, ranges and steps (`*/30 9-18 * * 1-5`), with times at least 15 minutes apart (ADR 0082). A Routine without `at` runs only on `run-routine`. `off` lists the Workspaces whose `.muxa/routines.toml` has Routines while `[workspace.routines] enabled` is not true: none of them run or appear in `routines`. `count` is the number of `[[routine]]` tables. A client turns them on with the `routines-gate` op of `settings-update`. `last`: `{"at","ok","reason"?,"published"?}`, the newer of the last success and failure. Times are Unix seconds.
 
 ### Inbox
 

@@ -180,7 +180,7 @@ struct RoutineEditor: View {
         } header: {
             Text("Schedule")
         } footer: {
-            if draft.timing == .cron { Text("One minute and one hour: at most one run a day. Sunday is 0 or 7.") }
+            if draft.timing == .cron { Text("*/30 9-18 * * 1-5 runs every 30 minutes on weekdays. Runs are at least 15 minutes apart. Sunday is 0 or 7.") }
         }
     }
 

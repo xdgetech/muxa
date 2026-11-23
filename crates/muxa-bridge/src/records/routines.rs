@@ -11,7 +11,7 @@ use std::sync::atomic::AtomicBool;
 use serde::Deserialize;
 
 use super::Workspace;
-use super::cron::{self, Days};
+use super::cron::{self, Days, Times};
 use super::workers::Worker;
 
 pub const DEFAULT_ITEMS: u32 = 10;
@@ -27,11 +27,13 @@ const MAX_NAME: usize = 64;
 const MAX_PROJECT: usize = 200;
 static CHOICE_IGNORED: AtomicBool = AtomicBool::new(false);
 
-/// One local time on the days of a schedule, in an IANA time zone.
+/// Local times on the days of a schedule, in an IANA time zone.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Trigger {
+    /// The earliest time.
     pub hour: i8,
     pub minute: i8,
+    pub times: Times,
     pub days: Days,
     /// The five cron fields, as written, or the ones `at` stands for.
     pub schedule: String,
@@ -47,7 +49,7 @@ impl fmt::Debug for Trigger {
 }
 
 impl Trigger {
-    /// `HH:MM`.
+    /// `HH:MM`, the earliest time.
     pub fn at(&self) -> String {
         format!("{:02}:{:02}", self.hour, self.minute)
     }
@@ -396,6 +398,7 @@ pub(crate) fn scheduled(text: &str, zone: Option<&str>) -> Result<Trigger, Strin
     Ok(Trigger {
         hour: parsed.hour,
         minute: parsed.minute,
+        times: parsed.times,
         days: parsed.days,
         schedule: text,
         timezone,

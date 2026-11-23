@@ -104,7 +104,7 @@ pub fn info(r: &Routine, state: &RoutineState, at: u64) -> RoutineInfo {
     let next_due = match (&r.trigger, r.enabled) {
         (Some(t), true) => jiff::Timestamp::from_second(at as i64)
             .ok()
-            .and_then(|now| schedule::next_due(t, now, runs::last_date(state)).ok())
+            .and_then(|now| schedule::next_due(t, now, runs::last_slot(state)).ok())
             .and_then(|ts| u64::try_from(ts.as_second()).ok()),
         _ => None,
     };

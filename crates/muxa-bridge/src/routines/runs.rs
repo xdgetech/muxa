@@ -2,7 +2,7 @@
 //! the runner on the session backend (`v2::runner`). One open run per
 //! Routine: the claim in its state file is taken before the run starts.
 
-use jiff::civil::Date;
+use jiff::civil::DateTime;
 use muxa_protocol::{RoutineFailure, RoutineRun};
 
 use super::schedule;
@@ -15,7 +15,7 @@ use crate::records::{Workspaces, now};
 /// What starts a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum When {
-    Scheduled(Date),
+    Scheduled(DateTime),
     /// Run-now, at this epoch second.
     Now(u64),
 }
@@ -67,8 +67,7 @@ pub fn runs_codex(workspaces: &Workspaces, routine: &Routine, fallback: &str) ->
 
 pub fn occurrence(routine: &Routine, when: When) -> String {
     match (when, &routine.trigger) {
-        (When::Scheduled(date), Some(t)) => schedule::occurrence_id(t, date),
-        (When::Scheduled(date), None) => date.to_string(),
+        (When::Scheduled(slot), _) => schedule::occurrence_id(slot),
         (When::Now(at), _) => format!("now-{at}"),
     }
 }
@@ -80,8 +79,8 @@ pub(crate) fn claim(
     when: When,
 ) -> Result<(), StartError> {
     store.update(&routine.workspace, &routine.name, |s| {
-        if let When::Scheduled(date) = when {
-            if last_date(s).is_some_and(|last| last >= date) {
+        if let When::Scheduled(slot) = when {
+            if last_slot(s).is_some_and(|last| last >= slot) {
                 return Err(StartError::Handled);
             }
         }
@@ -96,8 +95,8 @@ pub(crate) fn claim(
             started_at: now(),
             task: None,
         });
-        if let When::Scheduled(date) = when {
-            s.last_occurrence = Some(date.to_string());
+        if let When::Scheduled(slot) = when {
+            s.last_occurrence = Some(schedule::occurrence_id(slot));
         }
         Ok(())
     })
@@ -119,8 +118,8 @@ pub(crate) fn fail_claimless(
             task: None,
             reason: format!("The run did not start: {error}"),
         });
-        if let When::Scheduled(date) = when {
-            s.last_occurrence = Some(date.to_string());
+        if let When::Scheduled(slot) = when {
+            s.last_occurrence = Some(schedule::occurrence_id(slot));
         }
         Ok(())
     });
@@ -168,13 +167,13 @@ pub(crate) fn finish_start(
     Ok(state)
 }
 
-/// Blocking. The due `(workspace, name, date)`s; `open` sees each Routine
+/// Blocking. The due `(workspace, name, occurrence)`s; `open` sees each Routine
 /// that has an open run, to close it when it ended.
 pub(crate) fn scan_with(
     config: &Config,
     at: u64,
     mut open: impl FnMut(&RoutineStore, &Workspaces, &Routine, &RoutineState),
-) -> Vec<(String, String, Date)> {
+) -> Vec<(String, String, DateTime)> {
     let Some(state_dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
         return Vec::new();
     };
@@ -211,7 +210,7 @@ pub(crate) fn scan_with(
         let Some(trigger) = &routine.trigger else {
             continue;
         };
-        let decision = match schedule::decide(trigger, now_ts, last_date(&state)) {
+        let decision = match schedule::decide(trigger, now_ts, last_slot(&state)) {
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!(routine = %routine.name, error = %e, "cannot schedule");
@@ -219,16 +218,16 @@ pub(crate) fn scan_with(
             }
         };
         match decision.run {
-            Some(date) if routine.enabled => {
-                due.push((routine.workspace.clone(), routine.name.clone(), date))
+            Some(slot) if routine.enabled => {
+                due.push((routine.workspace.clone(), routine.name.clone(), slot))
             }
             // A disabled Routine moves on too, so enabling it later runs no catch-up.
-            _ if last_date(&state) != Some(decision.last) => {
+            _ if last_slot(&state) != Some(decision.last) => {
                 if !routine.enabled && state.last_occurrence.is_none() {
                     continue;
                 }
                 let saved = store.update::<_, StateError>(&routine.workspace, &routine.name, |s| {
-                    s.last_occurrence = Some(decision.last.to_string());
+                    s.last_occurrence = Some(schedule::occurrence_id(decision.last));
                     Ok(())
                 });
                 if let Err(e) = saved {
@@ -241,8 +240,8 @@ pub(crate) fn scan_with(
     due
 }
 
-pub fn last_date(state: &RoutineState) -> Option<Date> {
-    state.last_occurrence.as_deref()?.parse().ok()
+pub fn last_slot(state: &RoutineState) -> Option<DateTime> {
+    schedule::parse_occurrence(state.last_occurrence.as_deref()?)
 }
 
 pub(crate) fn load(config: &Config) -> Result<Workspaces, StartError> {

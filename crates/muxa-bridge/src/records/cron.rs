@@ -1,6 +1,6 @@
-//! A Routine's `schedule` (ADR 0036 section 3): five cron fields with one
-//! time a day. Parsing and day matching only; `routines/schedule.rs` turns
-//! a matching day into an instant.
+//! A Routine's `schedule` (ADR 0036 section 3, ADR 0082 section 4): five
+//! cron fields, with times at least 15 minutes apart. Parsing and matching
+//! only; `routines/schedule.rs` turns a matching time into an instant.
 use jiff::civil::Date;
 
 /// Day-of-month, month and day-of-week sets. A field written `*` has every bit.
@@ -40,11 +40,49 @@ impl Days {
     }
 }
 
-/// A parsed `schedule`: the daily time and the days.
+/// The shortest time between two runs of one Routine. Minutes.
+pub const MIN_GAP_MINUTES: u32 = 15;
+const DAY_MINUTES: u32 = 24 * 60;
+
+/// The times of day a schedule runs at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Times {
+    /// Bit `h` for hour `h`, 0 to 23.
+    hours: u32,
+    /// Bit `m` for minute `m`, 0 to 59.
+    minutes: u64,
+}
+
+impl Times {
+    /// `(hour, minute)`, earliest first.
+    pub fn each(&self) -> impl DoubleEndedIterator<Item = (i8, i8)> + '_ {
+        (0..24i8)
+            .filter(|h| self.hours & (1 << h) != 0)
+            .flat_map(|h| {
+                (0..60i8)
+                    .filter(|m| self.minutes & (1 << m) != 0)
+                    .map(move |m| (h, m))
+            })
+    }
+
+    /// The smallest gap between two runs, across midnight too. Minutes.
+    fn min_gap(&self) -> u32 {
+        let all: Vec<u32> = self.each().map(|(h, m)| h as u32 * 60 + m as u32).collect();
+        let (Some(first), Some(last)) = (all.first(), all.last()) else {
+            return DAY_MINUTES;
+        };
+        let wrap = first + DAY_MINUTES - last;
+        all.windows(2).map(|w| w[1] - w[0]).fold(wrap, u32::min)
+    }
+}
+
+/// A parsed `schedule`: the times of day and the days.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Schedule {
+    /// The earliest time.
     pub hour: i8,
     pub minute: i8,
+    pub times: Times,
     pub days: Days,
 }
 
@@ -56,8 +94,19 @@ pub fn parse(text: &str) -> Result<Schedule, String> {
             "schedule must have five fields: minute hour day-of-month month day-of-week".into(),
         );
     };
-    let minute = number(minute, 59).ok_or("schedule minute must be one number, 0 to 59")?;
-    let hour = number(hour, 23).ok_or("schedule hour must be one number, 0 to 23")?;
+    let minutes = set(minute, 0, 59)
+        .ok_or("schedule minute must be *, n, a-b, a step such as */30, or a list, 0 to 59")?;
+    let hours = set(hour, 0, 23)
+        .ok_or("schedule hour must be *, n, a-b, a step such as 9-18/2, or a list, 0 to 23")?;
+    let times = Times {
+        hours: hours as u32,
+        minutes,
+    };
+    if times.min_gap() < MIN_GAP_MINUTES {
+        return Err(format!(
+            "schedule times must be at least {MIN_GAP_MINUTES} minutes apart"
+        ));
+    }
     let dom_bits =
         set(dom, 1, 31).ok_or("schedule day-of-month must be *, n, a-b or a list, 1 to 31")?;
     let month_bits =
@@ -79,9 +128,11 @@ pub fn parse(text: &str) -> Result<Schedule, String> {
     if !days.can_match() {
         return Err("schedule matches no day".into());
     }
+    let (hour, minute) = times.each().next().ok_or("schedule matches no time")?;
     Ok(Schedule {
-        hour: hour as i8,
-        minute: minute as i8,
+        hour,
+        minute,
+        times,
         days,
     })
 }
@@ -98,24 +149,31 @@ fn number(s: &str, max: u32) -> Option<u32> {
     s.parse().ok().filter(|n| *n <= max)
 }
 
-/// Bit `n` set for each `n` in the field.
+/// Bit `n` set for each `n` in the field: `*`, `n`, `a-b`, each with an
+/// optional `/step`, or a list of them.
 fn set(field: &str, min: u32, max: u32) -> Option<u64> {
-    if field == "*" {
-        return Some((min..=max).fold(0, |bits, n| bits | 1 << n));
-    }
     let mut bits = 0u64;
     for item in field.split(',') {
-        let (a, b) = match item.split_once('-') {
+        let (range, step) = match item.split_once('/') {
+            Some((range, step)) => (range, number(step, max).filter(|s| *s > 0)?),
+            None => (item, 1),
+        };
+        let (a, b) = match range.split_once('-') {
+            _ if range == "*" => (min, max),
             Some((a, b)) => (number(a, max)?, number(b, max)?),
+            // `n/step` runs from n to the end, as cron does.
+            None if step > 1 => (number(range, max)?, max),
             None => {
-                let n = number(item, max)?;
+                let n = number(range, max)?;
                 (n, n)
             }
         };
         if a < min || a > b {
             return None;
         }
-        bits |= (a..=b).fold(0, |acc, n| acc | 1 << n);
+        bits |= (a..=b)
+            .step_by(step as usize)
+            .fold(0, |acc, n| acc | 1 << n);
     }
     Some(bits)
 }
@@ -162,9 +220,10 @@ mod tests {
             "",
             "0 8 * *",
             "0 8 * * * *",
-            "0,30 8 * * *",
             "*/5 8 * * *",
-            "0 8-9 * * *",
+            "0,10 8 * * *",
+            "* 8 * * *",
+            "*/0 8 * * *",
             "60 8 * * *",
             "0 24 * * *",
             "0 8 0 * *",
@@ -184,6 +243,21 @@ mod tests {
             assert!(parse(s).is_err(), "accepted {s:?}");
         }
         assert!(parse("0 8 29 2 *").is_ok());
+    }
+
+    #[test]
+    fn several_times_a_day_parse_when_far_enough_apart() {
+        let s = parse("*/30 9-18 * * 1-5").unwrap();
+        assert_eq!((s.hour, s.minute), (9, 0));
+        let times: Vec<_> = s.times.each().collect();
+        assert_eq!(times.len(), 20);
+        assert_eq!(times.last(), Some(&(18, 30)));
+        let s = parse("0,30 8 * * *").unwrap();
+        assert_eq!(s.times.each().collect::<Vec<_>>(), [(8, 0), (8, 30)]);
+        assert_eq!(parse("15 9-17/4 * * *").unwrap().times.each().count(), 3);
+        assert!(parse("*/15 * * * *").is_ok());
+        // 23:50 and 00:00 are ten minutes apart across midnight.
+        assert!(parse("0,50 0,23 * * *").is_err());
     }
 
     #[test]
