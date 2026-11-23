@@ -2,9 +2,10 @@ import MuxaV2
 import SwiftUI
 
 /// `⌘P`, as VS Code's quick open: type part of a Task's name, `↑`/`↓` pick a
-/// row, `⏎` opens it in Focus, `esc` closes. Tasks that need the user come
-/// first. A Task's shells (ADR 0079) and other terminals show only once the
-/// text matches them, as the lists keep them closed; a shell opens its Task
+/// row, `⏎` opens it in Focus, `esc` closes. Tasks come in the order the
+/// user acts on them: needs you, done, idle, then working. A Task's shells
+/// (ADR 0079) and other terminals show only once the text matches them, as
+/// the lists keep them closed; a shell opens its Task
 /// with the shell's pane active. The Mac floats it over the window; iOS shows
 /// it as a sheet.
 struct GoToTask: View {
@@ -15,7 +16,9 @@ struct GoToTask: View {
     @FocusState private var focused: Bool
 
     private var matches: [MuxaV2.Terminal] {
-        let tasks = model.needsYou + model.liveTasks.filter { !model.needsYou.contains($0) }
+        let tasks = model.liveTasks.enumerated()
+            .sorted { ($0.element.state.goToRank, $0.offset) < ($1.element.state.goToRank, $1.offset) }
+            .map(\.element)
         let query = text.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return tasks }
         let shells = tasks.flatMap { model.shells(of: $0.id) }
@@ -192,5 +195,17 @@ struct GoToTask: View {
 
     private func agent(of shell: MuxaV2.Terminal) -> MuxaV2.Terminal? {
         model.liveTasks.first { $0.taskDir == shell.taskDir }
+    }
+}
+
+private extension TaskState {
+    /// Go to Task's order; Tasks of one state keep the lists' order.
+    var goToRank: Int {
+        switch self {
+        case .needsYou: 0
+        case .done: 1
+        case .idle: 2
+        case .working: 3
+        }
     }
 }
