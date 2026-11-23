@@ -278,6 +278,31 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheReaderStepsThroughItsImages() throws {
+        let app = launch()
+        app.buttons["needsyou.t2"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.buttons["focus.reader"].tap()
+        let kind = app.segmentedControls["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        kind.buttons["Images"].tap()
+        let first = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        first.tap()
+        let title = app.staticTexts["reader.title"]
+        XCTAssertTrue(waitFor(title, labelContaining: "login.png"))
+        XCTAssertFalse(app.buttons["reader.previous"].isEnabled)
+        app.buttons["reader.next"].tap()
+        XCTAssertTrue(waitFor(title, labelContaining: "session.png"))
+        XCTAssertFalse(app.buttons["reader.next"].isEnabled)
+        app.buttons["reader.previous"].tap()
+        XCTAssertTrue(waitFor(title, labelContaining: "login.png"))
+        // Back still leads to the list, not through each image seen.
+        app.buttons["reader.back"].tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testATasksLoopStartsAndStops() throws {
         let app = launch()
         app.buttons["needsyou.t2"].tap()

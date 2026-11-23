@@ -105,6 +105,8 @@ extension DemoContent {
                 .images: [
                     DemoFile(entry: ReaderEntry(path: "screenshots/login.png", size: 70),
                              content: ReaderContent(path: "screenshots/login.png", data: pixel)),
+                    DemoFile(entry: ReaderEntry(path: "screenshots/session.png", size: 70),
+                             content: ReaderContent(path: "screenshots/session.png", data: pixel)),
                 ],
             ],
             chats: [

@@ -285,6 +285,26 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheArrowKeysMoveThroughTheReadersImages() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let kind = app.radioGroups["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        kind.radioButtons["Images"].click()
+        let first = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        first.click()
+        let title = app.staticTexts["reader.title"]
+        XCTAssertTrue(waitFor(title, labelContaining: "login.png"))
+        app.typeKey(.rightArrow, modifierFlags: [])
+        XCTAssertTrue(waitFor(title, labelContaining: "session.png"))
+        app.typeKey(.leftArrow, modifierFlags: [])
+        XCTAssertTrue(waitFor(title, labelContaining: "login.png"))
+    }
+
+    @MainActor
     func testTheReaderShowsATasksPlan() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()

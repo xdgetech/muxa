@@ -32,6 +32,7 @@ struct ReaderPanel: View {
                     header(target)
                     ReaderDocument(terminal: terminal.id, target: target) { follow($0, from: target) }
                         .id(target)
+                        .simultaneousGesture(target.kind == .images ? swipe : nil)
                 }
             } else {
                 files
@@ -50,6 +51,7 @@ struct ReaderPanel: View {
                 .lineLimit(1)
                 .accessibilityIdentifier("reader.title")
             Spacer()
+            if target.kind == .images, let at = imageIndex(target) { imageSteps(at) }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -117,6 +119,49 @@ struct ReaderPanel: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("reader.file.\(e.path)")
         }
+    }
+
+    private var images: [ReaderEntry] { kind == .images ? list?.entries ?? [] : [] }
+
+    private func imageIndex(_ target: ReaderTarget) -> Int? {
+        images.firstIndex { $0.path == target.path }
+    }
+
+    /// `←` and `→`, or the buttons, show the previous and next image.
+    private func imageSteps(_ at: Int) -> some View {
+        HStack(spacing: 4) {
+            Button("Previous Image", systemImage: "chevron.left") { stepImage(-1) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+                .disabled(at == 0)
+                .accessibilityIdentifier("reader.previous")
+            Text("\(at + 1) of \(images.count)")
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(Palette.textSecondary)
+                .accessibilityIdentifier("reader.position")
+            Button("Next Image", systemImage: "chevron.right") { stepImage(1) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+                .disabled(at + 1 >= images.count)
+                .accessibilityIdentifier("reader.next")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+    }
+
+    /// A horizontal swipe moves through the images, as in Photos.
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 40).onEnded { drag in
+            let (dx, dy) = (drag.translation.width, drag.translation.height)
+            guard abs(dx) > abs(dy) * 2 else { return }
+            stepImage(dx < 0 ? 1 : -1)
+        }
+    }
+
+    /// Replaces the shown image, so Back still leads to the list.
+    private func stepImage(_ by: Int) {
+        guard let target = path.last, target.kind == .images, let at = imageIndex(target),
+              images.indices.contains(at + by) else { return }
+        path[path.count - 1] = ReaderTarget(kind: .images, path: images[at + by].path)
     }
 
     /// A Markdown document's relative link to another listed document opens it here.
