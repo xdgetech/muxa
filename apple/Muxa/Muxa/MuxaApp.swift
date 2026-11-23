@@ -11,6 +11,7 @@ struct MuxaApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        TerminalSettings.registerFonts()
         // The Reader's native pickers take the mocks' segment colors.
         let segments = UISegmentedControl.appearance()
         segments.backgroundColor = UIColor(Palette.surface)

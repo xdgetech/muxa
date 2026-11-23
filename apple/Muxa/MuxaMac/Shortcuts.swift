@@ -49,6 +49,8 @@ struct Shortcut: Identifiable {
     static let goToTask = Shortcut("goto", .go, "Go to Task", KeyChord("p", .command))
     static let nextNeedsYou = Shortcut("next-needs-you", .go, "Next Task that needs you", KeyChord(.f8))
     static let nextTask = Shortcut("next-task", .go, "Next Task", KeyChord(.tab, .control))
+    static let previousNeedsYou = Shortcut("previous-needs-you", .go, "Previous Task that needs you", KeyChord(.f8, .shift))
+    static let previousTask = Shortcut("previous-task", .go, "Previous Task", KeyChord(.tab, [.control, .shift]))
     static let sidebar = Shortcut("sidebar", .go, "Toggle sidebar", KeyChord("b", .command))
     static let routines = Shortcut("routines", .go, "Routines", KeyChord("o", [.command, .shift]))
     static let capture = Shortcut("capture", .capture, "Capture", KeyChord("n", .command))
@@ -75,7 +77,7 @@ struct Shortcut: Identifiable {
     static let chatPanel = Shortcut("chat-panel", .panes, "Chat panel", KeyChord("c", [.command, .shift]))
 
     static let all: [Shortcut] = [
-        home, focus, goToTask, nextNeedsYou, nextTask, sidebar, routines,
+        home, focus, goToTask, nextNeedsYou, previousNeedsYou, nextTask, previousTask, sidebar, routines,
         capture, captureAnywhere, newTask, settings, shortcuts,
         open, later, done, retry, move,
         split, nextPane, previousPane, closePane, closeOtherPanes, closeTask, pane, inboxPanel, readerPanel, chatPanel,

@@ -1,4 +1,5 @@
 import AppKit
+import MuxaSession
 import MuxaV2
 import SwiftTerm
 import SwiftUI
@@ -19,12 +20,12 @@ struct TerminalPane: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(model: model, terminal: terminal.id) }
 
     func makeNSView(context: Context) -> SwiftTerm.TerminalView {
-        let view = FocusReportingTerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+        let settings = TerminalSettings.shared
+        let view = FocusReportingTerminalView(frame: .zero, font: MacTerminalLook.font(settings))
         view.onFocus = { context.coordinator.onActivate() }
         view.terminalDelegate = context.coordinator
-        // ANSI colors stay SwiftTerm's.
-        view.nativeBackgroundColor = NSColor(Theme.terminal)
-        view.nativeForegroundColor = NSColor(Theme.terminalText)
+        MacTerminalLook.colors(settings.theme, on: view)
+        context.coordinator.look = MacTerminalLook.key(settings)
         view.setAccessibilityIdentifier("focus.pane")
         context.coordinator.view = view
         return view
@@ -32,6 +33,12 @@ struct TerminalPane: NSViewRepresentable {
 
     func updateNSView(_ view: SwiftTerm.TerminalView, context: Context) {
         context.coordinator.onActivate = onActivate
+        let settings = TerminalSettings.shared
+        if context.coordinator.look != MacTerminalLook.key(settings) {
+            context.coordinator.look = MacTerminalLook.key(settings)
+            view.font = MacTerminalLook.font(settings)
+            MacTerminalLook.colors(settings.theme, on: view)
+        }
         guard active, context.coordinator.focusRequest != focusRequest else { return }
         context.coordinator.focusRequest = focusRequest
         // The view may not be in its window yet.
@@ -50,6 +57,8 @@ struct TerminalPane: NSViewRepresentable {
         var onActivate: () -> Void = {}
         /// The last focus request this pane carried out.
         var focusRequest = -1
+        /// The terminal settings the view shows.
+        var look = ""
         private var channel: UInt32?
         private var grid: (cols: Int, rows: Int)?
         private var attaching: Task<Void, Never>?
@@ -136,6 +145,35 @@ struct TerminalPane: NSViewRepresentable {
             NSPasteboard.general.setData(content, forType: .string)
         }
         func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) {}
+    }
+}
+
+/// The device's terminal settings on SwiftTerm's AppKit view.
+@MainActor
+enum MacTerminalLook {
+    /// What the view shows; a change re-applies the font and colors.
+    static func key(_ s: TerminalSettings) -> String { "\(s.themeID)|\(s.fontName)|\(s.fontSize)" }
+
+    static func font(_ s: TerminalSettings) -> NSFont {
+        s.font(size: s.fontSize).map { $0 as NSFont } ?? .monospacedSystemFont(ofSize: CGFloat(s.fontSize), weight: .regular)
+    }
+
+    static func colors(_ theme: TerminalTheme, on view: SwiftTerm.TerminalView) {
+        view.nativeBackgroundColor = NSColor(theme.background)
+        view.nativeForegroundColor = NSColor(theme.foreground)
+        view.installColors(theme.ansi.map { $0.map(color) } ?? SwiftTerm.Color.defaultInstalledColors)
+        if let cursor = theme.cursor { view.caretColor = NSColor(cursor) }
+        if let selection = theme.selection { view.selectedTextBackgroundColor = NSColor(selection) }
+    }
+
+    private static func color(_ c: RGB) -> SwiftTerm.Color {
+        SwiftTerm.Color(red: UInt16(c.r) * 257, green: UInt16(c.g) * 257, blue: UInt16(c.b) * 257)
+    }
+}
+
+extension NSColor {
+    convenience init(_ c: RGB) {
+        self.init(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255, alpha: 1)
     }
 }
 

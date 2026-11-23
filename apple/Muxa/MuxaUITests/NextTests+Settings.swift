@@ -16,6 +16,24 @@ extension NextTests {
     }
 
     @MainActor
+    func testTerminalColorsArePickedOnThisDevice() throws {
+        let app = launch()
+        showSettings(app)
+        let row = app.buttons["settings.terminal"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        for _ in 0..<4 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        let dracula = app.buttons["terminal.theme.dracula"]
+        XCTAssertTrue(dracula.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["terminal.preview"].exists)
+        dracula.tap()
+        XCTAssertTrue(dracula.isSelected, "the picked theme is marked")
+        // Back to the default, so the other tests see the usual colors.
+        app.buttons["terminal.theme.muxa"].tap()
+        XCTAssertTrue(app.buttons["terminal.theme.muxa"].isSelected)
+    }
+
+    @MainActor
     func testAConnectionWithASecretShowsSet() throws {
         let app = launch()
         openWorkspace(app, tab: "ws.tab.connections")

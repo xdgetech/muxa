@@ -10,9 +10,18 @@ import UIKit
 public final class PaneTerminalView: UIView {
     public typealias FitMode = PaneFit
 
-    /// The terminal's default colors, as in the design mocks. ANSI colors stay SwiftTerm's.
-    public static let background = UIColor(red: 0x0A / 255, green: 0x0C / 255, blue: 0x0F / 255, alpha: 1)
-    public static let foreground = UIColor(red: 0xD5 / 255, green: 0xD9 / 255, blue: 0xDF / 255, alpha: 1)
+    /// The design mocks' terminal colors, for the views around the terminal.
+    public static let background = UIColor(TerminalTheme.muxa.background)
+    public static let foreground = UIColor(TerminalTheme.muxa.foreground)
+
+    /// The font family and colors the user picked; the font size still comes from the fit.
+    public var look = TerminalLook() {
+        didSet {
+            guard look != oldValue else { return }
+            applyColors()
+            fit(force: true)
+        }
+    }
 
     public let terminalView: TerminalView
     public private(set) var cols = 80
@@ -44,14 +53,23 @@ public final class PaneTerminalView: UIView {
         terminalView.terminalDelegate = replies
         // Keys come from KeyInputView; the terminal view never becomes first responder.
         terminalView.isUserInteractionEnabled = false
-        terminalView.nativeForegroundColor = Self.foreground
-        terminalView.nativeBackgroundColor = Self.background
-        terminalView.layer.backgroundColor = Self.background.cgColor
-        backgroundColor = Self.background
+        applyColors()
         addSubview(terminalView)
     }
 
     required init?(coder: NSCoder) { nil }
+
+    private func applyColors() {
+        let theme = look.theme
+        let background = UIColor(theme.background)
+        terminalView.nativeForegroundColor = UIColor(theme.foreground)
+        terminalView.nativeBackgroundColor = background
+        terminalView.layer.backgroundColor = background.cgColor
+        backgroundColor = background
+        terminalView.installColors(theme.ansi.map { $0.map(SwiftTerm.Color.init) } ?? SwiftTerm.Color.defaultInstalledColors)
+        if let cursor = theme.cursor { terminalView.caretColor = UIColor(cursor) }
+        if let selection = theme.selection { terminalView.selectedTextBackgroundColor = UIColor(selection) }
+    }
 
     public func reset(cols: Int, rows: Int, data: Data) {
         let changed = max(cols, 1) != self.cols || max(rows, 1) != self.rows
@@ -88,7 +106,7 @@ public final class PaneTerminalView: UIView {
 
     /// The mode a view of `viewport` size picks for itself.
     public func automaticFit(in viewport: CGSize) -> FitMode {
-        let metrics = CellMetrics(scale: displayScale)
+        let metrics = self.metrics
         return .automatic(
             wide: viewport.width > viewport.height,
             wholeFont: metrics.largestFontSize(cols: cols, rows: rows, in: viewport),
@@ -97,13 +115,14 @@ public final class PaneTerminalView: UIView {
 
     /// The grid `area` shows at `fontSize`, with cells measured as the fit measures them.
     public func viewportGrid(in area: CGSize, fontSize: CGFloat) -> PaneViewport? {
-        let cell = CellMetrics(scale: displayScale).cell(for: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular))
+        let metrics = self.metrics
+        let cell = metrics.cell(for: look.font(size: fontSize))
         return PaneViewport.fitting(area, cell: cell)
     }
 
     /// The size the grid needs in `fitMode` for a view of `viewport` size.
     public func gridSize(in viewport: CGSize) -> CGSize {
-        let metrics = CellMetrics(scale: displayScale)
+        let metrics = self.metrics
         let cell = metrics.cell(for: font(in: viewport, metrics: metrics))
         return CGSize(
             width: (cell.width * CGFloat(cols)).rounded(.up) + 1,
@@ -114,8 +133,10 @@ public final class PaneTerminalView: UIView {
         let size = fitMode.fontSize(
             wholeFont: fitMode == .whole ? metrics.largestFontSize(cols: cols, rows: rows, in: viewport) : 0,
             widthFont: fitMode == .whole ? 0 : metrics.largestFontSize(cols: cols, rows: nil, in: viewport))
-        return UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        return look.font(size: size)
     }
+
+    private var metrics: CellMetrics { CellMetrics(scale: displayScale, look: look) }
 
     private var displayScale: CGFloat {
         max(window?.screen.scale ?? traitCollection.displayScale, 1)
@@ -143,7 +164,7 @@ public final class PaneTerminalView: UIView {
         }
         fitted = (size, viewport, cols, rows, fitMode)
 
-        let metrics = CellMetrics(scale: displayScale)
+        let metrics = self.metrics
         let font = font(in: viewport, metrics: metrics)
         let fontSize = font.pointSize
         let cell = metrics.cell(for: font)
@@ -173,6 +194,7 @@ public final class PaneTerminalView: UIView {
 /// the width of "W" rounded to the pixel grid, the line height rounded up.
 struct CellMetrics {
     let scale: CGFloat
+    var look = TerminalLook()
 
     func cell(for font: UIFont) -> CGSize {
         let width = "W".size(withAttributes: [.font: font]).width
@@ -185,7 +207,7 @@ struct CellMetrics {
     /// With `rows` nil, only the width limits the font.
     func largestFontSize(cols: Int, rows: Int?, in size: CGSize) -> CGFloat {
         func fits(_ s: CGFloat) -> Bool {
-            let c = cell(for: UIFont.monospacedSystemFont(ofSize: s, weight: .regular))
+            let c = cell(for: look.font(size: s))
             guard c.width * CGFloat(cols) + 1 <= size.width else { return false }
             guard let rows else { return true }
             return c.height * CGFloat(rows) + 1 <= size.height

@@ -29,7 +29,7 @@ struct FocusTaskRow: View {
     var body: some View {
         row
             .overlay(alignment: .trailing) {
-                if terminal.isTaskAgent, hovered || selected {
+                if closable {
                     Button { chrome.closingTask = terminal } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))
@@ -67,7 +67,8 @@ struct FocusTaskRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if let state {
+                // The close button takes the state's place while the pointer is on the row.
+                if let state, !closable {
                     Text(state)
                         .font(.system(size: 11))
                         .foregroundStyle(style == .needsYou ? Palette.textSecondary : terminal.state.color)
@@ -87,6 +88,8 @@ struct FocusTaskRow: View {
         .accessibilityIdentifier("terminal.\(terminal.id)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
+
+    private var closable: Bool { terminal.isTaskAgent && hovered }
 
     private var title: String {
         guard style == .needsYou, let ws = terminal.workspace else { return terminal.title }

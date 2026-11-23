@@ -48,11 +48,22 @@ struct TerminalPane: UIViewRepresentable {
 
     func makeUIView(context: Context) -> V2PaneView {
         let view = V2PaneView()
+        view.screen.look = Self.look
         context.coordinator.bind(view)
         return view
     }
 
-    func updateUIView(_ view: V2PaneView, context: Context) {}
+    func updateUIView(_ view: V2PaneView, context: Context) {
+        view.screen.look = Self.look
+    }
+
+    /// The device's terminal settings; the size still comes from the fit.
+    @MainActor static var look: TerminalLook {
+        let settings = TerminalSettings.shared
+        return TerminalLook(
+            fontName: settings.fontName.isEmpty ? nil : settings.fontName,
+            fallbackFontNames: [TerminalSettings.symbolsFont], theme: settings.theme)
+    }
 
     static func dismantleUIView(_ view: V2PaneView, coordinator: Coordinator) {
         coordinator.unbind()

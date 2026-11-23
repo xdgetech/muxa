@@ -5,6 +5,8 @@ import SwiftUI
 enum SettingsPlace: Hashable {
     case workspace(String)
     case workers
+    /// How terminals look on this device.
+    case terminal
 }
 
 /// The list of Settings: the host's Workspaces and workers, the connection,
@@ -30,6 +32,11 @@ struct SettingsIndex: View {
                 .listRowBackground(Palette.card)
             }
             HostsSection(editing: $editingHost)
+            Section("This device") {
+                row(.terminal, id: "settings.terminal") {
+                    LabeledContent("Terminal", value: TerminalSettings.shared.theme.name)
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .sheet(isPresented: $addingWorkspace) { WorkspaceAddSheet() }
@@ -99,6 +106,7 @@ struct SettingsDetail: View {
         switch place {
         case .workspace(let name): WorkspaceSettings(name: name)
         case .workers: WorkersSettings()
+        case .terminal: TerminalSettingsForm().navigationTitle("Terminal")
         }
     }
 }

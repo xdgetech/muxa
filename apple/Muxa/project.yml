@@ -62,6 +62,8 @@ targets:
       - Muxa/Theme.swift
       - Muxa/Assets.xcassets
       - Muxa/Reader
+      # The terminal's fonts (scripts/vendor-fonts.sh).
+      - Muxa/Fonts
       - MuxaMac
     dependencies:
       - package: MuxaKit

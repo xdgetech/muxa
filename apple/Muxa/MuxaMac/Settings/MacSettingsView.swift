@@ -8,6 +8,7 @@ enum MacSettingsPlace: Hashable {
     case workers
     case connection
     case keyboard
+    case terminal
 }
 
 /// The Settings window (`⌘,`) as in `Settings.dc.html`: a header, the
@@ -16,7 +17,9 @@ struct MacSettingsView: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     @Environment(\.openWindow) private var openWindow
-    @State private var picked: MacSettingsPlace?
+    @State private var picked: MacSettingsPlace? = Self.firstPlace
+    /// The place Settings opens on; snapshots set it.
+    static var firstPlace: MacSettingsPlace?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +48,7 @@ struct MacSettingsView: View {
         case .workers where model.settings.settings != nil: return .workers
         case .connection: return .connection
         case .keyboard: return .keyboard
+        case .terminal: return .terminal
         default: return workspaces.first.map { .workspace($0.name) } ?? .connection
         }
     }
@@ -79,6 +83,11 @@ struct MacSettingsView: View {
             }
         case .connection: MacConnectionPane()
         case .keyboard: MacKeyboardPane()
+        case .terminal:
+            VStack(alignment: .leading, spacing: 0) {
+                MacPaneTitle(title: "Terminal", subtitle: "How terminals look on this Mac.")
+                TerminalSettingsForm().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
+            }
         }
     }
 

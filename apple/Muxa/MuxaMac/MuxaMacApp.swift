@@ -14,6 +14,10 @@ struct MuxaMacApp: App {
     @State private var chrome = MacChrome()
     @State private var windowKeys: WindowKeyMonitor?
 
+    init() {
+        TerminalSettings.registerFonts()
+    }
+
     var body: some Scene {
         Window("Muxa", id: "main") {
             NextRoot()
@@ -95,6 +99,12 @@ struct MuxaMacApp: App {
                 Button("Next Task") { openNext(in: model.needsYou + model.liveTasks) }
                     .shortcut(.nextTask)
                     .disabled(model.liveTasks.isEmpty && model.needsYou.isEmpty)
+                Button("Previous Task That Needs You") { openNext(in: model.needsYou, step: -1) }
+                    .shortcut(.previousNeedsYou)
+                    .disabled(model.needsYou.isEmpty)
+                Button("Previous Task") { openNext(in: model.needsYou + model.liveTasks, step: -1) }
+                    .shortcut(.previousTask)
+                    .disabled(model.liveTasks.isEmpty && model.needsYou.isEmpty)
                 Divider()
                 Button(nav.showInbox ? "Hide Inbox Panel" : "Show Inbox Panel") { nav.showInbox.toggle() }
                     .shortcut(.inboxPanel)
@@ -171,11 +181,13 @@ struct MuxaMacApp: App {
         }
     }
 
-    /// Opens the Task after the one Focus shows, from `list`, in Focus.
-    private func openNext(in list: [Terminal]) {
-        guard !list.isEmpty else { return }
-        let at = list.firstIndex { $0.id == nav.terminal } ?? -1
-        nav.open(list[(at + 1) % list.count])
+    /// Opens the Task after (or with `step` -1, before) the one Focus shows,
+    /// from `list`, in Focus. It wraps around, so each press moves on.
+    private func openNext(in list: [Terminal], step: Int = 1) {
+        let unique = list.reduce(into: [Terminal]()) { if !$0.contains($1) { $0.append($1) } }
+        guard !unique.isEmpty else { return }
+        let at = unique.firstIndex { $0.id == nav.terminal } ?? (step > 0 ? -1 : 0)
+        nav.open(unique[(at + step + unique.count) % unique.count])
     }
 }
 
