@@ -17,6 +17,11 @@ pub struct BotBrief {
     pub reach: Reach,
 }
 
+/// How to write an item the user wants to read. Every Routine run gets it in
+/// its Output section, with or without a Bot; a talk gets it to write
+/// instructions (ADR 0086).
+pub const INBOX_ITEMS: &str = include_str!("inbox_items.md");
+
 /// Steps of a lead in one occurrence: its run, and up to two more with its
 /// members' results (ADR 0085).
 pub const MAX_STEPS: u32 = 3;
@@ -98,7 +103,8 @@ fn routine_goal(routine: &Routine, instructions: &str) -> String {
          {{\"version\": 1, \"items\": [{{\"kind\": \"briefing\", \"key\": \"source:id\", \"title\": \"One line\", \
          \"body\": \"Short summary.\", \"links\": [{{\"url\": \"https://example.com/item\"}}]}}], \
          \"state\": {{\"cursor\": \"...\"}}}}\n\
-         ```\n",
+         ```\n\n{guide}",
+        guide = INBOX_ITEMS,
         instructions = instructions.trim_end(),
         name = routine.name,
         items = routine.items,
@@ -130,6 +136,10 @@ mod tests {
         let g = goal(&routine, &full, None);
         assert!(g.len() <= 16 * 1024);
         assert!(g.contains("At most 5 items") && g.contains("Do not change anything"));
+        assert!(
+            g.contains("### Good Inbox items"),
+            "every Routine, with or without a Bot"
+        );
         assert!(!g.contains("memory"));
         routine.direct_writes = true;
         assert!(goal(&routine, "Read.", None).contains("You may change external systems"));
