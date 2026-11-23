@@ -28,6 +28,17 @@ struct MacMcpCards: View {
             .padding(14)
             .raisedCard()
             .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Bot rules").fontWeight(.semibold)
+                Text(BotRulesEditor.note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                BotRulesEditor(workspace: workspace).textFieldStyle(.roundedBorder)
+            }
+            .padding(14)
+            .frame(maxWidth: 640, alignment: .leading)
+            .raisedCard()
         }
         .sheet(item: $editing) { McpEditor(workspace: workspace, draft: $0) }
     }

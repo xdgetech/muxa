@@ -227,6 +227,7 @@ extension DemoContent {
                         instructionsText: "List the PRs that wait for my review, and the threads that ask me something.\n"),
                 ],
                 foundRepos: ["app", "docs", "legacy"], hiddenRepos: ["legacy"],
+                botRules: BotRules(allow: ["WebSearch", "WebFetch"], deny: ["Bash"]),
                 bots: [
                     SettingsBot(
                         spec: BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me"),

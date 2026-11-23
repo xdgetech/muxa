@@ -32,8 +32,9 @@ extension Settings {
         case let .workspaceAdd(name, root, repos):
             guard !workspaces.contains(where: { $0.name == name }) else { throw refusal("\(name) exists") }
             workspaces.append(SettingsWorkspace(name: name, root: root, repos: repos))
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules):
             try edit(workspace) { w in
+                if let botRules { w.botRules = botRules }
                 if let claudeConnectors { w.claudeConnectors = claudeConnectors }
                 if let root { w.root = root }
                 if let repos { w.repos = repos }

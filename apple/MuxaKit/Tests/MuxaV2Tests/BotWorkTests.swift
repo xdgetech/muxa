@@ -112,3 +112,28 @@ struct ClaudeConnectorsTests {
         #expect(after.workspaces[0].claudeConnectors)
     }
 }
+
+/// `[workspace.bots]`: permission rules for a Workspace's Bots only (ADR 0087).
+struct BotRulesTests {
+    @Test func theRulesDecodeAndTheOpSendsThem() throws {
+        let wire = #"{"name":"w","root":"/w","bot_rules":{"allow":["WebSearch"],"deny":["Bash"]}}"#
+        let w = try Coding.plainDecoder.decode(SettingsWorkspace.self, from: Data(wire.utf8))
+        #expect(w.botRules == BotRules(allow: ["WebSearch"], deny: ["Bash"]))
+        let old = try Coding.plainDecoder.decode(SettingsWorkspace.self, from: Data(#"{"name":"w","root":"/w"}"#.utf8))
+        #expect(old.botRules.isEmpty)
+        let op = SettingsOp.workspaceUpdate(workspace: "w", botRules: BotRules(allow: ["mcp__claude_ai_Gmail"]))
+        let json = String(decoding: try Coding.plainEncoder.encode(op), as: UTF8.self)
+        #expect(json == #"{"bot_rules":{"allow":["mcp__claude_ai_Gmail"],"deny":[]},"op":"workspace-update","workspace":"w"}"#)
+        #expect(try Coding.plainDecoder.decode(SettingsOp.self, from: Data(json.utf8)) == op)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func theDemosAppWorkspaceHasRulesAndTheyChange() async throws {
+        let c = try await V2Client.open(DemoChannel(), name: "test")
+        let s = try await c.settings()
+        #expect(s.workspaces[0].botRules == BotRules(allow: ["WebSearch", "WebFetch"], deny: ["Bash"]))
+        let after = try await c.settingsUpdate(
+            revision: s.revision, ops: [.workspaceUpdate(workspace: "app", botRules: BotRules(deny: ["Bash", "Write"]))])
+        #expect(after.workspaces[0].botRules == BotRules(deny: ["Bash", "Write"]))
+    }
+}

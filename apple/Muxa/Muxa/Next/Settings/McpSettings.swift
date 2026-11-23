@@ -16,6 +16,13 @@ struct WorkspaceMcpForm: View {
             } footer: {
                 Text(ClaudeConnectorsToggle.note)
             }
+            Section {
+                BotRulesEditor(workspace: workspace)
+            } header: {
+                Text("Bot rules")
+            } footer: {
+                Text(BotRulesEditor.note)
+            }
         }
         .sheet(item: $editing) { McpEditor(workspace: workspace, draft: $0) }
     }

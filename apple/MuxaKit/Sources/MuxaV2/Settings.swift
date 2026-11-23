@@ -94,6 +94,8 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var directWrites: Bool
     /// The user's claude.ai connectors load beside the MCP servers (ADR 0087).
     public var claudeConnectors: Bool
+    /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
+    public var botRules: BotRules
     public var connections: [SettingsConnection]
     public var mcp: [McpSpec]
     /// Also while `routinesEnabled` is false.
@@ -109,8 +111,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
                 loop: WorkspaceLoop? = nil, routinesEnabled: Bool = false, directWrites: Bool = false,
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
                 routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = [],
-                bots: [SettingsBot] = [], claudeConnectors: Bool = false) {
+                botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false) {
         self.bots = bots
+        self.botRules = botRules
         self.claudeConnectors = claudeConnectors
         self.name = name
         self.root = root
@@ -134,6 +137,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         case routinesEnabled = "routines_enabled"
         case directWrites = "direct_writes"
         case claudeConnectors = "claude_connectors"
+        case botRules = "bot_rules"
         case routinesProblem = "routines_problem"
         case foundRepos = "found_repos"
         case hiddenRepos = "hidden_repos"
@@ -152,11 +156,34 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         routinesEnabled = try c.decode(.routinesEnabled, or: false)
         directWrites = try c.decode(.directWrites, or: false)
         claudeConnectors = try c.decode(.claudeConnectors, or: false)
+        botRules = try c.decode(.botRules, or: BotRules())
         connections = try c.decode(.connections, or: [])
         mcp = try c.decode(.mcp, or: [])
         routines = try c.decode(.routines, or: [])
         bots = try c.decode(.bots, or: [])
         routinesProblem = try c.decodeIfPresent(String.self, forKey: .routinesProblem)
+    }
+}
+
+/// `[workspace.bots]`: Claude Code permission rules such as `Bash` or
+/// `mcp__claude_ai_Gmail`, given only to the Workspace's Bots (ADR 0087).
+public struct BotRules: Codable, Equatable, Sendable {
+    public var allow: [String]
+    public var deny: [String]
+
+    public init(allow: [String] = [], deny: [String] = []) {
+        self.allow = allow
+        self.deny = deny
+    }
+
+    public var isEmpty: Bool { allow.isEmpty && deny.isEmpty }
+
+    enum CodingKeys: String, CodingKey { case allow, deny }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        allow = try c.decode(.allow, or: [])
+        deny = try c.decode(.deny, or: [])
     }
 }
 
