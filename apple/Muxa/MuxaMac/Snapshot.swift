@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette` in the environment, the app
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
@@ -19,6 +19,9 @@ enum Snapshot {
         case "palette":
             nav.focus = true
             nav.showPalette = true
+        case "reader":
+            nav.focus = true
+            nav.showReader = true
         default: break
         }
         // The mocks' desktop frame.

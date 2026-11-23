@@ -3,13 +3,15 @@ import SwiftUI
 
 /// The active Task's Reader over the whole window, from the right. Its left
 /// edge drags it wider or narrower, the button fills the window, and Esc
-/// closes it. The width is kept for the next time.
+/// closes it. The width is kept for the next time. It takes the keyboard from
+/// the terminal while open and gives it back when it closes.
 struct ReaderOverlay: View {
     @Environment(NextNavigation.self) private var nav
     let terminal: MuxaV2.Terminal
     /// Of the window's width.
     @AppStorage("reader.width") private var fraction = Self.defaultFraction
     @State private var dragStart: Double?
+    @FocusState private var focused: Bool
 
     private static let defaultFraction = 0.55
     private static let range = 0.3...1.0
@@ -27,6 +29,15 @@ struct ReaderOverlay: View {
         }
         .background(Color.black.opacity(fraction < 1 ? 0.25 : 0).allowsHitTesting(false))
         .onExitCommand { nav.showReader = false }
+        .onAppear(perform: takeKeyboard)
+        .onDisappear { nav.refocus() }
+    }
+
+    /// The terminal, an AppKit view, keeps the keyboard until it lets go; the
+    /// panel takes it a moment later, as Go to Task does.
+    private func takeKeyboard() {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        DispatchQueue.main.async { focused = true }
     }
 
     private var panel: some View {
@@ -61,6 +72,9 @@ struct ReaderOverlay: View {
             ReaderPanel(terminal: terminal).id(terminal.id)
         }
         .frame(maxHeight: .infinity)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
         .background(Palette.surface)
         .overlay(alignment: .leading) { Rectangle().fill(Palette.border).frame(width: 1) }
         .shadow(color: .black.opacity(0.35), radius: 16, x: -4)

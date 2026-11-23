@@ -305,6 +305,19 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheReaderTakesTheKeyboardWhenItOpens() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let kind = app.radioGroups["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        // No click into the Reader: esc reaches it, not the terminal.
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(waitForGone(kind))
+    }
+
+    @MainActor
     func testTheReaderShowsATasksPlan() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()
