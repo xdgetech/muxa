@@ -35,14 +35,18 @@ struct FocusView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .background(Palette.ground)
-                if FocusSidePanel.isShown(nav: nav, terminal: active) {
-                    FocusSidePanel(terminal: active)
+                if nav.showInbox {
+                    FocusSidePanel()
                 }
             }
         }
         .font(.system(size: 13))
         .foregroundStyle(Palette.text)
         .background(Palette.ground)
+        .overlay {
+            if nav.showReader, let t = active { ReaderOverlay(terminal: t) }
+        }
+        .modifier(CloseTaskConfirm())
         .sheet(item: $loopFor) { t in LoopSheet(terminal: t) }
         .onAppear(perform: openFirstTask)
     }

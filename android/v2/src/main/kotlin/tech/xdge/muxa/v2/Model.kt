@@ -244,6 +244,9 @@ data class Terminal(
     val taskTitle: String? get() = labels["muxa.title"]
     val isTaskAgent: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent"
 
+    /** A shell beside a Task's agent (ADR 0079); it shares the agent's `muxa.dir`. */
+    val isTaskShell: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "shell"
+
     /** A Task's places, the working place first; empty for other terminals. */
     val places: List<Place>
         get() = labels["muxa.places"]?.let { runCatching { json.decodeFromString<List<Place>>(it) }.getOrNull() } ?: emptyList()

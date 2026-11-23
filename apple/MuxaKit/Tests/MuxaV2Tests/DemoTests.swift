@@ -187,6 +187,7 @@ struct DemoTests {
         #expect(inbox.done.first?.id == "d1")
         #expect(!inbox.items.contains { $0.id == "d1" })
         #expect(await events.next() == .removed(terminal: "t1"))
+        #expect(await events.next() == .removed(terminal: "t6"), "the Task's shell goes with it")
         #expect(await events.next() == .inbox(inbox))
         #expect(try await c.terminals().map(\.id) == ["t2", "t3", "t4", "t5"])
         await #expect(throws: V2Error.self) { try await c.inbox(.inboxApprove(item: "d2")) }
@@ -196,6 +197,26 @@ struct DemoTests {
         } catch let V2Error.refused(code, _) {
             #expect(code == "not-found")
         }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aTasksShellsStartAndCloseAndCloseTaskTakesThemAll() async throws {
+        let c = try await open()
+        let shell = try await c.taskShell("t1")
+        #expect(shell.isTaskShell && shell.taskDir == "/demo/app-fix-login")
+        _ = try await c.taskShell("t1")
+        do {
+            _ = try await c.taskShell("t1")
+            Issue.record("three shells per Task")
+        } catch let V2Error.refused(code, _) {
+            #expect(code == "conflict")
+        }
+        await #expect(throws: V2Error.self) { try await c.closeTerminal("t1") }
+        try await c.closeTerminal(shell.id)
+        #expect(try await !c.terminals().contains { $0.id == shell.id })
+        let inbox = try await c.inbox(.closeTask(terminal: "t1"))
+        #expect(inbox.done.first?.id == "d1", "its Review item is Done")
+        #expect(try await c.terminals().allSatisfy { $0.taskDir != "/demo/app-fix-login" })
     }
 
     @Test(.timeLimit(.minutes(1)))

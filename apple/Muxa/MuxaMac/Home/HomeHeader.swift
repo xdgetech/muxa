@@ -12,15 +12,7 @@ struct HomeHeader: View {
 
     var body: some View {
         MacHeaderBar {
-            HStack(spacing: 8) {
-                LogoTile()
-                Text("muxa").font(.system(size: 13, weight: .semibold))
-                HostMenu()
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-            }
+            HeaderBrand()
             ModeSwitch(focus: false, home: {}, showFocus: showFocus)
         } trailing: {
             NeedsYouPill(open: openTerminal, showAll: showFocus)

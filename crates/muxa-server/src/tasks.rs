@@ -134,6 +134,11 @@ pub trait Host: Send + Sync {
     /// Checks the request and makes the places, or finds the existing ones.
     fn prepare(&self, spec: &TaskSpec) -> impl Future<Output = Result<Prepared, TaskError>> + Send;
 
+    /// The program of a Task's shell (ADR 0079), as argv.
+    fn shell(&self) -> Vec<String> {
+        vec!["/bin/sh".to_owned(), "-l".to_owned()]
+    }
+
     /// The Workspace names, for Capture's `#name`.
     fn workspaces(&self) -> impl Future<Output = Vec<String>> + Send {
         async { Vec::new() }

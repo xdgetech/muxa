@@ -140,6 +140,17 @@ public actor V2Client {
         return (try field("terminal", of: reply), try field("existing", of: reply))
     }
 
+    /// A new shell beside the Task's agent `terminal`; `refused(code: "conflict")`
+    /// when the Task has its 3 shells.
+    public func taskShell(_ terminal: String) async throws -> Terminal {
+        try field("terminal", of: await request(.taskShell(terminal: terminal)))
+    }
+
+    /// Ends a Task's shell and removes its terminal.
+    public func closeTerminal(_ terminal: String) async throws {
+        _ = try await request(.closeTerminal(terminal: terminal))
+    }
+
     /// Asks for `changed`, `removed`, `resync` and `inbox` events.
     public func watch() async throws { _ = try await request(.watch) }
 
@@ -147,8 +158,8 @@ public actor V2Client {
         try field("capture", of: await request(.parseCapture(text: text, today: today)))
     }
 
-    /// Any Inbox request; the reply is the whole Inbox. `inboxApprove` is
-    /// `refused(code: "would-lose-work")` while the Task's worktree holds work.
+    /// Any Inbox request; the reply is the whole Inbox. `inboxApprove` and
+    /// `closeTask` are `refused(code: "would-lose-work")` while the Task's worktree holds work.
     public func inbox(_ r: V2Request = .inbox) async throws -> Inbox {
         try field("inbox", of: await request(r))
     }

@@ -1,8 +1,9 @@
 import Foundation
 
 extension DemoContent {
-    /// Two Tasks (one waits on the user), a shell, a terminal muxa did not
-    /// start, a Routine run, every Inbox kind, and three Routines.
+    /// Two Tasks (one waits on the user, one has a shell beside its agent), a
+    /// shell, a terminal muxa did not start, a Routine run, every Inbox kind,
+    /// and three Routines.
     /// Approving `d8` needs force: its worktree holds work. `d9` came from muxa v1.
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
@@ -36,6 +37,12 @@ extension DemoContent {
                     labels: ["muxa.kind": "routine", "muxa.role": "agent", "muxa.workspace": "app",
                              "muxa.routine": "dependency-digest", "muxa.dir": "/demo/runs/dependency-digest"],
                     cols: 80, rows: 24),
+                // fix-login's shell (ADR 0079).
+                Terminal(
+                    id: "t6", name: "fix-login-sh", live: true, status: nil,
+                    labels: ["muxa.kind": "task", "muxa.role": "shell", "muxa.workspace": "app",
+                             "muxa.dir": "/demo/app-fix-login"],
+                    cols: 80, rows: 24),
             ],
             screens: [
                 "t1": "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
@@ -43,6 +50,7 @@ extension DemoContent {
                 "t3": "$ ",
                 "t4": "% ",
                 "t5": "● Reading the lockfile\r\n",
+                "t6": "~/demo/app-fix-login $ ",
             ],
             inbox: [
                 item("d1", .review, "Review fix-login", note: "Draft PR #42: refresh the session before it expires.", source: "task",

@@ -377,6 +377,8 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     /// A Task's title as the user wrote it; the name is only a slug of it.
     public var taskTitle: String? { labels["muxa.title"] }
     public var isTaskAgent: Bool { labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent" }
+    /// A shell beside a Task's agent (ADR 0079); it shares the agent's `taskDir`.
+    public var isTaskShell: Bool { labels["muxa.kind"] == "task" && labels["muxa.role"] == "shell" }
     /// A Task's places, the working place first; empty for other terminals.
     public var places: [Place] {
         guard let text = labels["muxa.places"], let data = text.data(using: .utf8) else { return [] }

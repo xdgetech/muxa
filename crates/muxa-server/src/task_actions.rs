@@ -10,8 +10,9 @@ use muxa_inbox::{Inbox, InboxError};
 use muxa_protocol::v2::{ErrorCode, InboxItem, ItemKind, LoopSpec, Place, WorktreeMode};
 
 use crate::session::{code_of, task_code};
+use crate::shells;
 use crate::task_items::is_agent;
-use crate::tasks::{self, Host, PLACES};
+use crate::tasks::{self, DIR, Host, PLACES};
 
 pub(crate) type Refusal = (ErrorCode, String);
 
@@ -38,16 +39,62 @@ pub(crate) async fn approve<B: SessionBackend, H: Host>(
 ) -> Result<(), Refusal> {
     let item = linked(inbox, id, ItemKind::Review)?;
     let agent = task_agent(backend, &item).await?;
-    let places = places_of(&agent);
+    end_task(backend, host, &agent, mode).await?;
+    done(inbox, id)
+}
+
+/// `close-task` (ADR 0079): closes the Task of `terminal` as Approve does,
+/// without an item, and marks the Task's open items Done.
+pub(crate) async fn close_task<B: SessionBackend, H: Host>(
+    backend: &B,
+    host: &H,
+    inbox: &Inbox,
+    terminal: &str,
+    mode: WorktreeMode,
+) -> Result<(), Refusal> {
+    let agent = backend
+        .get(&TerminalId::new(terminal.to_owned()))
+        .await
+        .map_err(|e| (code_of(&e), e.to_string()))?;
+    if !is_agent(&agent) {
+        let message = format!("{terminal} is not a Task's agent; only a Task closes this way");
+        return Err((ErrorCode::BadRequest, message));
+    }
+    end_task(backend, host, &agent, mode).await?;
+    let open: Vec<String> = inbox
+        .view()
+        .items
+        .into_iter()
+        .filter(|i| i.terminal.as_deref() == Some(terminal))
+        .map(|i| i.id)
+        .collect();
+    for id in open {
+        done(inbox, &id)?;
+    }
+    Ok(())
+}
+
+/// Ends the agent, its loop and its shells, then removes the Task's branch
+/// worktrees. Nothing changes when the host refuses the close.
+async fn end_task<B: SessionBackend, H: Host>(
+    backend: &B,
+    host: &H,
+    agent: &TerminalInfo,
+    mode: WorktreeMode,
+) -> Result<(), Refusal> {
+    let places = places_of(agent);
     host.check_close(&places, mode).await.map_err(refused)?;
-    stop_loop(host, &agent).await;
-    end_agent(backend, &agent).await?;
+    stop_loop(host, agent).await;
+    end_agent(backend, agent).await?;
+    if let Some(dir) = agent.labels.get(DIR) {
+        shells::close_all(backend, dir).await;
+    }
     host.close_places(&places, mode).await.map_err(|e| {
         let message = format!("the agent ended, but its places were not all removed: {e}");
         (task_code(&e), message)
     })?;
     tracing::info!(terminal = %agent.id, places = places.len(), "task closed");
-    done(inbox, id)
+    Ok(())
 }
 
 /// `inbox-request-changes`: types `comment` into the Task's agent as the
@@ -188,14 +235,14 @@ async fn end_agent<B: SessionBackend>(backend: &B, agent: &TerminalInfo) -> Resu
     Ok(())
 }
 
-async fn remove_terminal<B: SessionBackend>(backend: &B, id: &TerminalId) {
+pub(crate) async fn remove_terminal<B: SessionBackend>(backend: &B, id: &TerminalId) {
     for _ in 0..REMOVE_TRIES {
         match backend.remove(id).await {
             Ok(()) | Err(BackendError::NotFound(_)) => return,
             Err(_) => tokio::time::sleep(REMOVE_WAIT).await,
         }
     }
-    tracing::warn!(terminal = %id, "an ended agent's terminal was not removed");
+    tracing::warn!(terminal = %id, "an ended terminal was not removed");
 }
 
 /// The comment as it is typed: newlines as `\n`, no other control character.

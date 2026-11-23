@@ -81,6 +81,9 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
 | `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"mcp"?,"plan"?,"loop"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal. `loop` (LoopSpec) also starts its Task Loop |
+| `{"type":"task-shell","terminal"}` | `{"terminal":Terminal,"existing":false}`: a new shell in the working place of the Task whose live agent is `terminal`. See Task shells |
+| `{"type":"close-terminal","terminal"}` | `{}`. Ends a Task's shell and removes its terminal; any other terminal is `bad-request` |
+| `{"type":"close-task","terminal","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of the agent `terminal` as `inbox-approve` does, without an item, and marks the Task's open items Done. See Task actions |
 | `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
 | `{"type":"inbox"}` | `{"inbox":Inbox}` |
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
@@ -139,6 +142,17 @@ Every agent gets all of its Workspace's MCP servers (ADR 0075). In a Workspace t
 `connections` and `mcp` in `start-task` are deprecated and ignored (ADR 0075). The server still accepts them, and an unknown name is not an error.
 
 An unknown Workspace, connection or MCP server, a missing title, a wrong repo or branch, or a repo named twice is `bad-request`.
+
+### Task shells
+
+ADR 0079. A Task's shells are terminals beside its agent, in its working place, so every client shows them under the Task.
+
+- `task-shell` runs the host user's login shell (`$SHELL -l`, else the system's default shell) with `muxa.kind` = `task`, `muxa.role` = `shell`, the agent's `muxa.dir`, and its `muxa.workspace` and `muxa.title`. Its `name` is the agent's name with `-sh`.
+- A shell gets no connections or MCP servers. Secrets go only into an agent's environment (ADR 0069).
+- A Task has at most 3 live shells; a fourth is `conflict`. A terminal that is not a live Task agent is `bad-request`.
+- `close-terminal` ends a shell and removes its terminal. It refuses every other terminal, so muxa never ends what it did not start this way.
+- Closing a Task (`inbox-approve`, `close-task`) ends its shells with its agent.
+- Clients group a shell with the agent that has the same `muxa.dir`. They list it with the Task, never as a Task or among other terminals.
 
 ### Notifications
 
@@ -262,6 +276,8 @@ ADR 0072. The actions of a Review or Failed item, and the Workspaces a client of
 4. The item is Done.
 
 A Review item with no `terminal`, or another kind, is `bad-request`. A terminal that is gone is `not-found`; the client offers Done instead.
+
+`close-task` runs steps 1 to 3 for the agent `terminal`, live or ended, then marks every open item with that `terminal` Done. A terminal that is not a Task's agent is `bad-request`; one that is gone is `not-found`.
 
 `inbox-request-changes` types `comment` into the live agent of an open Review item as the user's input, then Enter, and marks the item Done. A comment is 1 to 8192 bytes, of text, newlines and tabs; `\r\n` counts as a newline. One line is typed as it is; several lines go as one bracketed paste (`ESC [200~` … `ESC [201~`). An ended agent is `bad-request`. The comment never reaches the server's log.
 

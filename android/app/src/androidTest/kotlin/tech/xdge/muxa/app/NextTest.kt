@@ -339,6 +339,20 @@ class NextTest {
     }
 
     @Test
+    fun aTasksShellIsListedWithItAndPicked() {
+        launch()
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t1"), TIMEOUT)
+        compose.onNodeWithTag("terminal.t6").assertDoesNotExist()
+        compose.onNodeWithTag("terminal.t1").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.terminal.t6"), TIMEOUT)
+        compose.onNodeWithTag("task.terminal.t6").performClick()
+        compose.waitUntilAtLeastOneExists(screenContains("app-fix-login $"), TIMEOUT)
+        compose.onNodeWithTag("task.terminal.t1").performClick()
+        compose.waitUntilAtLeastOneExists(screenContains("session now refreshes"), TIMEOUT)
+    }
+
+    @Test
     fun typingInFocusReachesTheTerminal() {
         launch()
         compose.onNodeWithTag("mode.focus").performClick()

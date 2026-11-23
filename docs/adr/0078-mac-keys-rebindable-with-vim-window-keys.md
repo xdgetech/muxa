@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-11-23). Amends ADR 0070 decision 2.
+Proposed (2026-11-23). Amends ADR 0070 decision 2. ADR 0079 changes `⌘W` in Focus and what a split is.
 
 ## Context
 

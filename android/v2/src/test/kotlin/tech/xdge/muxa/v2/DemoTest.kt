@@ -211,9 +211,39 @@ class DemoTest {
             assertEquals("t1", review.terminal)
             val inbox = c.inbox(V2Request.InboxApprove(review.id))
             assertEquals(V2Event.Removed("t1"), c.events.receive())
+            assertEquals("the Task's shell goes with it", V2Event.Removed("t6"), c.events.receive())
             assertEquals(V2Event.InboxChanged(inbox), c.events.receive())
             assertEquals(review.id, inbox.done.first().id)
             assertEquals(false, c.terminals().any { it.id == "t1" })
+            c.close()
+        }
+    }
+
+    @Test
+    fun aTasksShellsStartAndCloseAndCloseTaskTakesThemAll() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val shell = c.taskShell("t1")
+            assertEquals(true, shell.isTaskShell)
+            assertEquals("/demo/app-fix-login", shell.taskDir)
+            c.taskShell("t1")
+            try {
+                c.taskShell("t1")
+                fail("three shells per Task")
+            } catch (e: V2Error.Refused) {
+                assertEquals("conflict", e.code)
+            }
+            try {
+                c.closeTerminal("t1")
+                fail("the agent never closes this way")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.closeTerminal(shell.id)
+            assertEquals(false, c.terminals().any { it.id == shell.id })
+            val inbox = c.inbox(V2Request.CloseTask("t1"))
+            assertEquals("d1", inbox.done.first().id)
+            assertEquals(true, c.terminals().none { it.taskDir == "/demo/app-fix-login" })
             c.close()
         }
     }

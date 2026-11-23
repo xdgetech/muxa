@@ -155,6 +155,14 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 
+    /** A new shell beside the Task's agent [terminal]; refused with `conflict` when it has 3. */
+    suspend fun taskShell(terminal: String): Terminal = field("terminal", request(V2Request.TaskShell(terminal)))
+
+    /** Ends a Task's shell and removes its terminal. */
+    suspend fun closeTerminal(terminal: String) {
+        request(V2Request.CloseTerminal(terminal))
+    }
+
     /** Asks for `changed`, `removed`, `resync` and `inbox` events. */
     suspend fun watch() {
         request(V2Request.Watch)

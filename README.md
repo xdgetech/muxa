@@ -63,7 +63,7 @@ flowchart LR
 
 **Settings** (ADR 0074): the phone's Settings tab, the gear at the foot of the tablet's sidebar, and `⌘,` on the Mac edit every Workspace: its root and repos, agent command, env, loop checks, Routines, connections with their secrets, MCP servers, and the workers. Secrets and env values are write-only: the app sends them to the host and never shows them again. Hand edits to the files still work; an app that saved over a newer file is refused and reloads. `muxa-bridge daemon install --settings-read-only` locks it.
 
-On the Mac: the Go, Pane and Host menus, up to four Tasks side by side in Focus (`⌘D`, keys you can change, or Vim's `⌃W` keys; ADR 0078), and `⌃⌥Space` for a Capture window from any app, where `⌘⏎` adds the item and starts a Task from it (ADR 0070).
+On the Mac: the Go, Pane and Host menus, a Task's agent with up to three shells beside it in Focus, which your other devices show too (`⌘D`, `⌘W`; keys you can change, or Vim's `⌃W` keys; ADR 0078, 0079), the Reader over the window, Chat in the agent's pane, Close Task from a tab, and `⌃⌥Space` for a Capture window from any app, where `⌘⏎` adds the item and starts a Task from it (ADR 0070).
 
 On Android with a keyboard: `Ctrl+N` Capture, `Ctrl+Shift+N` a new Task (`Ctrl+Enter` starts it), `Ctrl+Enter` the item's main action (Approve, Retry or Done), `Ctrl+R` Request changes on a Review or Retry on a Failed item, `Ctrl+L` Later, `Ctrl+Backspace` Done, `Alt+↑↓` to reorder, and `Ctrl+Shift+H`, `Ctrl+Shift+F` for Home and Focus.
 

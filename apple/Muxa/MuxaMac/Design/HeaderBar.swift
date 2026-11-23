@@ -37,6 +37,22 @@ struct LogoTile: View {
     }
 }
 
+/// The start of every main-window header: the mark, the app's name and the
+/// host menu, so Home and Focus begin alike.
+struct HeaderBrand: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            LogoTile()
+            Text("muxa").font(.system(size: 13, weight: .semibold))
+            HostMenu()
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        }
+    }
+}
+
 /// A 34 pt outlined header button, with an optional key hint.
 struct HeaderButton: View {
     let title: String

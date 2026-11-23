@@ -2,19 +2,56 @@ import AppKit
 import MuxaSession
 import SwiftTerm
 
-/// Focus's pane commands, for the Pane menu and Vim's window keys alike.
+/// Focus's pane commands, for the Pane menu and Vim's window keys alike. The
+/// panes are the open Task's agent and its shells (ADR 0079): a split starts a
+/// shell on the host, and closing a pane ends its shell. The agent's pane
+/// never closes this way.
 @MainActor
 enum PaneCommands {
     static func run(_ command: WindowCommand, nav: NextNavigation, model: NextModel) {
         switch command {
-        case .split:
-            nav.focus = true
-            nav.split(from: model.needsYou + model.liveTasks + model.otherTerminals)
-        case .close: nav.closePane()
-        case .closeOthers: nav.closeOtherPanes()
+        case .split: split(nav: nav, model: model)
+        case .close:
+            guard let shell = activeShell(nav: nav, model: model) else { return }
+            close([shell], nav: nav, model: model)
+        case .closeOthers:
+            let others = model.shells(of: nav.terminal).map(\.id).filter { $0 != nav.activePane }
+            close(others, nav: nav, model: model)
         case .next: nav.nextPane()
         case .previous: nav.previousPane()
         case .pane(let n): nav.focusPane(n)
+        }
+    }
+
+    static func canSplit(nav: NextNavigation, model: NextModel) -> Bool {
+        guard nav.focus, model.isConnected,
+              let agent = model.terminals.first(where: { $0.id == nav.terminal }), agent.isTaskAgent, agent.live
+        else { return false }
+        return model.shells(of: agent.id).count < maxShells
+    }
+
+    /// The pane with the keyboard, when it is one of the open Task's shells.
+    static func activeShell(nav: NextNavigation, model: NextModel) -> String? {
+        guard nav.focus, let id = nav.activePane else { return nil }
+        return model.shells(of: nav.terminal).contains { $0.id == id } ? id : nil
+    }
+
+    /// The server's limit: with the agent, four panes fit side by side.
+    static let maxShells = 3
+
+    private static func split(nav: NextNavigation, model: NextModel) {
+        guard canSplit(nav: nav, model: model), let agent = nav.terminal else { return }
+        Task {
+            guard let shell = await model.startShell(beside: agent), nav.terminal == agent else { return }
+            nav.sync(shells: model.shells(of: agent).map(\.id), focus: shell.id)
+        }
+    }
+
+    private static func close(_ shells: [String], nav: NextNavigation, model: NextModel) {
+        guard !shells.isEmpty, let agent = nav.terminal else { return }
+        Task {
+            for shell in shells { await model.closeShell(shell) }
+            if nav.terminal == agent { nav.sync(shells: model.shells(of: agent).map(\.id)) }
         }
     }
 }

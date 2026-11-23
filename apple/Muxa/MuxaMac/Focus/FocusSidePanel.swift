@@ -1,28 +1,15 @@
-import MuxaV2
 import SwiftUI
 
-/// Focus's right column, 392 pt: the Inbox, or the active Task's Reader or
-/// Chat, one at a time. Esc inside it closes it; the terminal keeps its Esc.
+/// Focus's right column, 392 pt: the Inbox. The Reader lies over the window
+/// and Chat takes the agent's pane. Esc inside it closes it; the terminal
+/// keeps its Esc.
 struct FocusSidePanel: View {
     @Environment(NextNavigation.self) private var nav
-    let terminal: MuxaV2.Terminal?
-
-    static func isShown(nav: NextNavigation, terminal: MuxaV2.Terminal?) -> Bool {
-        nav.showInbox || (terminal != nil && (nav.showReader || nav.showChat))
-    }
 
     var body: some View {
         VStack(spacing: 0) {
-            if nav.showReader, let t = terminal {
-                header("Reader", lead: t.title)
-                ReaderPanel(terminal: t).id(t.id)
-            } else if nav.showChat, let t = terminal {
-                header("Chat", lead: t.title)
-                ChatPanel(terminal: t).id(t.id)
-            } else {
-                header("Inbox", lead: "things for you to do")
-                InboxPanel()
-            }
+            header("Inbox", lead: "things for you to do")
+            InboxPanel()
         }
         .frame(width: 392)
         .frame(maxHeight: .infinity)
@@ -58,7 +45,5 @@ struct FocusSidePanel: View {
 
     private func close() {
         nav.showInbox = false
-        nav.showReader = false
-        nav.showChat = false
     }
 }

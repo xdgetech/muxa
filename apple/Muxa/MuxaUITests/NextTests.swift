@@ -223,6 +223,23 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testATasksShellIsListedWithItAndPicked() throws {
+        let app = launch()
+        showTasks(app)
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(any["terminal.t1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(any["terminal.t6"].exists, "a shell is not a Task of its own")
+        any["terminal.t1"].tap()
+        let shell = app.buttons["task.terminal.t6"]
+        XCTAssertTrue(shell.waitForExistence(timeout: 10))
+        shell.tap()
+        let pane = any["focus.pane"]
+        XCTAssertTrue(waitFor(pane, valueContaining: "app-fix-login $"))
+        app.buttons["task.terminal.t1"].tap()
+        XCTAssertTrue(waitFor(pane, valueContaining: "session now refreshes"))
+    }
+
+    @MainActor
     func testTypingInFocusReachesTheTerminal() throws {
         let app = launch()
         showTasks(app)

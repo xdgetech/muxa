@@ -36,6 +36,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,6 +93,10 @@ private fun TaskView(model: NextModel, terminal: Terminal, modifier: Modifier, b
     var view by rememberSaveable { mutableStateOf(View.TERMINAL) }
     var inbox by rememberSaveable { mutableStateOf(false) }
     var loopOpen by rememberSaveable { mutableStateOf(false) }
+    // A Task's shells (ADR 0079): the picked one while it lives, else the agent.
+    var picked by rememberSaveable(terminal.id) { mutableStateOf<String?>(null) }
+    val shells = model.terminals.shellsOf(terminal)
+    val pane = shells.firstOrNull { it.id == picked }?.id ?: terminal.id
     val chat = rememberChat(model, terminal)
     val canRead = terminal.taskDir != null
     val shown = when {
@@ -128,10 +134,11 @@ private fun TaskView(model: NextModel, terminal: Terminal, modifier: Modifier, b
             switcher(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 10.dp))
             needsYou(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp))
         }
+        if (shells.isNotEmpty()) ShellPicker(terminal, shells, pane) { picked = it }
         Row(Modifier.weight(1f)) {
             val inset = if (phone) Modifier.padding(horizontal = 6.dp).clip(RoundedCornerShape(10.dp)) else Modifier
             Box(Modifier.weight(1f).fillMaxHeight().then(inset)) {
-                TerminalPane(model, terminal.id, Modifier.fillMaxSize())
+                key(pane) { TerminalPane(model, pane, Modifier.fillMaxSize()) }
                 // Chat and the Reader cover the terminal, which stays attached at its size so answers reach it.
                 when (shown) {
                     View.CHAT -> chat?.let { ChatView(it, Cover) }
@@ -152,6 +159,32 @@ private fun TaskView(model: NextModel, terminal: Terminal, modifier: Modifier, b
         }
     }
     if (loopOpen) LoopDialog(model, terminal) { loopOpen = false }
+}
+
+/** Agent, Shell 1, Shell 2…: the Task's terminals. Another device's new shell shows here too. */
+@Composable
+private fun ShellPicker(agent: Terminal, shells: List<Terminal>, shown: String, pick: (String?) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).testTag("task.terminals"),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Chip("Agent", agent.id == shown, "task.terminal.${agent.id}") { pick(null) }
+        shells.forEachIndexed { n, shell ->
+            Chip("Shell ${n + 1}", shell.id == shown, "task.terminal.${shell.id}") { pick(shell.id) }
+        }
+    }
+}
+
+@Composable
+private fun Chip(title: String, on: Boolean, tag: String, onClick: () -> Unit) {
+    TextButton(
+        onClick,
+        Modifier.testTag(tag).semantics { selected = on }
+            .background(if (on) Palette.picked else Palette.control, RoundedCornerShape(50)),
+    ) {
+        Text(title, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (on) Palette.text else Palette.textSecondary)
+    }
 }
 
 /** Covers the terminal, and keeps touches from reaching it. */

@@ -1,8 +1,8 @@
 import MuxaV2
 import SwiftUI
 
-/// Focus's 44 pt top bar: the mark, Home, the Tasks as tabs, Go to Task and
-/// the Inbox panel's button.
+/// Focus's top bar: the same start and Home/Focus switch as Home, the Tasks
+/// as tabs, Go to Task and the Inbox panel's button.
 struct FocusHeader: View {
     let active: MuxaV2.Terminal?
     let onHome: () -> Void
@@ -10,12 +10,8 @@ struct FocusHeader: View {
     var body: some View {
         MacHeaderBar {
             HStack(spacing: 16) {
-                HStack(spacing: 10) {
-                    LogoTile()
-                    HomeButton(action: onHome)
-                    Text("Focus").fontWeight(.semibold).foregroundStyle(Palette.text)
-                }
-                .frame(width: 264, alignment: .leading)
+                HeaderBrand()
+                ModeSwitch(focus: true, home: onHome, showFocus: {})
                 FocusTabStrip(active: active)
             }
             .frame(maxHeight: .infinity)
@@ -26,27 +22,6 @@ struct FocusHeader: View {
             }
         }
         .font(.system(size: 13))
-    }
-}
-
-private struct HomeButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text("Home")
-                KeyHint(Shortcut.home.display)
-            }
-            .foregroundStyle(Palette.textMid)
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Palette.borderStrong))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Home (\(Shortcut.home.display))")
-        .accessibilityIdentifier("mode.home")
     }
 }
 
@@ -64,7 +39,7 @@ private struct GoToTaskButton: View {
             }
             .foregroundStyle(Palette.textTertiary)
             .padding(.horizontal, 10)
-            .frame(width: 220, height: 30)
+            .frame(width: 220, height: 34)
             .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.border))
             .contentShape(Rectangle())
@@ -100,8 +75,8 @@ private struct InboxButton: View {
             }
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(Palette.text)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
             .background(on ? Palette.rowSelected : .clear, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(on ? Palette.rowBorder : Palette.borderStrong))
             .contentShape(Rectangle())

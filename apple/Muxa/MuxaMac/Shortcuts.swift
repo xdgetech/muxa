@@ -65,8 +65,10 @@ struct Shortcut: Identifiable {
     static let split = Shortcut("split", .panes, "Split pane", KeyChord("d", .command))
     static let nextPane = Shortcut("next-pane", .panes, "Next pane", KeyChord("]", .command))
     static let previousPane = Shortcut("previous-pane", .panes, "Previous pane", KeyChord("[", .command))
-    static let closePane = Shortcut("close-pane", .panes, "Close pane", KeyChord("w", [.option, .command]))
-    static let closeOtherPanes = Shortcut("close-other-panes", .panes, "Close other panes", nil)
+    // In Focus ⌘W closes the active shell, as in iTerm2; the agent's pane stays, and so does the window.
+    static let closePane = Shortcut("close-pane", .panes, "Close shell, or the window outside Focus", KeyChord("w", .command))
+    static let closeTask = Shortcut("close-task", .panes, "Close Task…", nil)
+    static let closeOtherPanes = Shortcut("close-other-panes", .panes, "Close other shells", nil)
     static let pane = Shortcut("pane", .panes, "Pane 1–9", fixed: "⌘1 … ⌘9")
     static let inboxPanel = Shortcut("inbox-panel", .panes, "Inbox panel", KeyChord("i", [.command, .shift]))
     static let readerPanel = Shortcut("reader-panel", .panes, "Reader panel", KeyChord("r", [.command, .shift]))
@@ -76,7 +78,7 @@ struct Shortcut: Identifiable {
         home, focus, goToTask, nextNeedsYou, nextTask, sidebar, routines,
         capture, captureAnywhere, newTask, settings, shortcuts,
         open, later, done, retry, move,
-        split, nextPane, previousPane, closePane, closeOtherPanes, pane, inboxPanel, readerPanel, chatPanel,
+        split, nextPane, previousPane, closePane, closeOtherPanes, closeTask, pane, inboxPanel, readerPanel, chatPanel,
     ]
 }
 

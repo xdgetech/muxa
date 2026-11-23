@@ -295,6 +295,10 @@ async fn settings_call<T: Send + 'static>(
 }
 
 impl Host for BridgeHost {
+    fn shell(&self) -> Vec<String> {
+        login_shell(std::env::var("SHELL").ok().as_deref())
+    }
+
     async fn settings(&self) -> Result<muxa_protocol::v2::Settings, TaskError> {
         let store = self.settings_store()?;
         settings_call(move || store.view()).await
@@ -587,6 +591,18 @@ fn shell_line(line: String) -> Vec<String> {
 #[path = "resume_tests.rs"]
 mod resume_tests;
 
+/// A Task's shell: the user's login shell. A daemon that launchd started may
+/// have no `SHELL`, so it falls back to the system's default shell.
+fn login_shell(env: Option<&str>) -> Vec<String> {
+    let fallback = if cfg!(target_os = "macos") {
+        "/bin/zsh"
+    } else {
+        "/bin/sh"
+    };
+    let shell = env.filter(|s| s.starts_with('/')).unwrap_or(fallback);
+    vec![shell.to_owned(), "-l".to_owned()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -788,6 +804,25 @@ mod tests {
         assert_eq!(
             shell_line("claude --x".into()),
             vec!["/bin/sh", "-c", "claude --x"]
+        );
+    }
+
+    #[test]
+    fn a_tasks_shell_is_the_users_login_shell() {
+        assert_eq!(
+            login_shell(Some("/opt/homebrew/bin/fish")),
+            ["/opt/homebrew/bin/fish", "-l"]
+        );
+        let fallback = if cfg!(target_os = "macos") {
+            "/bin/zsh"
+        } else {
+            "/bin/sh"
+        };
+        assert_eq!(login_shell(None), [fallback, "-l"]);
+        assert_eq!(
+            login_shell(Some("fish")),
+            [fallback, "-l"],
+            "only an absolute path"
         );
     }
 }

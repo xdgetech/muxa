@@ -14,9 +14,10 @@ final class NextNavigation {
     /// sidebar's Tasks on an iPad.
     var focus = false
     var tab = Tab.inbox
-    /// The terminals Focus shows side by side; the Mac splits, iOS shows one.
+    /// The open Task's terminal, then its shells (ADR 0079): the Mac shows
+    /// them side by side, iOS one at a time.
     private(set) var panes: [String] = []
-    /// The pane that takes picks from the list and the keyboard.
+    /// The pane that has the keyboard.
     private(set) var active = 0
     /// Bumped to move the keyboard to the active pane.
     private(set) var focusRequest = 0
@@ -51,17 +52,15 @@ final class NextNavigation {
     var newTask: TaskSeed?
     var sidebar = NavigationSplitViewVisibility.all
 
-    static let maxPanes = 4
-
-    /// The active pane's terminal. Picking a shown one makes its pane active.
+    /// The open Task's terminal (its agent), whichever pane has the keyboard.
+    /// Picking one of its shells makes that pane active; picking another
+    /// terminal opens it.
     var terminal: String? {
-        get { panes.indices.contains(active) ? panes[active] : nil }
+        get { panes.first }
         set {
             guard let id = newValue else { return }
             if let at = panes.firstIndex(of: id) {
                 active = at
-            } else if panes.indices.contains(active) {
-                panes[active] = id
             } else {
                 panes = [id]
                 active = 0
@@ -69,6 +68,9 @@ final class NextNavigation {
             focusRequest += 1
         }
     }
+
+    /// The terminal of the pane that has the keyboard.
+    var activePane: String? { panes.indices.contains(active) ? panes[active] : nil }
 
     func open(_ t: MuxaV2.Terminal) {
         terminal = t.id
@@ -79,28 +81,6 @@ final class NextNavigation {
     func taskStarted(_ t: MuxaV2.Terminal?) {
         newTask = nil
         if let t { open(t) }
-    }
-
-    /// A new pane with the first of `candidates` not shown yet.
-    func split(from candidates: [MuxaV2.Terminal]) {
-        guard panes.count < Self.maxPanes, let next = candidates.first(where: { !panes.contains($0.id) }) else { return }
-        panes.append(next.id)
-        active = panes.count - 1
-        focusRequest += 1
-    }
-
-    func closePane() {
-        guard panes.indices.contains(active) else { return }
-        panes.remove(at: active)
-        active = min(active, max(panes.count - 1, 0))
-        focusRequest += 1
-    }
-
-    func closeOtherPanes() {
-        guard panes.indices.contains(active), panes.count > 1 else { return }
-        panes = [panes[active]]
-        active = 0
-        focusRequest += 1
     }
 
     /// The pane to the right of the active one, or the first after the last.
@@ -126,13 +106,22 @@ final class NextNavigation {
         if panes.indices.contains(index) { active = index }
     }
 
-    /// Terminals that ended leave their panes.
-    func keep(only live: Set<String>) {
-        let kept = panes.filter(live.contains)
-        guard kept != panes else { return }
-        let current = terminal
-        panes = kept
-        active = current.flatMap(kept.firstIndex(of:)) ?? max(kept.count - 1, 0)
+    /// The open Task's live shells, in the server's order. The pane with the
+    /// keyboard keeps it while it is there; a new shell `focus` names takes it.
+    func sync(shells: [String], focus: String? = nil) {
+        guard let task = panes.first else { return }
+        let current = activePane
+        let next = [task] + shells
+        guard next != panes || focus != nil else { return }
+        panes = next
+        active = (focus ?? current).flatMap(next.firstIndex(of:)) ?? 0
+        focusRequest += 1
+    }
+
+    /// The open Task ended: Focus shows none.
+    func closeTask() {
+        panes = []
+        active = 0
     }
 
     func toggleSidebar() {

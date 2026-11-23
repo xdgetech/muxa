@@ -19,6 +19,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use crate::attachment::{Attachment, Checked, Cmd, Link};
 use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
+use crate::shells;
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::wire::{self, Incoming};
 use crate::{inbox, migrate, task_actions, task_items, usage};
@@ -419,6 +420,24 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Ok(()) => self.reply(id, Reply::Empty {}),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
+            ClientMsg::TaskShell { id, terminal } => {
+                match shells::start(self.backend, self.host, &terminal).await {
+                    Ok(t) => self.reply(
+                        id,
+                        Reply::Started {
+                            terminal: to_wire(t),
+                            existing: false,
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
+            ClientMsg::CloseTerminal { id, terminal } => {
+                match shells::close(self.backend, &terminal).await {
+                    Ok(()) => self.reply(id, Reply::Empty {}),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
             ClientMsg::TaskReview { id, terminal, note } => {
                 match task_items::review(self.backend, self.inbox, &terminal, note).await {
                     Ok(()) => self.reply(
@@ -474,6 +493,17 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 let mode = worktree.unwrap_or_default();
                 let done =
                     task_actions::approve(self.backend, self.host, self.inbox, &item, mode).await;
+                self.inbox_reply(id, done);
+            }
+            ClientMsg::CloseTask {
+                id,
+                terminal,
+                worktree,
+            } => {
+                let mode = worktree.unwrap_or_default();
+                let done =
+                    task_actions::close_task(self.backend, self.host, self.inbox, &terminal, mode)
+                        .await;
                 self.inbox_reply(id, done);
             }
             ClientMsg::InboxRequestChanges { id, item, comment } => {

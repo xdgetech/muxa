@@ -28,6 +28,11 @@ pub enum Action {
         comment: String,
     },
     Retry(String),
+    /// Closes the Task of an agent terminal without its item (ADR 0079).
+    CloseTask {
+        terminal: String,
+        force: bool,
+    },
 }
 
 /// The request for `action`; a Capture first needs [`capture_add`].
@@ -51,6 +56,10 @@ pub fn request(action: &Action, now: i64) -> Value {
             json!({"type": "inbox-request-changes", "item": item, "comment": comment})
         }
         Action::Retry(item) => json!({"type": "inbox-retry", "item": item}),
+        Action::CloseTask { terminal, force } => {
+            let worktree = if *force { "force" } else { "remove" };
+            json!({"type": "close-task", "terminal": terminal, "worktree": worktree})
+        }
     }
 }
 

@@ -6,7 +6,9 @@ import SwiftUI
 struct FocusTabStrip: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
+    @Environment(MacChrome.self) private var chrome
     let active: MuxaV2.Terminal?
+    @State private var hovered: String?
 
     private var tasks: [MuxaV2.Terminal] {
         guard let workspace = active?.workspace else { return model.liveTasks }
@@ -32,23 +34,41 @@ struct FocusTabStrip: View {
     }
 
     private func tab(_ t: MuxaV2.Terminal, on: Bool) -> some View {
-        Button { nav.terminal = t.id } label: {
-            HStack(spacing: 8) {
-                StateDot(color: t.state.color, size: 8)
-                Text(t.title).lineLimit(1).fixedSize()
+        HStack(spacing: 0) {
+            Button { nav.terminal = t.id } label: {
+                HStack(spacing: 8) {
+                    StateDot(color: t.state.color, size: 8)
+                    Text(t.title).lineLimit(1).fixedSize()
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
             }
-            .font(.system(size: 13))
-            .foregroundStyle(on ? Palette.text : Palette.textSecondary)
-            .padding(.horizontal, 12)
-            .frame(maxHeight: .infinity)
-            .background(on ? Palette.ground : .clear, ignoresSafeAreaEdges: [])
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(on ? t.state.color : .clear).frame(height: 2)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("tab.\(t.id)")
+            .accessibilityAddTraits(on ? .isSelected : [])
+            // Closing asks first: the agent stops and its worktrees may go.
+            Button { chrome.closingTask = t } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .opacity(on || hovered == t.id ? 1 : 0)
+            .help("Close Task…")
+            .accessibilityLabel("Close \(t.title)")
+            .accessibilityIdentifier("tab.close.\(t.id)")
+            .padding(.trailing, 8)
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("tab.\(t.id)")
-        .accessibilityAddTraits(on ? .isSelected : [])
+        .font(.system(size: 13))
+        .foregroundStyle(on ? Palette.text : Palette.textSecondary)
+        .frame(maxHeight: .infinity)
+        .background(on ? Palette.ground : .clear, ignoresSafeAreaEdges: [])
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(on ? t.state.color : .clear).frame(height: 2)
+        }
+        .onHover { hovered = $0 ? t.id : (hovered == t.id ? nil : hovered) }
     }
 }

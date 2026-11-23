@@ -15,11 +15,19 @@ data class TerminalGroups(val tasks: List<Terminal>, val others: List<Terminal>)
 
     companion object {
         fun of(terminals: List<Terminal>): TerminalGroups {
-            val live = terminals.filter { it.live }
+            // A Task's shells are listed with their Task, never on their own.
+            val live = terminals.filter { it.live && !it.isTaskShell }
             val (tasks, others) = live.partition { it.isTask }
             return TerminalGroups(tasks, others)
         }
     }
+}
+
+/** The live shells of the Task whose agent is [agent] (ADR 0079), in the server's order. */
+fun List<Terminal>.shellsOf(agent: Terminal): List<Terminal> {
+    val dir = agent.taskDir ?: return emptyList()
+    if (!agent.isTaskAgent) return emptyList()
+    return filter { it.live && it.isTaskShell && it.taskDir == dir }
 }
 
 /**

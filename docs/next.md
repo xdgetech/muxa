@@ -124,8 +124,8 @@ Shortcuts follow VS Code, not tmux (ADR 0070), with iTerm2's pane keys (ADR 0078
 | Home, Focus | `⌘⇧H`, `⌘⇧F` |
 | Command palette, go to Task | `⌘⇧P`, `⌘P` |
 | Next Needs you, next Task | `F8`, `⌃Tab` |
-| Split pane, focus pane, sidebar | `⌘D`, `⌘1`…`⌘9`, `⌘B` |
-| Next, previous, close pane (in Focus) | `⌘]`, `⌘[`, `⌥⌘W` |
+| Focus pane, sidebar | `⌘1`…`⌘9`, `⌘B` |
+| Split a shell of the Task, next and previous pane, close the shell (in Focus) | `⌘D`, `⌘]`, `⌘[`, `⌘W` (ADR 0079) |
 | Capture, settings | `⌘N`, `⌘,` |
 | Inbox: select, reorder, preview, open | `↑↓`, `⌥↑⌥↓` or drag, `Space`, `⏎` |
 | Inbox: main action, later, done, due | `⌘⏎`, `⌘L`, `⌘⌫`, `⌘D` |

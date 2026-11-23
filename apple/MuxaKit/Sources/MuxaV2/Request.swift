@@ -29,6 +29,12 @@ public enum V2Request: Sendable {
     /// Runs again what made a Failed item and resolves it.
     case inboxRetry(item: String)
     case taskReview(terminal: String, note: String? = nil)
+    /// A shell beside the Task's agent `terminal`, in its working place (ADR 0079).
+    case taskShell(terminal: String)
+    /// Ends a Task's shell; no other terminal.
+    case closeTerminal(terminal: String)
+    /// Closes the Task of the agent `terminal` as Approve does, and its open items.
+    case closeTask(terminal: String, worktree: WorktreeChoice? = nil)
     case routines
     case runRoutine(workspace: String, name: String)
     case readerList(terminal: String, kind: ReaderKind, html: Bool = false)
@@ -77,6 +83,10 @@ public enum V2Request: Sendable {
             set("inbox-request-changes", ["item": item, "comment": comment])
         case let .inboxRetry(item): set("inbox-retry", ["item": item])
         case let .taskReview(terminal, note): set("task-review", ["terminal": terminal, "note": note])
+        case let .taskShell(terminal): set("task-shell", ["terminal": terminal])
+        case let .closeTerminal(terminal): set("close-terminal", ["terminal": terminal])
+        case let .closeTask(terminal, worktree):
+            set("close-task", ["terminal": terminal, "worktree": worktree?.rawValue])
         case .routines: set("routines", [:])
         case let .runRoutine(workspace, name): set("run-routine", ["workspace": workspace, "name": name])
         case let .readerList(terminal, kind, html):

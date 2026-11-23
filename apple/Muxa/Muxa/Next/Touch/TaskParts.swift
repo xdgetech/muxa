@@ -163,20 +163,29 @@ struct ApproveButton: View {
 }
 
 /// The terminal with Chat or the Reader over it. The terminal stays attached
-/// under them, so its grid keeps its size and answers reach the agent.
+/// under them, so its grid keeps its size and answers reach the agent. When
+/// the Task has shells (ADR 0079), a row above picks the agent or a shell.
 struct TaskBody<Footer: View>: View {
+    @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     let terminal: MuxaV2.Terminal
     @Binding var chat: UInt32?
     /// The terminal ignores the keyboard unless a field of the footer has it.
     var keyboardInFooter = false
     @ViewBuilder var footer: Footer
+    @State private var picked: String?
+
+    /// The picked shell while it lives, else the agent.
+    private var shown: MuxaV2.Terminal {
+        model.shells(of: terminal.id).first { $0.id == picked } ?? terminal
+    }
 
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                TerminalPane(terminal: terminal)
-                    .id(terminal.id)
+                ShellPicker(agent: terminal, picked: $picked)
+                TerminalPane(terminal: shown)
+                    .id(shown.id)
                     .background(Palette.terminal)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .padding(.horizontal, 6)
@@ -189,5 +198,43 @@ struct TaskBody<Footer: View>: View {
             case .terminal: EmptyView()
             }
         }
+    }
+}
+
+/// Agent, Shell 1, Shell 2…: the Task's terminals, shown only when it has
+/// shells. Another device's new shell appears here too.
+private struct ShellPicker: View {
+    @Environment(NextModel.self) private var model
+    let agent: MuxaV2.Terminal
+    @Binding var picked: String?
+
+    var body: some View {
+        let shells = model.shells(of: agent.id)
+        if !shells.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    chip("Agent", id: nil, on: !shells.contains { $0.id == picked })
+                    ForEach(Array(shells.enumerated()), id: \.element.id) { n, shell in
+                        chip("Shell \(n + 1)", id: shell.id, on: shell.id == picked)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("task.terminals")
+        }
+    }
+
+    private func chip(_ title: String, id: String?, on: Bool) -> some View {
+        Button(title) { picked = id }
+            .font(.system(size: 13, weight: on ? .semibold : .regular))
+            .foregroundStyle(on ? Palette.text : Palette.textSecondary)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(on ? Palette.selected : Palette.pill, in: Capsule())
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(on ? .isSelected : [])
+            .accessibilityIdentifier("task.terminal.\(id ?? agent.id)")
     }
 }

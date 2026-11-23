@@ -2,8 +2,10 @@ import MuxaV2
 import SwiftUI
 
 /// One terminal in Focus's sidebar: its state dot, its title and the state the
-/// program reports. One accessibility element, `terminal.<id>`.
+/// program reports. One accessibility element, `terminal.<id>`. A Task's row
+/// closes the Task, after asking, from its hover × or its context menu.
 struct FocusTaskRow: View {
+    @Environment(MacChrome.self) private var chrome
     enum Style {
         /// On the amber ground, with the Workspace before the title.
         case needsYou
@@ -22,8 +24,36 @@ struct FocusTaskRow: View {
     var indent: CGFloat = 0
     let selected: Bool
     let open: () -> Void
+    @State private var hovered = false
 
     var body: some View {
+        row
+            .overlay(alignment: .trailing) {
+                if terminal.isTaskAgent, hovered || selected {
+                    Button { chrome.closingTask = terminal } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Palette.textSecondary)
+                            .frame(width: 18, height: 18)
+                            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 4))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 6)
+                    .help("Close Task…")
+                    .accessibilityLabel("Close \(terminal.title)")
+                    .accessibilityIdentifier("row.close.\(terminal.id)")
+                }
+            }
+            .onHover { hovered = $0 }
+            .contextMenu {
+                if terminal.isTaskAgent {
+                    Button("Close Task…") { chrome.closingTask = terminal }
+                }
+            }
+    }
+
+    private var row: some View {
         Button(action: open) {
             HStack(spacing: 8) {
                 StateDot(color: terminal.state.color, size: 8)

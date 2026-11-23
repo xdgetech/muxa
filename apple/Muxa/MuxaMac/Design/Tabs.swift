@@ -38,8 +38,8 @@ struct ModeSwitch: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            segment("Home", key: "⌘⇧H", on: !focus, id: "mode.home", action: home)
-            segment("Focus", key: "⌘⇧F", on: focus, id: "mode.focus", action: showFocus)
+            segment("Home", key: Shortcut.home.display, on: !focus, id: "mode.home", action: home)
+            segment("Focus", key: Shortcut.focus.display, on: focus, id: "mode.focus", action: showFocus)
         }
         .padding(3)
         .frame(width: 240)

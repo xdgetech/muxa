@@ -83,17 +83,52 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
-    func testPaneKeysSplitMoveAndClose() throws {
+    func testPaneKeysSplitAShellAndCloseIt() throws {
         let app = launch()
         app.typeKey("f", modifierFlags: [.command, .shift])
         let any = app.descendants(matching: .any)
-        XCTAssertTrue(any["terminal.t1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(any["pane.1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(any["terminal.t6"].exists, "a shell is not a Task of its own")
         app.typeKey("d", modifierFlags: .command)
-        XCTAssertTrue(any["pane.2"].waitForExistence(timeout: 5), "⌘D splits")
+        XCTAssertTrue(any["pane.2"].waitForExistence(timeout: 5), "⌘D starts a shell beside the agent")
         app.typeKey("[", modifierFlags: .command)
-        app.typeKey("w", modifierFlags: [.option, .command])
-        XCTAssertTrue(waitForGone(any["pane.2"]), "⌥⌘W closes the active pane")
-        XCTAssertTrue(any["pane.1"].exists)
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(any["pane.2"].exists, "⌘W on the agent closes nothing")
+        XCTAssertTrue(any["pane.1"].exists, "the window stays")
+        app.typeKey("]", modifierFlags: .command)
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(waitForGone(any["pane.2"]), "⌘W closes the shell")
+    }
+
+    @MainActor
+    func testATabClosesItsTaskAfterAsking() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        let any = app.descendants(matching: .any)
+        let close = any["tab.close.t1"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.click()
+        let confirm = app.buttons["closetask.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+        XCTAssertTrue(waitForGone(any["tab.t1"]))
+    }
+
+    @MainActor
+    func testASidebarRowClosesItsTaskAfterAsking() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        let any = app.descendants(matching: .any)
+        let row = any["terminal.t1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.hover()
+        let close = app.buttons["row.close.t1"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.click()
+        let confirm = app.buttons["closetask.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+        XCTAssertTrue(waitForGone(row))
     }
 
     @MainActor

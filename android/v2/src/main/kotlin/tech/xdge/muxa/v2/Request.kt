@@ -40,6 +40,15 @@ sealed interface V2Request {
     data class InboxDelete(val item: String) : V2Request
     data class TaskReview(val terminal: String, val note: String? = null) : V2Request
 
+    /** A shell beside the Task's agent [terminal], in its working place (ADR 0079). */
+    data class TaskShell(val terminal: String) : V2Request
+
+    /** Ends a Task's shell; no other terminal. */
+    data class CloseTerminal(val terminal: String) : V2Request
+
+    /** Closes the Task of the agent [terminal] as Approve does, and marks its open items Done. */
+    data class CloseTask(val terminal: String, val worktree: WorktreeChoice? = null) : V2Request
+
     /** Closes the Task of a Review item. Refused with `would-lose-work` unless [worktree] is [WorktreeChoice.FORCE]. */
     data class InboxApprove(val item: String, val worktree: WorktreeChoice? = null) : V2Request
 
@@ -100,6 +109,9 @@ sealed interface V2Request {
             is InboxReopen -> { type("inbox-reopen"); put("item", r.item) }
             is InboxDelete -> { type("inbox-delete"); put("item", r.item) }
             is TaskReview -> { type("task-review"); put("terminal", r.terminal); opt("note", r.note) }
+            is TaskShell -> { type("task-shell"); put("terminal", r.terminal) }
+            is CloseTerminal -> { type("close-terminal"); put("terminal", r.terminal) }
+            is CloseTask -> { type("close-task"); put("terminal", r.terminal); opt("worktree", r.worktree?.wire) }
             is InboxApprove -> { type("inbox-approve"); put("item", r.item); opt("worktree", r.worktree?.wire) }
             is InboxRequestChanges -> { type("inbox-request-changes"); put("item", r.item); put("comment", r.comment) }
             is InboxRetry -> { type("inbox-retry"); put("item", r.item) }

@@ -1,10 +1,11 @@
 import MuxaV2
 import SwiftUI
 
-/// Focus's panes side by side (ADR 0070 decision 1). Each has a 30 pt header
-/// with its state; the active one has the keyboard, the Task's actions and,
-/// beside other panes, an outline in its state color. The Pane menu's keys, or
-/// Vim's window keys (ADR 0078), add, move between and close panes.
+/// Focus's panes side by side: the open Task's agent, then its shells (ADR
+/// 0079). Each has a 30 pt header with its state; the active one has the
+/// keyboard and, beside other panes, an outline in its state color. The
+/// agent's pane switches between its terminal and its Chat. The Pane menu's
+/// keys, or Vim's window keys (ADR 0078), add, move between and close panes.
 struct PaneSplit: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -20,15 +21,32 @@ struct PaneSplit: View {
                 }
             }
         }
-        .onChange(of: model.terminals.map(\.id)) { _, ids in nav.keep(only: Set(ids)) }
+        .onAppear(perform: sync)
+        .onChange(of: model.terminals) { sync() }
+        .onChange(of: nav.terminal) { sync() }
+    }
+
+    /// The panes follow the host: a shell another device started shows here,
+    /// and one that ended goes.
+    private func sync() {
+        guard let task = nav.terminal else { return }
+        guard model.terminals.contains(where: { $0.id == task && $0.live }) else { return nav.closeTask() }
+        nav.sync(shells: model.shells(of: task).map(\.id))
     }
 
     private func pane(_ t: MuxaV2.Terminal, index: Int) -> some View {
         let active = index == nav.active
+        let chat = index == 0 && nav.showChat && t.isTaskAgent
         return VStack(spacing: 0) {
             header(t, index: index, active: active)
-            TerminalPane(terminal: t, active: active, focusRequest: nav.focusRequest) { nav.activate(index) }
-                .id(t.id)
+            if chat {
+                ChatPanel(terminal: t).id("chat.\(t.id)")
+                    .background(Palette.surface)
+                    .onTapGesture { nav.activate(index) }
+            } else {
+                TerminalPane(terminal: t, active: active, focusRequest: nav.focusRequest) { nav.activate(index) }
+                    .id(t.id)
+            }
         }
         .frame(minWidth: 240)
         .background(Palette.ground)
@@ -49,7 +67,11 @@ struct PaneSplit: View {
                 if let state = t.status?.state {
                     Text(TaskState(state).title.lowercased()).foregroundStyle(t.state.color)
                 }
-                Text(t.title).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                if t.isTaskShell {
+                    Text("shell \(index)").fontWeight(.semibold)
+                } else {
+                    Text(t.title).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                }
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("pane.\(index + 1)")
@@ -57,7 +79,17 @@ struct PaneSplit: View {
             if active, chrome.windowPrefixPending, let prefix = KeyBindings.shared.vimPrefix {
                 KeyHint("\(prefix.display) …", color: Palette.accent)
             }
-            if active { PaneActions(terminal: t, onLoop: onLoop) }
+            if t.isTaskShell {
+                Button("Close Shell", systemImage: "xmark") {
+                    Task { await model.closeShell(t.id) }
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(PaneActionStyle(on: false))
+                .help("Close this shell (\(Shortcut.closePane.display))")
+                .accessibilityIdentifier("pane.close.\(index + 1)")
+            } else if index == 0 {
+                PaneActions(terminal: t, onLoop: onLoop)
+            }
         }
         .font(.system(size: 12))
         .padding(.horizontal, 12)
@@ -81,10 +113,11 @@ private struct PaneActions: View {
             .buttonStyle(PaneActionStyle(on: false))
             .disabled(!terminal.isTaskAgent)
             .accessibilityIdentifier("focus.loop")
-            Button("Chat", systemImage: "bubble.left.and.text.bubble.right") { nav.showChat.toggle() }
+            Button(nav.showChat ? "Terminal" : "Chat",
+                   systemImage: nav.showChat ? "terminal" : "bubble.left.and.text.bubble.right") { nav.showChat.toggle() }
                 .buttonStyle(PaneActionStyle(on: nav.showChat))
                 .disabled(!terminal.isTaskAgent)
-                .help("Chat (\(Shortcut.chatPanel.display))")
+                .help("Switch between the terminal and Chat (\(Shortcut.chatPanel.display))")
                 .accessibilityIdentifier("focus.chat")
             Button("Reader", systemImage: "doc.text.magnifyingglass") { nav.showReader.toggle() }
                 .buttonStyle(PaneActionStyle(on: nav.showReader))

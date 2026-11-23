@@ -37,6 +37,9 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] approve ITEM [--force]
        muxa-cli v2 [--bridge CMD] request-changes ITEM COMMENT...
        muxa-cli v2 [--bridge CMD] retry ITEM
+       muxa-cli v2 [--bridge CMD] close-task TERMINAL [--force]
+       muxa-cli v2 [--bridge CMD] shell TERMINAL
+       muxa-cli v2 [--bridge CMD] close-shell TERMINAL
        muxa-cli v2 [--bridge CMD] workspaces [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
@@ -63,6 +66,10 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   request-changes  types COMMENT into the Task's agent and resolves the item
   retry          runs again what made a Failed item: its Routine, its Task Loop,
                  or its agent
+  close-task     closes the Task of an agent terminal as approve does, and marks
+                 its open items Done
+  shell          starts a shell in the working place of the Task of an agent
+                 terminal; every client lists it under the Task
   --existing     adopts a folder or worktree that is there already as the working
                  place; nothing is made, and Claude Code continues its conversation
   migrate-v1     one Inbox item \"Resume: <title>\" per open Task of the old muxa
@@ -147,6 +154,11 @@ enum Cmd {
     },
     LoopStop {
         terminal: String,
+    },
+    /// `task-shell`, or with `close` `close-terminal`.
+    Shell {
+        terminal: String,
+        close: bool,
     },
     Watch {
         seconds: Option<u64>,
@@ -302,6 +314,21 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
         },
         ["loop-stop", t] => Cmd::LoopStop {
             terminal: (*t).to_owned(),
+        },
+        ["close-task", t] => Cmd::Inbox {
+            action: inbox::Action::CloseTask {
+                terminal: (*t).to_owned(),
+                force,
+            },
+            json,
+        },
+        ["shell", t] => Cmd::Shell {
+            terminal: (*t).to_owned(),
+            close: false,
+        },
+        ["close-shell", t] => Cmd::Shell {
+            terminal: (*t).to_owned(),
+            close: true,
         },
         ["watch"] => Cmd::Watch { seconds },
         ["capture", text @ ..] if !text.is_empty() => Cmd::Inbox {
@@ -473,6 +500,19 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
                 .request(json!({"type": "loop-stop", "terminal": terminal}))
                 .await?;
             println!("{}", loop_row(&reply["loop"]));
+            Ok(())
+        }
+        Cmd::Shell { terminal, close } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            if close {
+                c.request(json!({"type": "close-terminal", "terminal": terminal}))
+                    .await?;
+            } else {
+                let reply = c
+                    .request(json!({"type": "task-shell", "terminal": terminal}))
+                    .await?;
+                println!("{}", row(&reply["terminal"]));
+            }
             Ok(())
         }
         Cmd::Watch { seconds } => watch(bridge, seconds).await,
@@ -817,6 +857,10 @@ mod tests {
             json!({"type": "inbox-approve", "item": "i3", "worktree": "force"})
         );
         assert_eq!(action(&["approve", "i3"])["worktree"], "remove");
+        assert_eq!(
+            action(&["close-task", "t1", "--force"]),
+            json!({"type": "close-task", "terminal": "t1", "worktree": "force"})
+        );
         assert_eq!(
             action(&["request-changes", "i3", "Add", "a", "test"]),
             json!({"type": "inbox-request-changes", "item": "i3", "comment": "Add a test"})

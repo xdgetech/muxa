@@ -1,3 +1,4 @@
+import AppKit
 import MuxaSession
 import MuxaV2
 import SwiftUI
@@ -24,6 +25,7 @@ struct MuxaMacApp: App {
                 .containerBackground(Palette.ground, for: .window)
                 .toolbarBackground(Palette.ground, for: .windowToolbar)
                 .sheet(isPresented: $chrome.showShortcuts) { ShortcutsSheet() }
+                .background(WindowReader { chrome.mainWindow = $0 })
                 // Every screen draws the mocks' header where the title bar was.
                 .toolbar(.hidden, for: .windowToolbar)
                 .ignoresSafeArea(.container, edges: .top)
@@ -63,6 +65,10 @@ struct MuxaMacApp: App {
                 .preferredColorScheme(.dark)
         }
         .commands {
+            CommandGroup(replacing: .saveItem) {
+                Button(PaneCommands.activeShell(nav: nav, model: model) != nil ? "Close Shell" : "Close") { close() }
+                    .shortcut(.closePane)
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Capture…") { quickCapture?.show() }
                     .shortcut(.capture)
@@ -111,19 +117,20 @@ struct MuxaMacApp: App {
                 // The keys work in Focus only, so Home keeps them for its own use.
                 Button("Split Pane") { pane(.split) }
                     .shortcut(.split)
-                    .disabled(!nav.focus || !model.isConnected || nav.panes.count >= NextNavigation.maxPanes)
+                    .disabled(!PaneCommands.canSplit(nav: nav, model: model))
                 Button("Next Pane") { pane(.next) }
                     .shortcut(.nextPane)
                     .disabled(!nav.focus || nav.panes.count < 2)
                 Button("Previous Pane") { pane(.previous) }
                     .shortcut(.previousPane)
                     .disabled(!nav.focus || nav.panes.count < 2)
-                Button("Close Pane") { pane(.close) }
-                    .shortcut(.closePane)
-                    .disabled(!nav.focus || nav.panes.count < 2)
-                Button("Close Other Panes") { pane(.closeOthers) }
+                Button("Close Other Shells") { pane(.closeOthers) }
                     .shortcut(.closeOtherPanes)
                     .disabled(!nav.focus || nav.panes.count < 2)
+                Divider()
+                Button("Close Task…") { chrome.closingTask = focusedTask }
+                    .shortcut(.closeTask)
+                    .disabled(focusedTask == nil)
                 Divider()
                 ForEach(1...9, id: \.self) { n in
                     Button("Pane \(n)") { pane(.pane(n)) }
@@ -144,6 +151,24 @@ struct MuxaMacApp: App {
 
     private func pane(_ command: WindowCommand) {
         PaneCommands.run(command, nav: nav, model: model)
+    }
+
+    /// The Task Focus shows, while its agent runs.
+    private var focusedTask: Terminal? {
+        guard nav.focus else { return nil }
+        return model.terminals.first { $0.id == nav.terminal && $0.isTaskAgent }
+    }
+
+    /// ⌘W: in Focus it closes the active shell and never the window, so a
+    /// stray ⌘W on the agent does nothing. Elsewhere it closes the key window.
+    private func close() {
+        let key = NSApp.keyWindow
+        guard nav.focus, let key, key === chrome.mainWindow else { return key?.performClose(nil) ?? () }
+        if PaneCommands.activeShell(nav: nav, model: model) != nil {
+            pane(.close)
+        } else {
+            NSSound.beep()
+        }
     }
 
     /// Opens the Task after the one Focus shows, from `list`, in Focus.

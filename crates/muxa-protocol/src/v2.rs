@@ -364,6 +364,26 @@ pub enum ClientMsg {
         workspace: String,
         name: String,
     },
+    /// Starts a shell in the working place of the Task whose agent this is
+    /// (ADR 0079).
+    TaskShell {
+        id: u64,
+        terminal: String,
+    },
+    /// Closes the Task of this agent terminal as `inbox-approve` does, and
+    /// marks its open items Done (ADR 0079).
+    CloseTask {
+        id: u64,
+        terminal: String,
+        /// Absent: `remove`.
+        #[serde(default)]
+        worktree: Option<WorktreeMode>,
+    },
+    /// Ends a Task's shell and removes its terminal. Only those.
+    CloseTerminal {
+        id: u64,
+        terminal: String,
+    },
     /// The Task of this agent terminal is ready for review: one Review item
     /// while it is open.
     TaskReview {

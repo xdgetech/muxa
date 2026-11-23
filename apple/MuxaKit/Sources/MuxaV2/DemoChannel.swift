@@ -201,8 +201,18 @@ actor DemoServer {
             if m["worktree"] as? String != WorktreeChoice.force.rawValue, let why = content.losesWork[item] {
                 return send(["type": "error", "id": id, "code": "would-lose-work", "message": why])
             }
-            close(terminal)
+            closeWithShells(terminal)
             resolve(id, item)
+        case "task-shell":
+            taskShell(id, m["terminal"] as? String)
+        case "close-terminal":
+            guard let t = content.terminals.first(where: { $0.id == m["terminal"] as? String }), t.isTaskShell else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "only a Task's shell closes this way"])
+            }
+            close(t.id)
+            reply(id, [:])
+        case "close-task":
+            closeTask(id, m)
         case "inbox-request-changes":
             guard let review = reviewItem(id, item), let terminal = review.terminal else { return }
             let comment = m["comment"] as? String ?? ""
@@ -367,6 +377,54 @@ actor DemoServer {
             write(Frame(channel: n, kind: .close, payload: []))
         }
         if watching { send(["type": "removed", "terminal": terminal]) }
+    }
+
+    /// A shell beside a live Task agent, in its folder; three at most (ADR 0079).
+    private func taskShell(_ id: UInt64, _ terminal: String?) {
+        guard let agent = content.terminals.first(where: { $0.id == terminal && $0.live && $0.isTaskAgent }),
+              let dir = agent.taskDir else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "a shell starts beside a live Task's agent"])
+        }
+        let shells = content.terminals.filter { $0.live && $0.isTaskShell && $0.taskDir == dir }
+        guard shells.count < 3 else {
+            return send(["type": "error", "id": id, "code": "conflict", "message": "a Task has at most 3 shells; close one first"])
+        }
+        var labels = ["muxa.kind": "task", "muxa.role": "shell", "muxa.dir": dir]
+        labels["muxa.workspace"] = agent.labels["muxa.workspace"]
+        labels["muxa.title"] = agent.labels["muxa.title"]
+        let t = Terminal(id: newTerminalID(), name: agent.name.map { "\($0)-sh" }, live: true, status: nil,
+                         labels: labels, cols: 80, rows: 24)
+        content.terminals.append(t)
+        content.screens[t.id] = "\(dir) $ "
+        reply(id, ["terminal": json(t), "existing": false])
+        if watching { send(["type": "changed", "terminal": json(t)]) }
+    }
+
+    /// Closes a Task without its item, as Approve does, with its shells and open items.
+    private func closeTask(_ id: UInt64, _ m: [String: Any]) {
+        guard let agent = content.terminals.first(where: { $0.id == m["terminal"] as? String && $0.isTaskAgent }) else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "only a Task closes this way"])
+        }
+        let open = inbox.items.filter { $0.terminal == agent.id }.map(\.id)
+        if m["worktree"] as? String != WorktreeChoice.force.rawValue,
+           let why = open.lazy.compactMap({ self.content.losesWork[$0] }).first {
+            return send(["type": "error", "id": id, "code": "would-lose-work", "message": why])
+        }
+        closeWithShells(agent.id)
+        change(id) { inbox in
+            for item in open {
+                guard let at = inbox.items.firstIndex(where: { $0.id == item }) else { continue }
+                inbox.done.insert(inbox.items.remove(at: at), at: 0)
+            }
+            return true
+        }
+    }
+
+    /// Closes a Task's agent, then the shells in its folder, as the server does.
+    private func closeWithShells(_ agent: String) {
+        let dir = content.terminals.first { $0.id == agent }?.taskDir
+        close(agent)
+        for shell in content.terminals where shell.isTaskShell && dir != nil && shell.taskDir == dir { close(shell.id) }
     }
 
     /// Input as if the user typed it: the screen and every attached channel show it.

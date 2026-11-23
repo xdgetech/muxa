@@ -1792,3 +1792,134 @@ async fn retry_starts_a_live_agents_task_loop_over() {
     .await;
     assert_eq!(refused["code"], "bad-request", "{refused}");
 }
+
+#[tokio::test]
+async fn a_tasks_shells_start_in_its_place_and_only_they_close() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let agent = task_agent(&backend, "/work/fix").await;
+
+    let started = request(
+        &mut client,
+        json!({"type": "task-shell", "id": 1, "terminal": agent.as_str()}),
+    )
+    .await;
+    let shell = started["terminal"].clone();
+    assert_eq!(shell["labels"]["muxa.role"], "shell", "{started}");
+    assert_eq!(shell["labels"]["muxa.kind"], "task");
+    assert_eq!(shell["labels"]["muxa.dir"], "/work/fix");
+    assert_eq!(shell["name"], "fix-sh");
+    let launch = backend.launches().pop().unwrap();
+    assert_eq!(
+        launch.cwd.as_deref(),
+        Some(std::path::Path::new("/work/fix"))
+    );
+    assert_eq!(launch.argv, ["/bin/sh", "-l"]);
+    assert!(launch.env.is_empty(), "a shell gets no secrets");
+
+    // A shell beside a shell, or beside nothing, is refused.
+    let wrong = request(
+        &mut client,
+        json!({"type": "task-shell", "id": 2, "terminal": shell["id"]}),
+    )
+    .await;
+    assert_eq!(wrong["code"], "bad-request");
+    for id in [3, 4] {
+        let more = request(
+            &mut client,
+            json!({"type": "task-shell", "id": id, "terminal": agent.as_str()}),
+        )
+        .await;
+        assert_eq!(more["type"], "reply", "{more}");
+    }
+    let fourth = request(
+        &mut client,
+        json!({"type": "task-shell", "id": 5, "terminal": agent.as_str()}),
+    )
+    .await;
+    assert_eq!(fourth["code"], "conflict", "three shells per Task");
+
+    let agent_close = request(
+        &mut client,
+        json!({"type": "close-terminal", "id": 6, "terminal": agent.as_str()}),
+    )
+    .await;
+    assert_eq!(
+        agent_close["code"], "bad-request",
+        "the agent never closes this way"
+    );
+    assert!(backend.get(&agent).await.unwrap().live);
+    let closed = request(
+        &mut client,
+        json!({"type": "close-terminal", "id": 7, "terminal": shell["id"]}),
+    )
+    .await;
+    assert_eq!(closed["type"], "reply", "{closed}");
+    let id = TerminalId::new(shell["id"].as_str().unwrap().to_owned());
+    assert!(
+        backend.get(&id).await.is_err(),
+        "the shell's terminal is gone"
+    );
+}
+
+#[tokio::test]
+async fn approving_a_task_ends_its_shells() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let agent = task_agent(&backend, "/work/fix").await;
+    let started = request(
+        &mut client,
+        json!({"type": "task-shell", "id": 1, "terminal": agent.as_str()}),
+    )
+    .await;
+    let shell = TerminalId::new(started["terminal"]["id"].as_str().unwrap().to_owned());
+    let item = review_item(&mut client, &agent).await;
+    let ok = request(
+        &mut client,
+        json!({"type": "inbox-approve", "id": 2, "item": item}),
+    )
+    .await;
+    assert_eq!(ok["type"], "reply", "{ok}");
+    assert!(
+        backend.get(&shell).await.is_err(),
+        "the shell went with the Task"
+    );
+}
+
+#[tokio::test]
+async fn close_task_ends_a_task_without_its_item() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let dirty = task_agent(&backend, "/work/dirty-fix").await;
+    let refused = request(
+        &mut client,
+        json!({"type": "close-task", "id": 1, "terminal": dirty.as_str()}),
+    )
+    .await;
+    assert_eq!(refused["code"], "would-lose-work", "{refused}");
+    assert!(backend.get(&dirty).await.unwrap().live, "nothing changed");
+
+    let agent = task_agent(&backend, "/work/fix").await;
+    let item = review_item(&mut client, &agent).await;
+    let closed = request(
+        &mut client,
+        json!({"type": "close-task", "id": 2, "terminal": agent.as_str()}),
+    )
+    .await;
+    assert_eq!(closed["inbox"]["done"][0]["id"], item.as_str(), "{closed}");
+    assert!(
+        backend.get(&agent).await.is_err(),
+        "the agent's terminal is gone"
+    );
+
+    let shell = terminal(&backend).await;
+    let wrong = request(
+        &mut client,
+        json!({"type": "close-task", "id": 3, "terminal": shell.as_str()}),
+    )
+    .await;
+    assert_eq!(wrong["code"], "bad-request");
+}

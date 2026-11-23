@@ -201,6 +201,14 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 change(id) { it.copy(items = listOf(review) + it.items) }
             }
             "inbox-approve" -> approve(id, item, force = m.str("worktree") == "force")
+            "task-shell" -> taskShell(id, m.str("terminal"))
+            "close-terminal" -> {
+                val t = terminals.firstOrNull { it.id == m.str("terminal") }
+                if (t == null || !t.isTaskShell) return send(error(id, "bad-request", "only a Task's shell closes this way"))
+                remove(t.id)
+                reply(id)
+            }
+            "close-task" -> closeTask(id, m)
             "inbox-request-changes" -> requestChanges(id, item, m.str("comment") ?: "")
             "inbox-retry" -> retry(id, item)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
@@ -356,6 +364,51 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         val review = openItem(id, item, ItemKind.REVIEW) ?: return
         val terminal = review.terminal ?: return send(error(id, "bad-request", "$item has no Task"))
         losesWork[item]?.takeIf { !force }?.let { return send(error(id, "would-lose-work", it)) }
+        removeWithShells(terminal)
+        resolve(id, review)
+    }
+
+    /** A shell beside a live Task agent, in its folder; three at most (ADR 0079). */
+    private fun taskShell(id: Long, terminal: String?) {
+        val agent = terminals.firstOrNull { it.id == terminal && it.live && it.isTaskAgent }
+        val dir = agent?.taskDir ?: return send(error(id, "bad-request", "a shell starts beside a live Task's agent"))
+        if (terminals.count { it.live && it.isTaskShell && it.taskDir == dir } >= MAX_SHELLS) {
+            return send(error(id, "conflict", "a Task has at most $MAX_SHELLS shells; close one first"))
+        }
+        val labels = buildMap {
+            put("muxa.kind", "task"); put("muxa.role", "shell"); put("muxa.dir", dir)
+            agent.labels["muxa.workspace"]?.let { put("muxa.workspace", it) }
+            agent.labels["muxa.title"]?.let { put("muxa.title", it) }
+        }
+        val t = Terminal(newTerminalId(), agent.name?.let { "$it-sh" }, live = true, labels = labels, cols = 80, rows = 24)
+        terminals += t
+        screens[t.id] = "$dir $ "
+        reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
+        if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+    }
+
+    /** Closes a Task without its item, as Approve does, with its shells and open items. */
+    private fun closeTask(id: Long, m: JsonObject) {
+        val agent = terminals.firstOrNull { it.id == m.str("terminal") && it.isTaskAgent }
+            ?: return send(error(id, "bad-request", "only a Task closes this way"))
+        val open = inbox.items.filter { it.terminal == agent.id }
+        if (m.str("worktree") != "force") {
+            open.firstNotNullOfOrNull { losesWork[it.id] }?.let { return send(error(id, "would-lose-work", it)) }
+        }
+        removeWithShells(agent.id)
+        val ids = open.map { it.id }.toSet()
+        change(id) { i -> i.copy(items = i.items.filter { it.id !in ids }, done = open + i.done) }
+    }
+
+    /** Removes a Task's agent, then the shells in its folder, as the server does. */
+    private fun removeWithShells(agent: String) {
+        val dir = terminals.firstOrNull { it.id == agent }?.taskDir
+        remove(agent)
+        terminals.filter { it.isTaskShell && dir != null && it.taskDir == dir }.forEach { remove(it.id) }
+    }
+
+    /** Removes a terminal and closes its channels. */
+    private fun remove(terminal: String) {
         channels.filterValues { it == terminal }.keys.sorted().forEach { n ->
             channels.remove(n)
             write(Frame(n, FrameKind.CLOSE, ByteArray(0)))
@@ -364,8 +417,11 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             screens.remove(terminal)
             if (watching) send(buildJsonObject { put("type", "removed"); put("terminal", terminal) })
         }
-        resolve(id, review)
     }
+
+    /** A terminal id not in use, also after one was removed. */
+    private fun newTerminalId(): String =
+        generateSequence(terminals.size + 1) { it + 1 }.map { "t$it" }.first { id -> terminals.none { it.id == id } }
 
     /** Types the comment to the Task's agent, as the user would. */
     private fun requestChanges(id: Long, item: String, comment: String) {
@@ -521,12 +577,18 @@ private fun standardContent(): DemoContent {
             Terminal("t3", "shell", live = true, cols = 80, rows = 24),
             // No name and no labels: a terminal muxa did not start, as the Other terminals show it.
             Terminal("t4", live = true, cols = 80, rows = 24),
+            // fix-login's shell (ADR 0079).
+            Terminal(
+                "t6", "fix-login-sh", live = true, cols = 80, rows = 24,
+                labels = mapOf("muxa.kind" to "task", "muxa.role" to "shell", "muxa.workspace" to "app", "muxa.dir" to "/demo/app-fix-login"),
+            ),
         ),
         screens = mapOf(
             "t1" to "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
             "t2" to "● The README links three pages that moved.\r\n\r\n  Allow edits to README.md? (y/n) ",
             "t3" to "$ ",
             "t4" to "$ ",
+            "t6" to "~/demo/app-fix-login $ ",
         ),
         inbox = listOf(
             item("d1", ItemKind.REVIEW, "Review fix-login", note = "Draft PR #42: refresh the session before it expires.", source = "task", terminal = "t1"),
@@ -665,3 +727,4 @@ private val DEMO_SETTINGS = Settings(
     ),
     workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
 )
+private const val MAX_SHELLS = 3

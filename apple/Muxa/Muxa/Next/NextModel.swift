@@ -358,6 +358,40 @@ final class NextModel {
         return wouldLoseWork
     }
 
+    /// Closes a Task from Focus, without its item (ADR 0079). Like `approve`,
+    /// a worktree that holds work stops it and the message comes back.
+    func closeTask(_ terminal: String, force: Bool = false) async -> String? {
+        var wouldLoseWork: String?
+        await run { c in
+            do {
+                self.inbox = try await c.inbox(.closeTask(terminal: terminal, worktree: force ? .force : nil))
+            } catch V2Error.refused(let code, let message) where code == "would-lose-work" {
+                wouldLoseWork = message
+            }
+        }
+        return wouldLoseWork
+    }
+
+    // MARK: Task shells
+
+    /// A new shell beside the Task's agent, kept at once so Focus shows it.
+    func startShell(beside agent: String) async -> Terminal? {
+        var started: Terminal?
+        await run { c in
+            let t = try await c.taskShell(agent)
+            if !self.terminals.contains(where: { $0.id == t.id }) { self.terminals.append(t) }
+            started = t
+        }
+        return started
+    }
+
+    func closeShell(_ terminal: String) async {
+        await run { c in
+            try await c.closeTerminal(terminal)
+            self.terminals.removeAll { $0.id == terminal }
+        }
+    }
+
     // MARK: Start Task
 
     func workspaces() async throws -> [Workspace] {
