@@ -176,6 +176,23 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testCaptureTakesTheKeyboardEachTimeItOpens() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["pane.1"].waitForExistence(timeout: 5))
+        let field = app.textFields["capture.field"]
+        for line in ["first", "second"] {
+            app.menuBars.menuItems["Capture…"].click()
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            // Typed at once, without a click: the field must have the keyboard.
+            app.typeText(line)
+            XCTAssertTrue(waitFor(field, valueContaining: line), line)
+            app.typeKey(.escape, modifierFlags: [])
+            XCTAssertTrue(waitForGone(field))
+        }
+    }
+
+    @MainActor
     func testCaptureStartsATaskWithTheWindowClosed() throws {
         let app = launch()
         app.typeKey("w", modifierFlags: .command)

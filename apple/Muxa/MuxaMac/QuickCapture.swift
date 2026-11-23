@@ -36,9 +36,12 @@ final class QuickCapture {
         RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | optionKey), id, GetApplicationEventTarget(), 0, &hotKey)
     }
 
+    /// Each show draws a fresh view, so the field takes the keyboard again:
+    /// a reused panel keeps the view, and its `onAppear` runs only once.
     func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        panel.contentView = NSHostingView(rootView: content())
         NSApp.activate()
         panel.center()
         panel.makeKeyAndOrderFront(nil)
@@ -74,12 +77,15 @@ final class QuickCapture {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.onCancel = { [weak self] in self?.close() }
-        let view = QuickCaptureView(
-            close: { [weak self] in self?.close() },
-            startTask: { [weak self] in self?.startTask(from: $0) })
-        panel.contentView = NSHostingView(rootView: view.environment(model))
         panel.setAccessibilityIdentifier("quickcapture")
         return panel
+    }
+
+    private func content() -> some View {
+        QuickCaptureView(
+            close: { [weak self] in self?.close() },
+            startTask: { [weak self] in self?.startTask(from: $0) })
+        .environment(model)
     }
 }
 

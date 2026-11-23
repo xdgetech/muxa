@@ -48,7 +48,8 @@ struct CaptureField: View {
             if let p = parsed, !text.isEmpty { chips(p) }
         }
         .onChange(of: text) { _, new in parse(new) }
-        .onAppear { if focusOnAppear { focused = true } }
+        // A moment later: the window becomes key only after it appears.
+        .onAppear { if focusOnAppear { DispatchQueue.main.async { focused = true } } }
         .background {
             Group {
                 #if os(iOS)
