@@ -318,6 +318,25 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheReaderGroupsFilesUnderTheirFolder() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let kind = app.radioGroups["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        kind.radioButtons["Images"].click()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        let file = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        XCTAssertTrue(file.waitForExistence(timeout: 5))
+        folder.disclosureTriangles.firstMatch.click()
+        XCTAssertTrue(waitForGone(file))
+        folder.disclosureTriangles.firstMatch.click()
+        XCTAssertTrue(file.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testTheReaderShowsATasksPlan() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()

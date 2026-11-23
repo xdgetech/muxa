@@ -20,6 +20,8 @@ struct ReaderPanel: View {
     /// Not a NavigationStack: on a phone the panel is a sheet inside Focus's
     /// stack, and a nested stack pushed its files behind the sheet.
     @State private var path: [ReaderTarget] = []
+    /// Folders the user closed, by kind, scope and folder.
+    @State private var collapsed: Set<String> = []
 
     var body: some View {
         Group {
@@ -97,28 +99,57 @@ struct ReaderPanel: View {
         }
     }
 
+    /// The files under their parent folder; a folder with several files collapses.
     private func rows(_ entries: [ReaderEntry], scope: DiffScope) -> some View {
-        ForEach(entries) { e in
-            Button {
-                path.append(ReaderTarget(kind: kind, path: e.path, scope: scope))
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
+        ForEach(ReaderFolder.group(entries)) { folder in
+            if folder.collapses {
+                DisclosureGroup(isExpanded: expanded(folder, scope: scope)) {
+                    ForEach(folder.entries) { row($0, scope: scope, in: folder) }
+                } label: {
                     HStack {
-                        if let status = e.status { Text(status.prefix(1).uppercased()).monospaced().foregroundStyle(Palette.textSecondary) }
-                        Text(e.title ?? e.path).lineLimit(1)
+                        Label(folder.path, systemImage: "folder").lineLimit(1)
                         Spacer()
-                        if let added = e.added, let removed = e.removed {
-                            Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
-                        }
-                        Image(systemName: "chevron.forward").font(.caption).foregroundStyle(Palette.textTertiary)
+                        Text("\(folder.entries.count)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
                     }
-                    if e.title != nil { Text(e.path).font(.caption2).foregroundStyle(Palette.textSecondary).lineLimit(1) }
                 }
-                .contentShape(Rectangle())
+                .accessibilityIdentifier("reader.folder.\(folder.path)")
+            } else {
+                ForEach(folder.entries) { row($0, scope: scope, in: folder) }
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("reader.file.\(e.path)")
         }
+    }
+
+    private func expanded(_ folder: ReaderFolder, scope: DiffScope) -> Binding<Bool> {
+        let key = "\(kind.rawValue)/\(scope.rawValue)/\(folder.path)"
+        return Binding(
+            get: { !collapsed.contains(key) },
+            set: { open in
+                if open { collapsed.remove(key) } else { collapsed.insert(key) }
+            })
+    }
+
+    private func row(_ e: ReaderEntry, scope: DiffScope, in folder: ReaderFolder) -> some View {
+        // A lone file in a folder names the folder under its own name.
+        let under = e.title != nil ? e.path : folder.collapses || folder.path.isEmpty ? nil : folder.path + "/"
+        return Button {
+            path.append(ReaderTarget(kind: kind, path: e.path, scope: scope))
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    if let status = e.status { Text(status.prefix(1).uppercased()).monospaced().foregroundStyle(Palette.textSecondary) }
+                    Text(e.title ?? ReaderFolder.name(of: e.path)).lineLimit(1)
+                    Spacer()
+                    if let added = e.added, let removed = e.removed {
+                        Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                    }
+                    Image(systemName: "chevron.forward").font(.caption).foregroundStyle(Palette.textTertiary)
+                }
+                if let under { Text(under).font(.caption2).foregroundStyle(Palette.textSecondary).lineLimit(1) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("reader.file.\(e.path)")
     }
 
     private var images: [ReaderEntry] { kind == .images ? list?.entries ?? [] : [] }
