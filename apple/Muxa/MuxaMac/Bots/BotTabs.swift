@@ -93,17 +93,14 @@ struct BotFilesTab: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            files
-            BotAccessPanel(workspace: entry.workspace, commands: entry.bot.spec.commands)
-        }
+        files
     }
 
     private var files: some View {
         HStack(alignment: .top, spacing: 12) {
             panel(title: "Soul · who it is · yours to write", file: "soul.md") {
                 text(entry.bot.soulText, empty: "No soul yet.", id: "bot.files.soul")
-                Button("Edit") { chrome.botSheet = .soul(workspace: entry.workspace, draft: BotDraft(entry.bot)) }
+                Button("Edit") { chrome.botSheet = .soul(workspace: entry.workspace, bot: entry.bot) }
                     .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
                     .disabled(model.settings.readOnly)
                     .accessibilityIdentifier("bot.files.editsoul")

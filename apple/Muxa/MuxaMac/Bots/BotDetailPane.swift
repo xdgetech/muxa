@@ -18,11 +18,18 @@ struct BotDetailPane: View {
                 BotChatsTab(entry: entry, newChat: { Task { await startChat() } })
                     .padding(.horizontal, 28)
                     .padding(.vertical, 14)
+            } else if chrome.botTab == .settings {
+                // A grouped Form scrolls by itself.
+                BotSettingsTab(entry: entry)
+                    .frame(maxWidth: MacSettingsLayout.formWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 8)
+                actions
             } else {
                 ScrollView {
                     Group {
                         switch chrome.botTab {
-                        case .home, .chats: BotHomeTab(entry: entry, newChat: newChat)
+                        case .home, .chats, .settings: BotHomeTab(entry: entry, newChat: newChat)
                         case .routines: BotRoutinesTab(entry: entry, newChat: newChat)
                         case .files: BotFilesTab(entry: entry)
                         }

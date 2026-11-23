@@ -104,3 +104,30 @@ extension MacNextTests {
         XCTAssertFalse(app.descendants(matching: .any)["settings.workspace.app"].exists, "Settings did not open")
     }
 }
+
+/// A Bot's settings are a tab of its page (⌘5), saved in place.
+extension MacNextTests {
+    @MainActor
+    func testABotsSettingsAreEditedOnItsPage() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["bot.app.pr-watch"].waitForExistence(timeout: 10))
+        app.typeKey("5", modifierFlags: .command)
+        let save = app.buttons["bot.settings.save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        XCTAssertFalse(save.isEnabled, "nothing changed yet")
+        XCTAssertTrue(app.descendants(matching: .any)["bot.access"].exists, "Access moved here from Files")
+        XCTAssertTrue(app.buttons["editor.remove"].exists)
+        let line = app.textFields["bot.description"]
+        line.click()
+        line.typeText(", and the release threads")
+        XCTAssertTrue(save.isEnabled)
+        save.click()
+        XCTAssertTrue(waitFor(app.descendants(matching: .any)["bot.app.pr-watch"], labelContaining: "pr-watch"))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'release threads'")).firstMatch
+            .waitForExistence(timeout: 5))
+        app.typeKey("4", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["bot.files.editsoul"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["bot.access"].exists, "Files keeps Soul and Memory only")
+    }
+}

@@ -29,7 +29,9 @@ struct EditableLineList: View {
                 let n = lines.firstIndex { $0.id == line.id } ?? 0
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
-                        TextField(placeholder, text: $line.text)
+                        // No label: a grouped Form on the Mac would show it beside the value.
+                        TextField("Line", text: $line.text, prompt: Text(placeholder))
+                            .labelsHidden()
                             .monospaced()
                             .plainEntry()
                             .accessibilityIdentifier("\(id).\(n)")

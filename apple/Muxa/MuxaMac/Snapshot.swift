@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant|focus-talk|bots[-chats|-routines|-files|-new]|bots[-chat|-run|-new|-routine-edit|-soul-edit]` in the environment, the app
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant|focus-talk|bots[-chats|-routines|-files|-new]|bots[-chat|-run|-new|-routine-edit|-soul-edit]|-settings` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
@@ -19,7 +19,7 @@ enum Snapshot {
             nav.tab = .bots
             chrome.botPick = .bot(workspace: "app", name: "pr-watch")
             let tabs: [String: BotTab] = ["bots-chat": .chats, "bots-run": .chats, "bots-routines": .routines,
-                                          "bots-files": .files, "bots-routine-edit": .routines, "bots-soul-edit": .files]
+                                          "bots-files": .files, "bots-settings": .settings, "bots-routine-edit": .routines, "bots-soul-edit": .files]
             chrome.botTab = tabs[screen] ?? .home
             chrome.botTerminal = screen == "bots-run" ? "t8" : "t7"
             chrome.botView = screen == "bots-run" ? .terminal : .chat
@@ -54,7 +54,7 @@ enum Snapshot {
         for _ in 0..<30 where model.settings.workspace("app") == nil { try? await Task.sleep(for: .milliseconds(100)) }
         guard let app = model.settings.workspace("app") else { return }
         if screen == "bots-soul-edit", let bot = app.bots.first(where: { $0.name == "pr-watch" }) {
-            chrome.botSheet = .soul(workspace: app, draft: BotDraft(bot))
+            chrome.botSheet = .soul(workspace: app, bot: bot)
         } else if let scan = app.routines.first(where: { $0.name == "scan" }) {
             chrome.botSheet = .routine(workspace: "app", draft: RoutineDraft(scan))
         }

@@ -82,7 +82,7 @@ struct Shortcut: Identifiable {
     // The Bots page's own keys; Home's ⌘R and the Pane menu's ⌘1–4 are not shown there.
     static let newChat = Shortcut("new-chat", .bots, "New chat", fixed: "⌘T")
     static let runBot = Shortcut("run-bot", .bots, "Run now", fixed: "⌘R")
-    static let botTabs = Shortcut("bot-tabs", .bots, "Home · Chats · Routines · Files", fixed: "⌘1 … ⌘4")
+    static let botTabs = Shortcut("bot-tabs", .bots, "Home · Chats · Routines · Files · Settings", fixed: "⌘1 … ⌘5")
     static let applyProposal = Shortcut("apply-proposal", .bots, "Apply a talk's proposal in Focus", fixed: "⌘⏎")
 
     static let all: [Shortcut] = [

@@ -48,12 +48,12 @@ extension MacChrome {
 /// where the Routine or the Bot is.
 enum BotSheet: Identifiable {
     case routine(workspace: String, draft: RoutineDraft)
-    case soul(workspace: SettingsWorkspace, draft: BotDraft)
+    case soul(workspace: SettingsWorkspace, bot: SettingsBot)
 
     var id: String {
         switch self {
         case let .routine(w, d): "routine.\(w).\(d.id)"
-        case let .soul(w, d): "soul.\(w.name).\(d.id)"
+        case let .soul(w, b): "soul.\(w.name).\(b.name)"
         }
     }
 }
@@ -71,7 +71,7 @@ enum BotPick: Hashable {
 
 /// The tabs of a Bot's page; `⌘1`…`⌘4` pick them in Bots.
 enum BotTab: Int, CaseIterable {
-    case home = 1, chats, routines, files
+    case home = 1, chats, routines, files, settings
 
     var title: String {
         switch self {
@@ -79,6 +79,7 @@ enum BotTab: Int, CaseIterable {
         case .chats: "Chats"
         case .routines: "Routines"
         case .files: "Files"
+        case .settings: "Settings"
         }
     }
 }

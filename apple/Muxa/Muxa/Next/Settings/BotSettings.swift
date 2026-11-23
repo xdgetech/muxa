@@ -134,10 +134,6 @@ struct BotEditor: View {
     @State private var confirmRestore = false
     @State private var restoreError: String?
     @State private var talkError: String?
-    /// Remove with Routines: the Bot they move to; empty is no Bot.
-    @State private var moveTo = ""
-    @State private var confirmRemove = false
-    @State private var removeError: String?
 
     init(workspace: SettingsWorkspace, draft: BotDraft) {
         self.workspace = workspace
@@ -149,84 +145,18 @@ struct BotEditor: View {
             title: draft.existing?.name ?? "New Bot", ops: ops,
             remove: draft.existing.flatMap { bot in
                 // A Bot with Routines removes in its own section, which moves them first.
-                owned(bot).isEmpty
-                    ? (.botRemove(workspace: workspace.name, name: bot.name), keepsFiles(bot.name)) : nil
+                BotRemovalSection.owned(bot.name, in: model.settings.workspace(workspace.name) ?? workspace).isEmpty
+                    ? (.botRemove(workspace: workspace.name, name: bot.name), BotRemovalSection.keepsFiles(bot.name)) : nil
             }
         ) {
-            Section {
-                if draft.existing == nil {
-                    TextField("Name, e.g. pr-watch", text: $draft.name)
-                        .plainEntry()
-                        .accessibilityIdentifier("bot.name")
-                }
-                TextField("What it does, in one line", text: $draft.description)
-                    .accessibilityIdentifier("bot.description")
-                Toggle("Enabled", isOn: $draft.enabled)
-                    .accessibilityIdentifier("bot.enabled")
-            } footer: {
-                if draft.existing == nil { Text("Lowercase letters, digits, - and _.") }
-            }
+            BotSettingsSections(draft: $draft, workspace: workspace)
             if let bot = draft.existing { talk(bot) }
-            Section {
-                TextField("Items a day, 1 to 50 (default 3)", text: $draft.dailyItems)
-                    .numberEntry()
-                    .accessibilityIdentifier("bot.daily")
-            } footer: {
-                Text("Past its daily items, the rest go into one \"N more\" item. It runs with \(workspace.name)'s access: its connections and MCP servers.")
-            }
-            team
-            commandsSection
             soul
             if let bot = draft.existing { memory(bot) }
-            if let bot = draft.existing, !owned(bot).isEmpty { removal(bot) }
-        }
-    }
-
-    /// Its Routines in the settings as they are now.
-    private func owned(_ bot: SettingsBot) -> [SettingsRoutine] {
-        (model.settings.workspace(workspace.name) ?? workspace).routines.filter { $0.spec.bot == bot.name }
-    }
-
-    private func keepsFiles(_ name: String) -> String {
-        "Its soul and memory stay in .muxa/bots/\(name)/."
-    }
-
-    /// Remove for a Bot with Routines: they move to another Bot or to none,
-    /// then the Bot goes, in one settings-update.
-    private func removal(_ bot: SettingsBot) -> some View {
-        let current = model.settings.workspace(workspace.name) ?? workspace
-        let others = current.bots.map(\.name).filter { $0 != bot.name }
-        return Section {
-            Picker("Its Routines move to", selection: $moveTo) {
-                Text("No Bot").tag("")
-                ForEach(others, id: \.self) { Text($0).tag($0) }
+            if let bot = draft.existing,
+               !BotRemovalSection.owned(bot.name, in: model.settings.workspace(workspace.name) ?? workspace).isEmpty {
+                BotRemovalSection(workspace: workspace, bot: bot) { dismiss() }
             }
-            .accessibilityIdentifier("bot.remove.moveto")
-            ForEach(owned(bot)) { r in
-                Label(r.name, systemImage: "arrow.turn.down.right")
-                    .font(.system(.callout, design: .monospaced))
-                    .accessibilityIdentifier("bot.remove.routine.\(r.name)")
-            }
-            Button("Remove", role: .destructive) { confirmRemove = true }
-                .disabled(model.settings.readOnly || model.settings.saving)
-                .accessibilityIdentifier("editor.remove")
-            SaveError(text: removeError, id: "bot.remove.error")
-        } header: {
-            Text("Remove")
-        } footer: {
-            Text(keepsFiles(bot.name))
-        }
-        .confirmationDialog("Remove \(bot.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
-            Button("Remove \(bot.name)", role: .destructive) {
-                let ops = current.botRemoval(bot.name, movingRoutinesTo: moveTo.isEmpty ? nil : moveTo)
-                Task {
-                    removeError = await model.settings.save(ops)
-                    if removeError == nil { dismiss() }
-                }
-            }
-            .accessibilityIdentifier("editor.confirmremove")
-        } message: {
-            Text("Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(keepsFiles(bot.name))")
         }
     }
 
@@ -241,51 +171,6 @@ struct BotEditor: View {
         }
     }
 
-    /// A team lead hands work to its members (ADR 0085). A member leads no team.
-    @ViewBuilder
-    private var team: some View {
-        let candidates = draft.candidates(in: workspace)
-        if draft.lead(in: workspace) == nil, !candidates.isEmpty {
-            Section {
-                ForEach(candidates, id: \.self) { name in
-                    Toggle(name, isOn: member(name))
-                        .accessibilityIdentifier("bot.member.\(name)")
-                }
-                if !draft.members.isEmpty {
-                    TextField("Handoffs a day, 1 to 50 (default 10)", text: $draft.handoffs)
-                        .numberEntry()
-                        .accessibilityIdentifier("bot.handoffs")
-                }
-            } header: {
-                Text("Team")
-            } footer: {
-                Text("Members are Bots that lead no team. The lead hands them work, up to its handoffs a day.")
-            }
-        }
-    }
-
-    /// ADR 0088: granted here, or by applying a talk's proposal; a run cannot add one.
-    private var commandsSection: some View {
-        Section {
-            EditableLineList(lines: $draft.commands, placeholder: "/path/collect.sh delivery:*",
-                             addTitle: "Add a command", id: "bot.commands", problem: { BotDraft.commandProblem($0) })
-        } header: {
-            Text("Commands it may run")
-        } footer: {
-            Text("Shell commands only this Bot may run, such as /path/collect.sh delivery:*. "
-                + "In its Routines, any other command is refused; it tells you what it needed.")
-        }
-    }
-
-    private func member(_ name: String) -> Binding<Bool> {
-        Binding(
-            get: { draft.members.contains(name) },
-            set: { on in
-                let picked = Set(draft.members.filter { $0 != name } + (on ? [name] : []))
-                draft.members = workspace.bots.map(\.name).filter(picked.contains)
-            })
-    }
-
     private func startTalk(_ bot: String) async {
         guard let t = await model.startTalk(workspace: workspace.name, bot: bot, title: "Talk to \(bot)") else {
             talkError = model.requestError
@@ -296,17 +181,7 @@ struct BotEditor: View {
     }
 
     private var soul: some View {
-        Section {
-            TextEditor(text: $draft.soul)
-                .font(.system(.callout, design: .monospaced))
-                .frame(minHeight: 160)
-                .scrollContentBackground(.hidden)
-                .accessibilityIdentifier("bot.soul")
-        } header: {
-            Text("Soul")
-        } footer: {
-            Text("Who the Bot is, what it watches and what it must not do. Every run starts from it. At most 12 KiB.")
-        }
+        BotSoulSection(text: $draft.soul)
     }
 
     private func memory(_ bot: SettingsBot) -> some View {
@@ -344,5 +219,184 @@ struct BotEditor: View {
         return draft.existing == nil
             ? [.botAdd(workspace: workspace.name, bot: spec, soulText: text)]
             : [.botUpdate(workspace: workspace.name, bot: spec, soulText: text)]
+    }
+}
+
+/// Who a Bot is and what it may do, as Form sections: its name and line,
+/// on/off, daily items, its team and its commands. The Bot editor and the
+/// Mac Bot page's Settings tab share them.
+struct BotSettingsSections: View {
+    @Binding var draft: BotDraft
+    let workspace: SettingsWorkspace
+
+    var body: some View {
+        Section {
+            if draft.existing == nil {
+                TextField("Name, e.g. pr-watch", text: $draft.name)
+                    .plainEntry()
+                    .accessibilityIdentifier("bot.name")
+            }
+            TextField("What it does, in one line", text: $draft.description)
+                .accessibilityIdentifier("bot.description")
+            Toggle("Enabled", isOn: $draft.enabled)
+                .accessibilityIdentifier("bot.enabled")
+        } footer: {
+            if draft.existing == nil { Text("Lowercase letters, digits, - and _.") }
+        }
+        Section {
+            TextField("Items a day, 1 to 50 (default 3)", text: $draft.dailyItems)
+                .numberEntry()
+                .accessibilityIdentifier("bot.daily")
+        } footer: {
+            Text("Past its daily items, the rest go into one \"N more\" item. It runs with \(workspace.name)'s access: its connections and MCP servers.")
+        }
+        team
+        commands
+    }
+
+    /// A team lead hands work to its members (ADR 0085). A member leads no team.
+    @ViewBuilder
+    private var team: some View {
+        let candidates = draft.candidates(in: workspace)
+        if draft.lead(in: workspace) == nil, !candidates.isEmpty {
+            Section {
+                ForEach(candidates, id: \.self) { name in
+                    Toggle(name, isOn: member(name))
+                        .accessibilityIdentifier("bot.member.\(name)")
+                }
+                if !draft.members.isEmpty {
+                    TextField("Handoffs a day, 1 to 50 (default 10)", text: $draft.handoffs)
+                        .numberEntry()
+                        .accessibilityIdentifier("bot.handoffs")
+                }
+            } header: {
+                Text("Team")
+            } footer: {
+                Text("Members are Bots that lead no team. The lead hands them work, up to its handoffs a day.")
+            }
+        }
+    }
+
+    /// ADR 0088: granted here, or by applying a talk's proposal; a run cannot add one.
+    private var commands: some View {
+        Section {
+            EditableLineList(lines: $draft.commands, placeholder: "/path/collect.sh delivery:*",
+                             addTitle: "Add a command", id: "bot.commands", problem: { BotDraft.commandProblem($0) })
+        } header: {
+            Text("Commands it may run")
+        } footer: {
+            Text("Shell commands only this Bot may run, such as /path/collect.sh delivery:*. "
+                + "In its Routines, any other command is refused; it tells you what it needed.")
+        }
+    }
+
+    private func member(_ name: String) -> Binding<Bool> {
+        Binding(
+            get: { draft.members.contains(name) },
+            set: { on in
+                let picked = Set(draft.members.filter { $0 != name } + (on ? [name] : []))
+                draft.members = workspace.bots.map(\.name).filter(picked.contains)
+            })
+    }
+}
+
+/// The Soul's editor section.
+struct BotSoulSection: View {
+    @Binding var text: String
+
+    var body: some View {
+        Section {
+            TextEditor(text: $text)
+                .font(.system(.callout, design: .monospaced))
+                .frame(minHeight: 160)
+                .scrollContentBackground(.hidden)
+                .accessibilityIdentifier("bot.soul")
+        } header: {
+            Text("Soul")
+        } footer: {
+            Text("Who the Bot is, what it watches and what it must not do. Every run starts from it. At most 12 KiB.")
+        }
+    }
+}
+
+/// Edits only a Bot's Soul; its settings stay as they are.
+struct BotSoulEditor: View {
+    let workspace: SettingsWorkspace
+    let bot: SettingsBot
+    @State private var text: String
+
+    init(workspace: SettingsWorkspace, bot: SettingsBot) {
+        self.workspace = workspace
+        self.bot = bot
+        _text = State(initialValue: bot.soulText ?? "")
+    }
+
+    var body: some View {
+        SettingsEditor(title: "\(bot.name)'s Soul", canSave: text != (bot.soulText ?? ""), ops: {
+            [.botUpdate(workspace: workspace.name, bot: bot.spec, soulText: text)]
+        }) {
+            BotSoulSection(text: $text)
+        }
+    }
+}
+
+/// Remove for a Bot with Routines: they move to another Bot or to none,
+/// then the Bot goes, in one settings-update.
+struct BotRemovalSection: View {
+    @Environment(NextModel.self) private var model
+    let workspace: SettingsWorkspace
+    let bot: SettingsBot
+    let onRemoved: () -> Void
+    /// The Bot its Routines move to; empty is no Bot.
+    @State private var moveTo = ""
+    @State private var confirm = false
+    @State private var error: String?
+
+    static func owned(_ name: String, in workspace: SettingsWorkspace) -> [SettingsRoutine] {
+        workspace.routines.filter { $0.spec.bot == name }
+    }
+
+    static func keepsFiles(_ name: String) -> String {
+        "Its soul and memory stay in .muxa/bots/\(name)/."
+    }
+
+    var body: some View {
+        let current = model.settings.workspace(workspace.name) ?? workspace
+        let owned = Self.owned(bot.name, in: current)
+        Section {
+            if !owned.isEmpty {
+                Picker("Its Routines move to", selection: $moveTo) {
+                    Text("No Bot").tag("")
+                    ForEach(current.bots.map(\.name).filter { $0 != bot.name }, id: \.self) { Text($0).tag($0) }
+                }
+                .accessibilityIdentifier("bot.remove.moveto")
+                ForEach(owned) { r in
+                    Label(r.name, systemImage: "arrow.turn.down.right")
+                        .font(.system(.callout, design: .monospaced))
+                        .accessibilityIdentifier("bot.remove.routine.\(r.name)")
+                }
+            }
+            Button("Remove", role: .destructive) { confirm = true }
+                .disabled(model.settings.readOnly || model.settings.saving)
+                .accessibilityIdentifier("editor.remove")
+            SaveError(text: error, id: "bot.remove.error")
+        } header: {
+            Text("Remove")
+        } footer: {
+            Text(Self.keepsFiles(bot.name))
+        }
+        .confirmationDialog("Remove \(bot.name)?", isPresented: $confirm, titleVisibility: .visible) {
+            Button("Remove \(bot.name)", role: .destructive) {
+                let ops = current.botRemoval(bot.name, movingRoutinesTo: moveTo.isEmpty ? nil : moveTo)
+                Task {
+                    error = await model.settings.save(ops)
+                    if error == nil { onRemoved() }
+                }
+            }
+            .accessibilityIdentifier("editor.confirmremove")
+        } message: {
+            Text(owned.isEmpty ? Self.keepsFiles(bot.name)
+                 : "Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(Self.keepsFiles(bot.name))")
+        }
     }
 }

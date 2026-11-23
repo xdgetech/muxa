@@ -43,7 +43,7 @@ struct BotsView: View {
         .sheet(item: Bindable(chrome).botSheet) { sheet in
             switch sheet {
             case let .routine(workspace, draft): RoutineEditor(workspace: workspace, draft: draft)
-            case let .soul(workspace, draft): BotEditor(workspace: workspace, draft: draft)
+            case let .soul(workspace, bot): BotSoulEditor(workspace: workspace, bot: bot)
             }
         }
         .task {
