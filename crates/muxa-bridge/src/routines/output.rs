@@ -214,6 +214,38 @@ pub fn validate(bytes: &[u8], limit: u32) -> Result<Output, Vec<String>> {
     }
 }
 
+/// Items one talk output may add (ADR 0089).
+pub const MAX_TALK_ITEMS: usize = 20;
+
+/// The items of a talk's output, checked as a Routine's are (ADR 0089).
+pub fn talk_items(values: Vec<serde_json::Value>) -> Result<Vec<Item>, Vec<String>> {
+    if values.len() > MAX_TALK_ITEMS {
+        return Err(vec![format!(
+            "A talk adds at most {MAX_TALK_ITEMS} items at a time."
+        )]);
+    }
+    let mut items = Vec::new();
+    let mut reasons = Vec::new();
+    for (i, v) in values.into_iter().enumerate() {
+        let raw: RawItem = match serde_json::from_value(v) {
+            Ok(raw) => raw,
+            Err(e) => {
+                reasons.push(format!("items[{i}]: {e}"));
+                continue;
+            }
+        };
+        match check_item(raw) {
+            Ok(item) => items.push(item),
+            Err(why) => reasons.extend(why.into_iter().map(|r| format!("items[{i}]: {r}"))),
+        }
+    }
+    if reasons.is_empty() {
+        Ok(items)
+    } else {
+        Err(reasons)
+    }
+}
+
 fn check_item(raw: RawItem) -> Result<Item, Vec<String>> {
     let mut reasons = Vec::new();
     let kind = match raw.kind.as_str() {

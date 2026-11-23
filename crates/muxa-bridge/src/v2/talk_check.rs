@@ -18,6 +18,10 @@ const MAX_SUMMARY: usize = 200;
 pub struct TalkOutput {
     pub memory: Option<String>,
     pub proposal: Option<RawProposal>,
+    /// Inbox items the user asked for in the talk (ADR 0089), in the
+    /// Routine output's item format.
+    #[serde(default)]
+    pub items: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,13 +264,15 @@ pub fn brief(ws: &SettingsWorkspace, bot: &str) -> String {
     }
     out.push_str(&format!(
         r#"
-### How to change your settings
+### Inbox items and settings
 
-You never edit files in the Workspace's `.muxa/` folder: they are denied to you. Propose instead. Write `.muxa/{OUTPUT}` in this folder, then end your turn:
+You never edit files in the Workspace's `.muxa/` folder: they are denied to you. Write `.muxa/{OUTPUT}` in this folder, then end your turn:
 
 ```json
 {{
   "memory": "your whole memory, replaced (at most 16 KiB)",
+  "items": [ /* Inbox items the user asks you for, up to 20, in the Routine output format:
+    {{"kind": "todo", "key": "notion:<page>:1", "title": "…", "body": "…", "due": "YYYY-MM-DD", "links": [{{"url": "…", "title": "…"}}]}} */ ],
   "proposal": {{
     "summary": "one line the user reads in their Inbox",
     "ops": [ /* settings ops, see below */ ]
@@ -274,7 +280,7 @@ You never edit files in the Workspace's `.muxa/` folder: they are denied to you.
 }}
 ```
 
-Both keys are optional. The user applies a proposal from their Inbox; nothing changes before. Allowed ops, all with "workspace": {ws:?}:
+Every key is optional. When the user asks you for Inbox items, add them to `items`: they reach the Inbox at once, do not count against your daily items, and a key you used before is skipped. Settings change only by a proposal, which the user applies from their Inbox; nothing changes before. Allowed ops, all with "workspace": {ws:?}:
 - {{"op":"bot-add"|"bot-update","workspace":…,"bot":{{"name":{bot:?},"description":…,"daily_items":3,"enabled":true,"members":[],"handoffs_per_day":10,"commands":[]}},"soul_text":"…"}}
 - {{"op":"routine-add"|"routine-update","workspace":…,"routine":{{"name":…,"bot":{bot:?},"instructions":"routines/<name>.md","enabled":false,"schedule":"*/30 9-18 * * 1-5","timezone":"Europe/Berlin","read_only":true}},"instructions_text":"…"}}
   (a schedule is five cron fields, runs at least 15 minutes apart; or "at":"09:00" daily; or "on":"review" to run when a Task asks for review)

@@ -193,6 +193,8 @@ impl Talk {
                 Some((p.summary, ops, view.revision))
             }
         };
+        // Items are checked before anything is written, like the proposal.
+        let items = crate::routines::output::talk_items(out.items).map_err(|why| why.join(" "))?;
         if let Some(memory) = &out.memory {
             self.memory_files(records)?
                 .write_memory(memory)
@@ -231,10 +233,67 @@ impl Talk {
                 .map_err(|e| format!("the proposal did not reach the Inbox: {e}"))?;
             lines.push("passed: the proposal is in the user's Inbox. They apply it there.".into());
         }
+        if !items.is_empty() {
+            let n = items.len();
+            let news: Vec<NewItem> = items.into_iter().map(|i| self.talk_item(i)).collect();
+            inbox
+                .change(|b, now| {
+                    for new in news {
+                        b.add(new, now)?;
+                    }
+                    Ok(())
+                })
+                .map_err(|e| format!("the items did not reach the Inbox: {e}"))?;
+            lines.push(format!(
+                "passed: {n} item(s) are in the user's Inbox now; an item with a key you used before in this talk is skipped."
+            ));
+        }
         if lines.is_empty() {
             lines.push("passed: nothing to do.".into());
         }
         Ok(lines)
+    }
+
+    /// An item the user asked for in this talk. It does not count against the
+    /// Bot's daily limit: the user asked for it (ADR 0089).
+    fn talk_item(&self, i: crate::routines::output::Item) -> NewItem {
+        use muxa_protocol::InboxEntryKind;
+        let kind = match i.kind {
+            InboxEntryKind::Proposal => ItemKind::Decide,
+            InboxEntryKind::Reply => ItemKind::Reply,
+            InboxEntryKind::Todo => ItemKind::Todo,
+            InboxEntryKind::Briefing | InboxEntryKind::Unknown => ItemKind::Read,
+        };
+        NewItem {
+            kind,
+            title: i.title,
+            note: Some(i.body).filter(|b| !b.trim().is_empty()),
+            workspace: Some(self.workspace.clone()),
+            due: i.due,
+            source: "task".into(),
+            key: Some(format!("talk:{}:{}:{}", self.workspace, self.bot, i.key)),
+            once: true,
+            terminal: Some(self.terminal.clone()),
+            routine: None,
+            place: None,
+            extra: Extra {
+                links: i
+                    .links
+                    .into_iter()
+                    .map(|l| muxa_protocol::v2::ItemLink {
+                        url: l.url,
+                        title: l.title,
+                    })
+                    .collect(),
+                proposal: i.proposal.map(|p| muxa_protocol::v2::ItemProposal {
+                    action: p.action,
+                    target: p.target,
+                    content: p.content,
+                }),
+                bot: Some(self.bot.clone()),
+                settings_proposal: None,
+            },
+        }
     }
 
     /// The Bot's folder, also for a Bot the talk is about to propose.

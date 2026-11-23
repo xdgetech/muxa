@@ -275,6 +275,9 @@ Each time the agent reports `done`, the host reads `.muxa/bot.json` in the Task'
 
 An accepted proposal becomes one Decide item: `title` is `<bot> proposes: <summary>`, `note` lists the ops one per line, and `settings_proposal` is `{"revision","ops"}`, with the settings' revision when the item was made. `bot`, `workspace` and `terminal` are set. `inbox-apply` sends the ops as `settings-update` with that revision and marks the item Done. When the settings changed since, it is `conflict` and nothing changes; the user asks the Bot again. Dismiss is `inbox-done` or `inbox-delete`.
 
+
+A talk's output may also carry `items` (ADR 0089): up to 20 Inbox items the user asked for, in the Routine output's item format, checked the same way. They become the Bot's items with the talk's `terminal` at once, keyed by the Workspace, the Bot and the item's `key`, and do not count against `daily_items`. One bad item refuses the whole output.
+
 ### Capture assistant
 
 ADR 0084. When `[assistant] enabled = true` in `workspaces.toml`, each item added by `inbox-add` gets one short run of the assistant: Claude Code in `<state dir>/assistant/runs/<item>/`, with no Workspace, no connections and no MCP servers. It reads the item, the Workspace names, each Workspace's Bots with their descriptions, its own `soul.md` and `memory.md`, and its last 30 decisions. Its suggestion becomes the item's `suggestion`:

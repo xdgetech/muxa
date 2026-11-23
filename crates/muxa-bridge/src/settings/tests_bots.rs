@@ -181,6 +181,56 @@ fn a_talks_proposal_becomes_one_decide_item_that_applies() {
 }
 
 #[test]
+fn a_talk_adds_the_items_the_user_asked_for_once_and_outside_the_daily_limit() {
+    let h = host("talkitems");
+    add_bot(&h, "b", json!({"daily_items": 1}));
+    let t = talk(&h, "b");
+    let inbox = Inbox::memory();
+    let item = |key: &str, title: &str| {
+        json!({"kind": "todo", "key": key, "title": title,
+        "body": "From the 11-18 leads meeting.", "due": "2026-11-25",
+        "links": [{"url": "https://example.com/notes", "title": "Meeting note"}]})
+    };
+    let output = json!({"items": [item("n:1", "Start the 0.8 code-freeze thread"), item("n:2", "Post the flag plan")]});
+    fs::write(t.dir.join(".muxa/bot.json"), output.to_string()).unwrap();
+    t.handle(&records(&h), &h.store, &inbox);
+    t.handle(&records(&h), &h.store, &inbox);
+
+    let items = inbox.view().items;
+    assert_eq!(
+        items.len(),
+        2,
+        "both, though the daily limit is 1; handled once"
+    );
+    let first = items
+        .iter()
+        .find(|i| i.title == "Start the 0.8 code-freeze thread")
+        .unwrap();
+    assert_eq!(first.kind, ItemKind::Todo);
+    assert_eq!(first.bot.as_deref(), Some("b"));
+    assert_eq!(first.terminal.as_deref(), Some("t1"));
+    assert_eq!(first.due.as_deref(), Some("2026-11-25"));
+    assert_eq!(first.links[0].url, "https://example.com/notes");
+
+    // The same key again in a new output adds nothing.
+    let again = json!({"items": [item("n:1", "Start the 0.8 code-freeze thread")], "memory": "x"});
+    fs::write(t.dir.join(".muxa/bot.json"), again.to_string()).unwrap();
+    t.handle(&records(&h), &h.store, &inbox);
+    assert_eq!(inbox.view().items.len(), 2);
+
+    // A bad item refuses the whole output: nothing is added or written.
+    let bad = json!({"items": [{"kind": "nope", "key": "k", "title": "t"}], "memory": "never"});
+    fs::write(t.dir.join(".muxa/bot.json"), bad.to_string()).unwrap();
+    t.handle(&records(&h), &h.store, &inbox);
+    assert_eq!(inbox.view().items.len(), 2);
+    let check = fs::read_to_string(t.dir.join(".muxa/CHECK.md")).unwrap();
+    assert!(
+        check.contains("refused") && check.contains("kind must be"),
+        "{check}"
+    );
+}
+
+#[test]
 fn a_talk_may_not_touch_connections_or_another_bots_routines() {
     let h = host("talk-refused");
     add_bot(&h, "b", json!({}));
