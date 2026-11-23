@@ -49,7 +49,8 @@ private fun scheduleText(r: SettingsRoutine): String {
         else -> "only when run by hand"
     }
     return listOfNotNull(
-        whenText, r.timezone, r.bot?.let { "Bot $it" }, r.worker?.let { "worker $it" }, r.items?.let { "$it items" },
+        // A Bot's Routine runs with its Workspace's access; the host ignores its worker (ADR 0087).
+        whenText, r.timezone, r.bot?.let { "Bot $it" }, r.worker?.takeIf { r.bot == null }?.let { "worker $it" }, r.items?.let { "$it items" },
         "read only".takeIf { r.readOnly },
     ).joinToString(" · ")
 }
@@ -84,8 +85,12 @@ private fun RoutineDialog(
         if (d.timing != RoutineTiming.REVIEW) {
             Field(d.timezone, { d = d.copy(timezone = it) }, "Time zone", "routine.timezone", placeholder = "The host's")
         }
-        NamePicker("Worker", "routine.worker", workers, d.worker) { d = d.copy(worker = it) }
         NamePicker("Bot", "routine.bot", bots, d.bot) { d = d.copy(bot = it) }
+        if (d.bot == null) {
+            NamePicker("Worker", "routine.worker", workers, d.worker) { d = d.copy(worker = it) }
+        } else {
+            Text("Runs with $workspace's access.", Modifier.testTag("routine.access"), style = MaterialTheme.typography.bodySmall)
+        }
         Field(d.instructions, { d = d.copy(instructions = it) }, "Instruction file", "routine.file", mono = true,
             placeholder = "routines/${d.name.trim().ifEmpty { "name" }}.md", help = "In .muxa/.")
         if (!d.isNew && d.originalText == null) {

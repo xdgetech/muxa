@@ -56,6 +56,8 @@ data class SettingsWorkspace(
     val loop: WorkspaceLoop? = null,
     @SerialName("routines_enabled") val routinesEnabled: Boolean = false,
     @SerialName("direct_writes") val directWrites: Boolean = false,
+    /** The user's claude.ai connectors load beside [mcp] (ADR 0087). */
+    @SerialName("claude_connectors") val claudeConnectors: Boolean = false,
     val connections: List<SettingsConnection> = emptyList(),
     val mcp: List<McpSpec> = emptyList(),
     /** Listed also while [routinesEnabled] is false. */

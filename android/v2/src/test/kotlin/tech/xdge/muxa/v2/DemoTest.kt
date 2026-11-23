@@ -399,10 +399,12 @@ class DemoTest {
             assertEquals("pr-watch", decide.bot)
             assertEquals("https://github.com/example/app/pull/57", decide.links.single().url)
             assertEquals("example/app#57", decide.proposal?.target)
-            assertEquals(listOf(BotCount("app", "pr-watch", 4, 1)), inbox.bots)
+            // The host's day and its count of items against daily_items come with the counts (ADR 0086).
+            val today = java.time.LocalDate.now().toString()
+            assertEquals(listOf(BotCount("app", "pr-watch", 4, 1, today, 2)), inbox.bots)
             assertEquals("pr-watch", c.routines().first.first { it.name == "scan" }.bot)
-            assertEquals(listOf(BotCount("app", "pr-watch", 5, 1)), c.inbox(V2Request.InboxDone("d10")).bots)
-            assertEquals(listOf(BotCount("app", "pr-watch", 5, 2)), c.inbox(V2Request.InboxDelete("d11")).bots)
+            assertEquals(listOf(BotCount("app", "pr-watch", 5, 1, today, 2)), c.inbox(V2Request.InboxDone("d10")).bots)
+            assertEquals(listOf(BotCount("app", "pr-watch", 5, 2, today, 2)), c.inbox(V2Request.InboxDelete("d11")).bots)
             c.close()
         }
     }
@@ -577,6 +579,19 @@ class DemoTest {
             assertEquals(listOf("triage") to 5, bot.members to bot.handoffsPerDay)
             val nested = SettingsOp.BotUpdate("app", BotSpec("triage", members = listOf("pr-watch")))
             assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(nested)) }.code)
+            c.close()
+        }
+    }
+
+    @Test
+    fun claudeConnectorsTurnOnForAWorkspace() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            assertEquals(false, c.settings().workspaces.first { it.name == "app" }.claudeConnectors)
+            val s = c.settingsUpdate("1", listOf(SettingsOp.WorkspaceUpdate("app", claudeConnectors = true)))
+            assertEquals(true, s.workspaces.first { it.name == "app" }.claudeConnectors)
+            val kept = c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", parkAfter = Patch.Set("2d"))))
+            assertEquals(true, kept.workspaces.first { it.name == "app" }.claudeConnectors)
             c.close()
         }
     }

@@ -118,9 +118,10 @@ class SettingsDraftsTest {
             "app", "/w",
             routines = listOf(SettingsRoutine("scan", instructions = "s.md", bot = "pr-watch"), SettingsRoutine("other", instructions = "o.md")),
         )
-        assertEquals("1 Routine · 3 a day · worker reviewer", botSummary(bot, ws, emptyList()))
+        // ADR 0087: a Bot's worker is ignored by the host, so the summary leaves it out.
+        assertEquals("1 Routine · 3 a day", botSummary(bot, ws, emptyList()))
         val counts = listOf(BotCount("Personal", "pr-watch", 9, 9), BotCount("app", "pr-watch", 4, 1))
-        assertEquals("1 Routine · 3 a day · worker reviewer · 4 done · 1 deleted", botSummary(bot, ws, counts))
+        assertEquals("1 Routine · 3 a day · 4 done · 1 deleted", botSummary(bot, ws, counts))
     }
 
     @Test

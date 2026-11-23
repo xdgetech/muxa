@@ -1,5 +1,7 @@
 package tech.xdge.muxa.app.next
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.MaterialTheme
@@ -9,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.v2.McpSpec
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsWorkspace
@@ -33,11 +36,32 @@ fun McpSettings(editor: SettingsEditor, ws: SettingsWorkspace, usage: Workspace?
             CardDivider()
         }
         if (ws.mcp.isNotEmpty()) {
-            SettingsNote("Strict: agents in this Workspace get only these MCP servers.", Modifier.testTag("settings.strict.${ws.name}"))
+            val strict = if (ws.claudeConnectors) {
+                "Agents in this Workspace get these MCP servers and your claude.ai connectors."
+            } else {
+                "Strict: agents in this Workspace get only these MCP servers."
+            }
+            SettingsNote(strict, Modifier.testTag("settings.strict.${ws.name}"))
         }
         ActionRow("+ Add MCP server", "settings.mcp.add", !editor.readOnly) { editing = McpDraft(isNew = true) }
     }
+    ClaudeConnectors(editor, ws)
     editing?.let { McpDialog(editor, ws, it) { editing = null } }
+}
+
+/** ADR 0087: the user's claude.ai connectors may load beside the Workspace's MCP servers. */
+@Composable
+private fun ClaudeConnectors(editor: SettingsEditor, ws: SettingsWorkspace) {
+    val save = rememberInlineSave(editor)
+    SettingsCard {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+            SwitchField("Allow claude.ai connectors", "settings.claudeconnectors", ws.claudeConnectors, !editor.readOnly) {
+                save.run(listOf(SettingsOp.WorkspaceUpdate(ws.name, claudeConnectors = it)))
+            }
+        }
+    }
+    SettingsNote("Agents here also get your claude.ai connectors, such as Calendar or Sheets, beside the MCP servers above.")
+    save.Error()
 }
 
 private fun detail(m: McpSpec): String = m.url ?: (listOfNotNull(m.command) + m.args.orEmpty()).joinToString(" ")

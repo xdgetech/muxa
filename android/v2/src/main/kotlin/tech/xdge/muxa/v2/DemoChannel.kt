@@ -788,7 +788,8 @@ private fun standardContent(): DemoContent {
         ),
         losesWork = mapOf("d8" to "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"),
         settings = DEMO_SETTINGS,
-        botCounts = listOf(BotCount("app", "pr-watch", done = 4, deleted = 1)),
+        // d10 and d11 counted against pr-watch's daily items today, as the host counts them (ADR 0086).
+        botCounts = listOf(BotCount("app", "pr-watch", done = 4, deleted = 1, day = LocalDate.now().toString(), added = 2)),
     )
 }
 

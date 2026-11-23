@@ -70,6 +70,7 @@ internal class DemoSettings(initial: Settings) {
             hiddenRepos = op.hiddenRepos ?: w.hiddenRepos,
             parkAfter = patched(w.parkAfter, op.parkAfter),
             agent = w.agent.copy(command = patched(w.agent.command, op.agentCommand)),
+            claudeConnectors = op.claudeConnectors ?: w.claudeConnectors,
         )
         is SettingsOp.EnvSet -> w.copy(
             agent = w.agent.copy(env = (w.agent.env.filter { it.key != op.key } + EnvKey(op.key, true)).sortedBy { it.key }),

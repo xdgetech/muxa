@@ -51,8 +51,7 @@ fun BotSettings(editor: SettingsEditor, ws: SettingsWorkspace, counts: List<BotC
         ActionRow("Set up a Bot by talking", "settings.bot.talk", true) { settingUp = true }
     }
     SettingsNote("A Bot owns Routines. Each run starts from its Soul and Memory, and adds at most its daily items to the Inbox.")
-    val workers = editor.settings?.workers.orEmpty().map { it.name }
-    editing?.let { BotDialog(editor, ws, workers, talk, it) { editing = null } }
+    editing?.let { BotDialog(editor, ws, talk, it) { editing = null } }
     if (settingUp) TalkSetupDialog(talk) { settingUp = false }
 }
 
@@ -63,7 +62,6 @@ fun botSummary(b: SettingsBot, ws: SettingsWorkspace, counts: List<BotCount>): S
     return listOfNotNull(
         if (routines == 1) "1 Routine" else "$routines Routines",
         "${b.dailyItems ?: DEFAULT_DAILY_ITEMS} a day",
-        b.worker?.let { "worker $it" },
         b.members.takeIf { it.isNotEmpty() }?.let { "Leads " + it.joinToString(", ") },
         count?.let { "${it.done} done · ${it.deleted} deleted" },
     ).joinToString(" · ")
@@ -73,7 +71,6 @@ fun botSummary(b: SettingsBot, ws: SettingsWorkspace, counts: List<BotCount>): S
 private fun BotDialog(
     editor: SettingsEditor,
     ws: SettingsWorkspace,
-    workers: List<String>,
     talk: BotTalk,
     initial: BotDraft,
     close: () -> Unit,
@@ -89,10 +86,11 @@ private fun BotDialog(
         Field(d.name, { d = d.copy(name = it) }, "Name", "bot.name", enabled = d.isNew, placeholder = "pr-watch",
             help = if (d.isNew) "Lowercase letters, digits, - and _." else null)
         Field(d.description, { d = d.copy(description = it) }, "Description", "bot.description", placeholder = "Watches open PRs")
-        NamePicker("Worker", "bot.worker", workers, d.worker) { d = d.copy(worker = it) }
         Field(d.dailyItems, { d = d.copy(dailyItems = it) }, "Daily items", "bot.daily", number = true,
             placeholder = "$DEFAULT_DAILY_ITEMS", help = "At most this many Inbox items a day, from 1 to 50.")
         SwitchField("Enabled", "bot.enabled", d.enabled) { d = d.copy(enabled = it) }
+        // ADR 0087: no worker; a Bot has its Workspace's connections and MCP servers.
+        Text("Runs with $workspace's access.", Modifier.testTag("bot.access"), style = MaterialTheme.typography.bodySmall)
         BotTeam(d, ws.bots) { d = it }
         if (!d.isNew && d.originalSoul == null) {
             Text("soul.md could not be read. Typing here replaces it.", style = MaterialTheme.typography.bodySmall)

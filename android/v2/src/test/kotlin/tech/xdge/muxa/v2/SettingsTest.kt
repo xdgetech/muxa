@@ -35,6 +35,8 @@ class SettingsTest {
                 """{"op":"bot-update","workspace":"w","bot":{"name":"lead","enabled":true,"members":["a","b"],"handoffs_per_day":5}}""",
             SettingsOp.RoutineAdd("w", RoutineSpec("r", instructions = "routines/r.md", on = "review")) to
                 """{"op":"routine-add","workspace":"w","routine":{"name":"r","instructions":"routines/r.md","enabled":true,"direct_writes":false,"read_only":false,"on":"review"}}""",
+            SettingsOp.WorkspaceUpdate("w", claudeConnectors = true) to
+                """{"op":"workspace-update","workspace":"w","claude_connectors":true}""",
             SettingsOp.AssistantUpdate(true) to """{"op":"assistant-update","enabled":true}""",
             SettingsOp.AssistantUpdate(false, "reviewer", "Be brief.") to
                 """{"op":"assistant-update","enabled":false,"worker":"reviewer","soul_text":"Be brief."}""",
@@ -106,6 +108,13 @@ class SettingsTest {
         assertEquals(null, w.routines.single().instructionsText)
         assertEquals(emptyList<WorkerSpec>(), s.workers)
         assertEquals(null, s.assistant)
+        assertEquals(false, w.claudeConnectors)
+        val on = json.decodeFromString<Settings>("""{"revision":"r","workspaces":[{"name":"w","root":"~/w","claude_connectors":true}]}""")
+        assertEquals(true, on.workspaces.single().claudeConnectors)
+        val counts = json.decodeFromString<Inbox>(
+            """{"revision":1,"items":[],"done":[],"bots":[{"workspace":"w","bot":"b","done":1,"deleted":0,"day":"2026-11-23","added":2},{"workspace":"w","bot":"old","done":0,"deleted":0}]}""",
+        ).bots
+        assertEquals(listOf(BotCount("w", "b", 1, 0, "2026-11-23", 2), BotCount("w", "old", 0, 0)), counts)
         val withAssistant = json.decodeFromString<Settings>(
             """{"revision":"r","assistant":{"enabled":true,"soul_text":"Be brief.","memory_text":null}}""",
         )
