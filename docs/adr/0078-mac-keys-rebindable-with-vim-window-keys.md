@@ -14,6 +14,7 @@ ADR 0070 gave the Mac VS Code's keys. Split pane was `⌘\`. In use that key did
    - Split pane `⌘D`, next and previous pane `⌘]` and `⌘[`, close pane `⌥⌘W`, Close Other Panes with no key. `⌘1`…`⌘9` stay.
    - The Pane menu's keys work only in Focus. Home keeps `⌘D` and `⌘[`/`⌘]` for its own use (`docs/next.md`).
    - `⌘W` still closes the window, as in every Mac app.
+   - No function keys by default: on a laptop they need Fn. Next Task that needs you is `⌘J`, the previous one `⌘⇧J` (ADR 0066 had `F8`).
 2. **Every menu key can be changed on each Mac.** Settings › This Mac › Keyboard records a new key per shortcut and shows when two use the same key.
    - The keys live in UserDefaults on that Mac. They do not go to the host.
    - A recorded key needs `⌘`, `⌃` or `⌥`. An F-key alone is fine. A plain letter would fire while the user types.

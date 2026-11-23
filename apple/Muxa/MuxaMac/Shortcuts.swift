@@ -47,9 +47,10 @@ struct Shortcut: Identifiable {
     static let home = Shortcut("home", .go, "Home", KeyChord("h", [.command, .shift]))
     static let focus = Shortcut("focus", .go, "Focus", KeyChord("f", [.command, .shift]))
     static let goToTask = Shortcut("goto", .go, "Go to Task", KeyChord("p", .command))
-    static let nextNeedsYou = Shortcut("next-needs-you", .go, "Next Task that needs you", KeyChord(.f8))
+    // No function keys by default: on a laptop they need Fn (ADR 0078).
+    static let nextNeedsYou = Shortcut("next-needs-you", .go, "Next Task that needs you", KeyChord("j", .command))
     static let nextTask = Shortcut("next-task", .go, "Next Task", KeyChord(.tab, .control))
-    static let previousNeedsYou = Shortcut("previous-needs-you", .go, "Previous Task that needs you", KeyChord(.f8, .shift))
+    static let previousNeedsYou = Shortcut("previous-needs-you", .go, "Previous Task that needs you", KeyChord("j", [.command, .shift]))
     static let previousTask = Shortcut("previous-task", .go, "Previous Task", KeyChord(.tab, [.control, .shift]))
     static let sidebar = Shortcut("sidebar", .go, "Toggle sidebar", KeyChord("b", .command))
     static let routines = Shortcut("routines", .go, "Routines", KeyChord("o", [.command, .shift]))
