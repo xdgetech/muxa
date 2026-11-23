@@ -147,7 +147,10 @@ impl BridgeHost {
             self.agent_command(ws)
         };
         let claude = crate::launch::is_claude_code(&LaunchCommand::Shell(command.clone()));
-        let (managed, known) = (mcp::managed(ws), ws.connections.clone());
+        // A talk is its Bot: nothing beyond the Workspace's servers loads
+        // unless claude.ai connectors are allowed (ADR 0087).
+        let managed = mcp::managed(ws) || (talk && !ws.claude_connectors);
+        let known = ws.connections.clone();
         let strict = !ws.claude_connectors;
         let (made, flags) = blocking(move || {
             let mut flags = Vec::new();

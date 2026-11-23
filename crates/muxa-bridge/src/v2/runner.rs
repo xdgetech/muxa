@@ -455,13 +455,13 @@ fn made(
     let mut rules = bot_run::deny_rules(ws, &routine, &dir);
     rules.extend(extra.read_dirs.iter().map(|d| bot_run::deny(d)));
     // A Bot's run is Claude Code with its Workspace's Bot rules (ADR 0087).
-    let (command, rules, allow) = if routine.bot.is_some() {
+    let agent = if routine.bot.is_some() {
         let (rules, allow) = bot_run::bot_rules(ws, rules);
-        (bot_run::as_bot(resolved.command), rules, allow)
+        let command = bot_run::as_bot(resolved.command);
+        bot_agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?
     } else {
-        (resolved.command, rules, Vec::new())
+        agent_in(ws, resolved.command, &dir, &rules, &[], &extra.read_dirs)?
     };
-    let agent = agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?;
     crate::connections::merge(&mut resolved.environment.env, agent.env);
     let (connections, mcp) = crate::usage::given(ws);
     Ok(Ready {
@@ -494,8 +494,34 @@ pub(crate) fn agent_in(
     allow: &[String],
     read_dirs: &[PathBuf],
 ) -> Result<Agent, String> {
+    agent_with(ws, command, dir, rules, allow, read_dirs, false)
+}
+
+/// As [`agent_in`] for a Bot (ADR 0087): its MCP config is the Workspace's
+/// even when it lists no server, so nothing else loads unless the
+/// Workspace lets claude.ai connectors in.
+pub(crate) fn bot_agent_in(
+    ws: &crate::records::Workspace,
+    command: LaunchCommand,
+    dir: &Path,
+    rules: &[String],
+    allow: &[String],
+    read_dirs: &[PathBuf],
+) -> Result<Agent, String> {
+    agent_with(ws, command, dir, rules, allow, read_dirs, true)
+}
+
+fn agent_with(
+    ws: &crate::records::Workspace,
+    command: LaunchCommand,
+    dir: &Path,
+    rules: &[String],
+    allow: &[String],
+    read_dirs: &[PathBuf],
+    bot: bool,
+) -> Result<Agent, String> {
     let servers = mcp::chosen(ws);
-    let command = if !mcp::managed(ws) {
+    let command = if !mcp::managed(ws) && !(bot && !ws.claude_connectors) {
         command
     } else if crate::launch::is_claude_code(&command) {
         let config = mcp::write(dir, &servers, &ws.connections)?;

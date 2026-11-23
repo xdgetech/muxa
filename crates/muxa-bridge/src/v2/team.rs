@@ -199,7 +199,7 @@ fn member_launch(
     super::git::write_file(&dir, "TASK.md", &member_text(&brief, lead, h))?;
     let (rules, allow) = bot_run::bot_rules(ws, vec![bot_run::deny(&member.dir)]);
     let command = bot_run::as_bot(resolved.command);
-    let agent = runner::agent_in(ws, command, &dir, &rules, &allow, &[])?;
+    let agent = runner::bot_agent_in(ws, command, &dir, &rules, &allow, &[])?;
     crate::connections::merge(&mut resolved.environment.env, agent.env);
     Ok(Launch {
         argv: agent.argv,
