@@ -455,9 +455,13 @@ fn made(
     let mut rules = bot_run::deny_rules(ws, &routine, &dir);
     rules.extend(extra.read_dirs.iter().map(|d| bot_run::deny(d)));
     // A Bot's run is Claude Code with its Workspace's Bot rules (ADR 0087).
-    let agent = if routine.bot.is_some() {
-        let (rules, allow) = bot_run::bot_rules(ws, rules);
-        let command = bot_run::as_bot(resolved.command);
+    let agent = if let Some(name) = routine.bot.as_deref() {
+        let commands = workspaces
+            .bot(&routine.workspace, name)
+            .map(|b| b.commands.clone())
+            .unwrap_or_default();
+        let (rules, allow) = bot_run::bot_rules(ws, &commands, rules);
+        let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
         bot_agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?
     } else {
         agent_in(ws, resolved.command, &dir, &rules, &[], &extra.read_dirs)?

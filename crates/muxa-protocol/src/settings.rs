@@ -234,6 +234,10 @@ pub struct BotSpec {
     /// A lead's handoffs a day, all members together. None: 10.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoffs_per_day: Option<u32>,
+    /// Shell commands only this Bot may run, as Claude Code `Bash(...)` patterns
+    /// without the wrapper, e.g. `/path/collect.sh delivery:*` (ADR 0088).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

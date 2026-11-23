@@ -209,11 +209,31 @@ impl BridgeHost {
             .ok_or_else(|| TaskError::Invalid(format!("no Workspace named {:?}", ws.name)))?;
         Ok(super::talk_check::brief(found, bot))
     }
+
+    /// The Bot's own `commands` (ADR 0088); none for a Bot not added yet.
+    async fn bot_commands(&self, ws: &Workspace, bot: &str) -> Result<Vec<String>, TaskError> {
+        let store = self.settings_store()?;
+        let view = settings_call(move || store.view()).await?;
+        Ok(view
+            .workspaces
+            .iter()
+            .find(|w| w.name == ws.name)
+            .and_then(|w| w.bots.iter().find(|b| b.spec.name == bot))
+            .map(|b| b.spec.commands.clone())
+            .unwrap_or_default())
+    }
 }
 
 /// Claude Code may not edit the Workspace's `.muxa/` in a talk: the Bot
 /// proposes changes instead (ADR 0083).
-async fn talk_line(ws: &Workspace, dir: &Path, line: String) -> Result<String, TaskError> {
+/// The Bot's `commands` are allowed too; the user is in the talk, so anything
+/// else still asks (ADR 0088).
+async fn talk_line(
+    ws: &Workspace,
+    dir: &Path,
+    line: String,
+    commands: Vec<String>,
+) -> Result<String, TaskError> {
     let launch = LaunchCommand::Shell(line.clone());
     if !crate::launch::is_claude_code(&launch) {
         return Ok(line);
@@ -222,7 +242,8 @@ async fn talk_line(ws: &Workspace, dir: &Path, line: String) -> Result<String, T
     blocking(move || {
         let muxa = crate::records::routines::routines_dir(&ws)?
             .unwrap_or_else(|| ws.root.join(crate::records::routines::WORKSPACE_DIR));
-        let (rules, allow) = super::bot_run::bot_rules(&ws, vec![super::bot_run::deny(&muxa)]);
+        let (rules, allow) =
+            super::bot_run::bot_rules(&ws, &commands, vec![super::bot_run::deny(&muxa)]);
         match super::bot_run::with_permissions(launch, &dir, &rules, &allow, &[])? {
             LaunchCommand::Shell(line) => Ok(line),
             LaunchCommand::Native { .. } => Ok(line),
@@ -419,7 +440,11 @@ impl Host for BridgeHost {
             .agent_line(&ws, made, Some(servers), talk.is_some())
             .await?;
         if talk.is_some() {
-            line = talk_line(&ws, made.working(), line).await?;
+            let commands = match &spec.bot {
+                Some(bot) => self.bot_commands(&ws, bot).await?,
+                None => Vec::new(),
+            };
+            line = talk_line(&ws, made.working(), line, commands).await?;
         }
         let adopts = spec.existing().is_some() || spec.checkout().is_some();
         if adopts && self.resumes(&ws, &line, made.working()) {
@@ -453,7 +478,11 @@ impl Host for BridgeHost {
             .agent_line(&ws, made, Some(mcp::chosen(&ws)), is_talk)
             .await?;
         if is_talk {
-            line = talk_line(&ws, made.working(), line).await?;
+            let commands = match ended.labels.get(BOT) {
+                Some(bot) => self.bot_commands(&ws, bot).await?,
+                None => Vec::new(),
+            };
+            line = talk_line(&ws, made.working(), line, commands).await?;
         }
         let title = ended
             .name

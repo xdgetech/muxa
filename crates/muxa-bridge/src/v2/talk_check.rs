@@ -122,7 +122,11 @@ pub fn describe(op: &SettingsOp) -> String {
             } else {
                 ""
             };
-            format!("Add Bot {}{soul}", bot.name)
+            let mut line = format!("Add Bot {}{soul}", bot.name);
+            if !bot.commands.is_empty() {
+                line.push_str(&format!(", may run: {}", bot.commands.join("; ")));
+            }
+            line
         }
         SettingsOp::BotUpdate { bot, soul_text, .. } => {
             let mut parts = vec![format!("Change Bot {}", bot.name)];
@@ -131,6 +135,10 @@ pub fn describe(op: &SettingsOp) -> String {
             }
             if !bot.members.is_empty() {
                 parts.push(format!("team: {}", bot.members.join(", ")));
+            }
+            // The whole list, so the user sees every command before applying it.
+            if !bot.commands.is_empty() {
+                parts.push(format!("may run: {}", bot.commands.join("; ")));
             }
             parts.join(", ")
         }
@@ -242,7 +250,7 @@ You never edit files in the Workspace's `.muxa/` folder: they are denied to you.
 ```
 
 Both keys are optional. The user applies a proposal from their Inbox; nothing changes before. Allowed ops, all with "workspace": {ws:?}:
-- {{"op":"bot-add"|"bot-update","workspace":…,"bot":{{"name":{bot:?},"description":…,"daily_items":3,"enabled":true,"members":[],"handoffs_per_day":10}},"soul_text":"…"}}
+- {{"op":"bot-add"|"bot-update","workspace":…,"bot":{{"name":{bot:?},"description":…,"daily_items":3,"enabled":true,"members":[],"handoffs_per_day":10,"commands":[]}},"soul_text":"…"}}
 - {{"op":"routine-add"|"routine-update","workspace":…,"routine":{{"name":…,"bot":{bot:?},"instructions":"routines/<name>.md","enabled":false,"schedule":"*/30 9-18 * * 1-5","timezone":"Europe/Berlin","read_only":true}},"instructions_text":"…"}}
   (a schedule is five cron fields, runs at least 15 minutes apart; or "at":"09:00" daily; or "on":"review" to run when a Task asks for review)
 - {{"op":"routine-remove","workspace":…,"name":…}}
@@ -270,6 +278,7 @@ fn reach(ws: &SettingsWorkspace, bot: Option<&SettingsBot>) -> Reach {
         claude_connectors: ws.claude_connectors,
         allow: ws.bot_rules.allow.clone(),
         deny: ws.bot_rules.deny.clone(),
+        commands: bot.map(|b| b.spec.commands.clone()).unwrap_or_default(),
     }
 }
 

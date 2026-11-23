@@ -662,6 +662,11 @@ fn write_bot(t: &mut Table, b: &BotSpec) {
             t.remove("handoffs_per_day");
         }
     }
+    if b.commands.is_empty() {
+        t.remove("commands");
+    } else {
+        set_list(t, "commands", &b.commands);
+    }
 }
 
 fn write_worker(t: &mut Table, w: &WorkerSpec) {

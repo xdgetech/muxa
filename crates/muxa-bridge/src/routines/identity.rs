@@ -15,6 +15,8 @@ pub struct Reach {
     /// The Workspace's Bot permission rules, which Claude Code enforces.
     pub allow: Vec<String>,
     pub deny: Vec<String>,
+    /// Shell commands only this Bot may run (ADR 0088).
+    pub commands: Vec<String>,
 }
 
 /// Where the Bot is started.
@@ -69,6 +71,21 @@ pub fn section(name: &str, reach: &Reach, place: Place<'_>) -> String {
             list(&reach.deny)
         ));
     }
+    out.push_str(&format!(
+        "- Shell commands you may run: {}. Read-only ones such as `ls` or `date` also run.\n",
+        list(&reach.commands)
+    ));
+    out.push_str(match place {
+        Place::Talk => {
+            "- Any other command asks the user here. To use one in your runs, propose bot-update with it in \
+             `commands` (the inside of a `Bash(...)` rule, such as `/path/collect.sh delivery:*`); the user \
+             applies it.\n"
+        }
+        Place::Run | Place::Member { .. } => {
+            "- Any other command is refused, not asked: nobody answers prompts in a run. When you need one, \
+             say which and why in a briefing; the user grants it by talking with you.\n"
+        }
+    });
     out.push_str(
         "- Try a source before you say you cannot reach it. For one you cannot reach, ask the user to add \
          a connection or an MCP server in Settings.\n",
@@ -122,6 +139,7 @@ mod tests {
             claude_connectors: true,
             allow: vec!["WebSearch".into()],
             deny: vec!["Bash".into()],
+            commands: vec!["/x/collect.sh delivery:*".into()],
         }
     }
 
@@ -136,6 +154,7 @@ mod tests {
                 "MCP servers: none",
                 "claude.ai connectors (such as Calendar or Sheets) load too",
                 "Allowed: WebSearch. Denied: Bash.",
+                "Shell commands you may run: /x/collect.sh delivery:*.",
                 "Try a source before you say you cannot reach it",
                 "never edit the Workspace's `.muxa/`",
             ] {
@@ -168,6 +187,9 @@ mod tests {
         assert!(talk.contains("you may propose") && talk.contains("at most 20 a day"));
         let run = section("scout", &reach(), Place::Run);
         assert!(run.contains("cannot change your settings in a run"));
+        assert!(
+            run.contains("is refused, not asked") && talk.contains("propose bot-update with it")
+        );
         let member = section("scout", &reach(), Place::Member { lead: "lead" });
         assert!(member.contains("never write to the Inbox") && !member.contains("a day;"));
         assert!(talk.contains("Good Inbox items") && talk.contains("draft answer"));

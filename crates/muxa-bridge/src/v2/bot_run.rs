@@ -30,6 +30,7 @@ pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, Strin
             claude_connectors: ws.claude_connectors,
             allow: ws.bot_rules.allow.clone(),
             deny: ws.bot_rules.deny.clone(),
+            commands: bot.commands.clone(),
         },
         name: bot.name.clone(),
         soul: bot.read_soul().map_err(|e| e.to_string())?,
@@ -54,11 +55,33 @@ pub fn as_bot(command: LaunchCommand) -> LaunchCommand {
     }
 }
 
-/// Pure. muxa's deny `rules` with the Workspace's Bot rules (ADR 0087): its
-/// deny rules join muxa's, and its allow rules come back for the settings.
-pub fn bot_rules(ws: &Workspace, mut rules: Vec<String>) -> (Vec<String>, Vec<String>) {
+/// Pure. muxa's deny `rules` with the Workspace's Bot rules (ADR 0087) and
+/// the Bot's own `commands` (ADR 0088): the Workspace's deny rules join
+/// muxa's; its allow rules and one `Bash(...)` per command come back.
+pub fn bot_rules(
+    ws: &Workspace,
+    commands: &[String],
+    mut rules: Vec<String>,
+) -> (Vec<String>, Vec<String>) {
     rules.extend(ws.bot_rules.deny.iter().cloned());
-    (rules, ws.bot_rules.allow.clone())
+    let mut allow = ws.bot_rules.allow.clone();
+    allow.extend(commands.iter().map(|c| format!("Bash({c})")));
+    (rules, allow)
+}
+
+/// Pure. A Bot's run or member answers no prompt: Claude Code refuses what
+/// its rules do not allow instead of waiting (ADR 0088,
+/// `docs/findings/claude-code-permissions.md`).
+pub fn dont_ask(command: LaunchCommand) -> LaunchCommand {
+    match command {
+        LaunchCommand::Shell(line) => {
+            LaunchCommand::Shell(format!("{line} --permission-mode dontAsk"))
+        }
+        LaunchCommand::Native { program, mut args } => {
+            args.extend(["--permission-mode".to_owned(), "dontAsk".to_owned()]);
+            LaunchCommand::Native { program, args }
+        }
+    }
 }
 
 /// Pure. Paths start with `//` to be absolute; `Edit(…)` covers every

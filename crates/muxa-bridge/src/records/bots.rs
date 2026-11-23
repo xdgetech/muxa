@@ -43,6 +43,8 @@ pub struct Bot {
     /// Its team when it leads one (ADR 0085).
     pub members: Vec<String>,
     pub handoffs_per_day: u32,
+    /// Shell command patterns only this Bot may run (ADR 0088).
+    pub commands: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +58,8 @@ pub(super) struct RawBot {
     #[serde(default)]
     members: Vec<String>,
     handoffs_per_day: Option<u32>,
+    #[serde(default)]
+    commands: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -107,6 +111,7 @@ impl RawBot {
         if !(1..=MAX_HANDOFFS).contains(&handoffs_per_day) {
             return Err(at(&format!("handoffs_per_day must be 1 to {MAX_HANDOFFS}")));
         }
+        check_commands(&self.commands).map_err(|r| at(&r))?;
         Ok(Bot {
             workspace: workspace.name.clone(),
             name: self.name,
@@ -117,6 +122,7 @@ impl RawBot {
             dir: dir.to_owned(),
             members: self.members,
             handoffs_per_day,
+            commands: self.commands,
         })
     }
 }
@@ -340,6 +346,7 @@ mod tests {
             dir: dir.canonicalize().unwrap(),
             members: Vec::new(),
             handoffs_per_day: DEFAULT_HANDOFFS,
+            commands: Vec::new(),
         }
     }
 
@@ -389,6 +396,27 @@ mod tests {
     }
 }
 
+/// Commands per Bot, and bytes per command.
+const MAX_COMMANDS: usize = 50;
+const MAX_COMMAND: usize = 500;
+
+/// A Bot's `commands` (ADR 0088): each is the inside of a Claude Code
+/// `Bash(...)` rule, one line, with no parenthesis that could end the rule.
+pub fn check_commands(commands: &[String]) -> Result<(), String> {
+    if commands.len() > MAX_COMMANDS {
+        return Err(format!("commands has at most {MAX_COMMANDS} entries"));
+    }
+    match commands.iter().find(|c| {
+        c.trim().is_empty()
+            || c.len() > MAX_COMMAND
+            || c.chars()
+                .any(|ch| ch.is_control() || ch == '(' || ch == ')')
+    }) {
+        Some(bad) => Err(format!("commands: {bad:?} is not a command")),
+        None => Ok(()),
+    }
+}
+
 /// `[workspace.bots]`: Claude Code permission rules every Bot of the
 /// Workspace gets, and nothing else does (ADR 0087).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -426,5 +454,20 @@ impl RawBotRules {
             allow: self.allow,
             deny: self.deny,
         })
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::check_commands;
+
+    #[test]
+    fn a_command_is_one_line_with_no_parenthesis() {
+        assert!(
+            check_commands(&["/x/collect.sh delivery:*".into(), "gh pr diff:*".into()]).is_ok()
+        );
+        for bad in ["", "rm -rf /) Bash(*", "a\nb"] {
+            assert!(check_commands(&[bad.to_owned()]).is_err(), "{bad:?}");
+        }
     }
 }

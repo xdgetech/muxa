@@ -17,6 +17,7 @@ fn ws() -> SettingsWorkspace {
             enabled: true,
             members: Vec::new(),
             handoffs_per_day: None,
+            commands: Vec::new(),
         },
         soul_text: Some("I watch PRs.".into()),
         memory_text: Some("PR 3 seen.".into()),
@@ -139,4 +140,15 @@ fn an_output_too_big_or_without_a_summary_is_refused() {
     assert!(parse(br#"{"other": 1}"#).is_err());
     let big = format!(r#"{{"memory": "{}"}}"#, "x".repeat(MAX_MEMORY + 1));
     assert!(parse(big.as_bytes()).is_err());
+}
+
+#[test]
+fn a_proposed_command_is_named_in_full() {
+    let op: SettingsOp = serde_json::from_value(json!({"op": "bot-update", "workspace": "w",
+        "bot": {"name": "b", "enabled": true, "commands": ["/x/collect.sh delivery:*", "gh pr diff:*"]}}))
+    .unwrap();
+    assert_eq!(
+        describe(&op),
+        "Change Bot b, may run: /x/collect.sh delivery:*; gh pr diff:*"
+    );
 }

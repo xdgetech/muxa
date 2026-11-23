@@ -486,13 +486,13 @@ async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     // The Workspace's agent is Codex, which runs no Routine; a Bot's run is Claude Code anyway.
     let h = Host::with_workspace(
         "bot-rules",
-        "bot = \"b\"\n[[bot]]\nname = \"b\"\nenabled = true\n",
+        "bot = \"b\"\n[[bot]]\nname = \"b\"\nenabled = true\ncommands = [\"/x/collect.sh delivery:*\"]\n",
         "[workspace.agent]\ncommand = \"codex\"\n[workspace.bots]\nallow = [\"WebSearch\"]\ndeny = [\"Bash\"]\n",
     );
     let backend = FakeBackend::new();
     let t = h.started(&backend).await;
     let line = &backend.launches()[0].argv[2];
-    assert!(line.starts_with("claude --mcp-config "), "{line}");
+    assert!(line.starts_with("claude --permission-mode dontAsk --mcp-config "), "{line}");
     assert!(
         line.contains("--strict-mcp-config"),
         "a Bot gets nothing beyond its Workspace's servers, even with none: {line}"
@@ -500,7 +500,15 @@ async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     let dir = PathBuf::from(&t.labels["muxa.dir"]);
     let settings = std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&settings).unwrap();
-    assert_eq!(v["permissions"]["allow"], json!(["WebSearch"]));
+    assert_eq!(
+        v["permissions"]["allow"],
+        json!(["WebSearch", "Bash(/x/collect.sh delivery:*)"]),
+        "the Workspace's rules and the Bot's own command"
+    );
+    assert!(
+        line.contains("--permission-mode dontAsk"),
+        "a run answers no prompt: {line}"
+    );
     let deny = v["permissions"]["deny"].as_array().unwrap();
     assert!(deny.contains(&json!("Bash")), "{deny:?}");
     assert!(deny.len() > 1, "muxa's own deny rule stays: {deny:?}");
