@@ -642,6 +642,10 @@ fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
     );
     let s = h.store.view().unwrap();
     assert_eq!(s.workspaces[0].bots[0].memory_versions, 1);
+    let history = &s.workspaces[0].bots[0].memory_history;
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].version, 1);
+    assert!(history[0].at > 1_700_000_000, "the saved time: {history:?}");
     let s = h
         .store
         .update(

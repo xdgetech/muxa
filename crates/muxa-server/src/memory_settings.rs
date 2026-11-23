@@ -264,6 +264,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 soul_text: Some(soul_text.unwrap_or_default()),
                 memory_text: Some(String::new()),
                 memory_versions: 0,
+                memory_history: Vec::new(),
             };
             put(&mut workspace(s, &w)?.bots, item, true, |b| &b.spec.name)
         }

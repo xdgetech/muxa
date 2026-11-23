@@ -6,8 +6,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
-    BotSpec, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SettingsAgent, SettingsAssistant,
-    SettingsBot, SettingsConnection, SettingsLoop, SettingsRoutine, SettingsWorkspace, WorkerSpec,
+    BotSpec, ConnectionSpec, EnvKey, McpSpec, MemoryVersion, RoutineSpec, SettingsAgent,
+    SettingsAssistant, SettingsBot, SettingsConnection, SettingsLoop, SettingsRoutine,
+    SettingsWorkspace, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
 use serde::Deserialize;
@@ -187,16 +188,27 @@ fn bots(raw: Vec<BotSpec>, dir: &Path, revision: &mut Revision) -> Vec<SettingsB
             let soul = format!("{folder}/{SOUL_FILE}");
             let path = dir.join(&soul);
             revision.add(&path, files::read(&path).ok().flatten().as_deref());
-            let memory_versions = (1..=KEEP_MEMORIES)
-                .take_while(|n| {
-                    dir.join(format!("{folder}/history/memory-{n}.md"))
-                        .is_file()
+            let memory_history: Vec<MemoryVersion> = (1..=KEEP_MEMORIES)
+                .map_while(|n| {
+                    let path = dir.join(format!("{folder}/history/memory-{n}.md"));
+                    let at = std::fs::metadata(&path)
+                        .ok()
+                        .filter(|m| m.is_file())?
+                        .modified()
+                        .ok()?;
+                    let at = at.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+                    Some(MemoryVersion {
+                        version: u32::try_from(n).ok()?,
+                        at: i64::try_from(at).ok()?,
+                    })
                 })
-                .count();
+                .collect();
+            let memory_versions = memory_history.len();
             SettingsBot {
                 soul_text: bot_text(dir, &soul, MAX_SOUL),
                 memory_text: bot_text(dir, &format!("{folder}/{MEMORY_FILE}"), MAX_MEMORY),
                 memory_versions: u32::try_from(memory_versions).unwrap_or(0),
+                memory_history,
                 spec,
             }
         })

@@ -222,6 +222,7 @@ async fn the_tick_starts_a_scheduled_run_once() {
     let t = backend.list().await.unwrap().into_iter().next().unwrap();
     assert!(t.labels[OCCURRENCE].ends_with("T00:00"), "{:?}", t.labels);
     assert_eq!(t.labels[ROUTINE], "Daily");
+    assert!(!t.labels.contains_key(BOT), "a Routine with no Bot");
     assert!(h.state_of("Daily").running.is_some());
 }
 
@@ -356,6 +357,10 @@ async fn a_lead_hands_off_and_runs_again_with_its_members_results() {
     let h = Host::with("team", TEAM);
     let backend = FakeBackend::new();
     let lead = h.started(&backend).await;
+    assert_eq!(
+        lead.labels["muxa.bot"], "lead",
+        "a Bot's run carries its Bot"
+    );
     let brief =
         std::fs::read_to_string(PathBuf::from(&lead.labels["muxa.dir"]).join(".muxa/TASK.md"))
             .unwrap();
@@ -372,6 +377,7 @@ async fn a_lead_hands_off_and_runs_again_with_its_members_results() {
     let member = &launches[1];
     assert_eq!(member.labels["muxa.kind"], "handoff");
     assert_eq!(member.labels["muxa.bot"], "scout");
+    assert_eq!(member.labels["muxa.lead"], "lead");
     let member_dir = member.cwd.clone().unwrap();
     assert!(member_dir.starts_with(&lead.labels["muxa.dir"]));
     let task = std::fs::read_to_string(member_dir.join(".muxa/TASK.md")).unwrap();

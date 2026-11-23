@@ -32,6 +32,7 @@ pub const KIND: &str = "routine";
 const RUN: &str = "muxa.run";
 const ROUTINE: &str = "muxa.routine";
 const OCCURRENCE: &str = "muxa.occurrence";
+const BOT: &str = "muxa.bot";
 pub(crate) const START_PROMPT: &str = "Read .muxa/TASK.md and start.";
 /// A run that has not published by then fails and its agent ends.
 const RUN_LIMIT: u64 = 2 * 60 * 60;
@@ -519,7 +520,7 @@ pub(crate) fn argv(command: &LaunchCommand, prompt: &str) -> Vec<String> {
 }
 
 fn labels(r: &Ready) -> Labels {
-    Labels::from([
+    let mut labels = Labels::from([
         ("muxa.kind".to_owned(), KIND.to_owned()),
         ("muxa.role".to_owned(), "agent".to_owned()),
         ("muxa.dir".to_owned(), r.dir.to_string_lossy().into_owned()),
@@ -527,7 +528,12 @@ fn labels(r: &Ready) -> Labels {
         (ROUTINE.to_owned(), r.routine.name.clone()),
         (OCCURRENCE.to_owned(), r.occurrence.clone()),
         (RUN.to_owned(), r.run.clone()),
-    ])
+    ]);
+    // Clients find a Bot's runs by this label, as they find its talks (ADR 0086).
+    if let Some(bot) = &r.routine.bot {
+        labels.insert(BOT.to_owned(), bot.clone());
+    }
+    labels
 }
 
 /// Pure. The run a terminal's labels describe.

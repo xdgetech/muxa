@@ -22,6 +22,8 @@ use crate::routines::runs::{self, When};
 pub const KIND: &str = "handoff";
 const LEAD_DIR: &str = "muxa.lead-dir";
 const MEMBER: &str = "muxa.bot";
+/// The lead a member works for, so clients show it on the lead's Home (ADR 0086).
+const LEAD: &str = "muxa.lead";
 const RESULT: &str = ".muxa/result.json";
 /// The step's handoffs and results, in the lead run's folder.
 const PENDING: &str = ".muxa/team/pending.json";
@@ -213,6 +215,7 @@ fn member_launch(
             ("muxa.workspace".to_owned(), workspace.to_owned()),
             (MEMBER.to_owned(), member.name.clone()),
             (LEAD_DIR.to_owned(), lead_dir.to_string_lossy().into_owned()),
+            (LEAD.to_owned(), lead.to_owned()),
         ]),
         env: resolved.environment.env.into_iter().collect(),
     })

@@ -21,6 +21,7 @@ fn ws() -> SettingsWorkspace {
         soul_text: Some("I watch PRs.".into()),
         memory_text: Some("PR 3 seen.".into()),
         memory_versions: 0,
+        memory_history: Vec::new(),
     }];
     let routine = |name: &str, bot: Option<&str>| SettingsRoutine {
         spec: RoutineSpec {

@@ -137,7 +137,7 @@ If the Task's agent is still running in that working place, the reply has it wit
 - `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
 - `muxa.connections`: a JSON list of every connection the agent got, when it got any. Names only.
 - `muxa.mcp`: a JSON list of every MCP server the agent got, when it got any. Names only.
-- `muxa.bot`: the Bot a talk Task talks with (ADR 0083).
+- `muxa.bot`: the Bot a talk Task talks with (ADR 0083). A Routine run of a Bot's Routine and a team member (`muxa.kind` = `handoff`, ADR 0085) carry it too; a member also carries `muxa.lead`, the lead it works for (ADR 0086).
 
 Every agent gets all of its Workspace's connections as environment variables (ADR 0075). Their secrets come from the host's Keychain and never cross the wire back. A missing or locked secret fails the start before any place is made.
 
@@ -283,6 +283,22 @@ ADR 0084. When `[assistant] enabled = true` in `workspaces.toml`, each item adde
 
 `inbox-suggestion` with `accept: true` applies `kind`, `workspace`, `due` and `note` (after the item's own note); with `split`, the parts become new items in its place and the item becomes Done. `task_goal` and `bot` change nothing on the server: the client offers Start Task with the goal, and Ask `<bot>`, a talk (`start-task` with `bot`) whose goal is the item. Accept or dismiss clears `suggestion`, and the assistant keeps the decision to learn from.
 
+### A Bot's work
+
+ADR 0086. Clients show each Bot on a page of its own. Every client groups the data it already has by these rules, and the demo servers answer them the same way. For a Bot `b` of Workspace `w`:
+
+- **Items:** open Inbox items with `bot` = `b` and `workspace` = `w`. Later items count once they are back.
+- **Terminals:** live terminals with `muxa.workspace` = `w` and `muxa.bot` = `b` (its talks, runs, and its runs as a member), or `muxa.lead` = `b` (its members' runs).
+- **Needs you:** its items, then its terminals whose `status.state` is `blocked` or `waiting`.
+- **In progress:** its other terminals.
+- **Planned:** its enabled Routines with a `next_due`, soonest first. A Routine with `on: "review"` shows as "On review".
+- **Recent:** the items of `done` with `bot` = `b` and `workspace` = `w`. `done` keeps the last 100 of all items, so the list may be shorter than `BotCount.done`.
+- **Status:** "needs you" when Needs you is not empty; else "running" when it has terminals; else "paused" when the Bot is turned off; else "idle".
+
+Every client's own "needs you" list (the header pill, the next-waiting key) counts every live agent terminal (`muxa.role` = `agent`) whose state is `blocked` or `waiting`, of any `muxa.kind`. A Routine run or a team member waiting on a menu is the user's to answer, as a Task's is: the approval card offers only keys an adapter checked (ADR 0009).
+
+A settings proposal of a talk is an item with `terminal` = the talk's agent. A client shows it beside that talk and applies it with `inbox-apply`, the same item as in the Inbox.
+
 ### Task actions
 
 ADR 0072. The actions of a Review or Failed item, and the Workspaces a client offers when it starts a Task.
@@ -347,7 +363,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 
 `RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?,"bot"?,"read_only"?,"on"?}`, as `[[routine]]` with `[routine.output]` flattened. `bot` names a `[[bot]]` of the same file; `read_only` denies Claude Code's edit tools to the run (ADR 0082). `on` is `review` or absent (ADR 0084); a Routine with `on` has no `at` or `schedule`. Editing a connection, an MCP server or a Routine removes the ignored `default`, `connections` and `mcp` keys from the file. `instructions` is the file's path relative to `.muxa/`.
 
-`SettingsBot`: a `BotSpec` plus `"soul_text"` (`.muxa/bots/<name>/soul.md`, empty when there is none), `"memory_text"` (`memory.md`, which the Bot's runs write) and `"memory_versions"`, how many earlier memories `bot-memory-restore` can bring back. A text is `null` when it cannot be read. The Soul counts in `revision`; the Memory does not, so a run does not make a client's edit stale.
+`SettingsBot`: a `BotSpec` plus `"soul_text"` (`.muxa/bots/<name>/soul.md`, empty when there is none), `"memory_text"` (`memory.md`, which the Bot's runs write) `"memory_versions"`, how many earlier memories `bot-memory-restore` can bring back, and `"memory_history"`: `[{"version","at"}]`, newest first, `at` in Unix seconds when that memory was replaced (absent from servers before ADR 0086). A text is `null` when it cannot be read. The Soul counts in `revision`; the Memory does not, so a run does not make a client's edit stale.
 
 `BotSpec`: `{"name","description"?,"worker"?,"daily_items"?,"enabled","members"?,"handoffs_per_day"?}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. `daily_items` is 1 to 50, absent 3. A turned-off Bot turns off its Routines. `members` makes the Bot a team lead (ADR 0085): up to 6 other Bots of the same file, none of which leads a team. `handoffs_per_day` is 1 to 50, absent 10.
 

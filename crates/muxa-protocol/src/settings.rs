@@ -242,6 +242,18 @@ pub struct SettingsBot {
     /// How many earlier memories `bot-memory-restore` can bring back.
     #[serde(default)]
     pub memory_versions: u32,
+    /// When each earlier memory was saved, newest first (ADR 0086).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub memory_history: Vec<MemoryVersion>,
+}
+
+/// One earlier memory `bot-memory-restore` can bring back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryVersion {
+    /// 1 is the newest.
+    pub version: u32,
+    /// Unix seconds when it was replaced.
+    pub at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
