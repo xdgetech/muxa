@@ -392,6 +392,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `routine-remove` | `workspace`, `name` | Removes the Routine. Its instruction file stays |
 | `bot-add`, `bot-update` | `workspace`, `bot`: BotSpec, `soul_text`? | Adds a Bot, or changes the one named `bot.name`. `soul_text` replaces its `soul.md` |
 | `bot-remove` | `workspace`, `name` | Removes the Bot. Its Routines must go first; its folder stays |
+| `bot-rename` | `workspace`, `from`, `to` | Renames a Bot (ADR 0089): its `[[bot]]`, every Routine with `bot = from`, every team that lists it, and its folder `.muxa/bots/<from>/` with the Soul and Memory. `to` follows the name rules and must be free, as must its folder. The server then moves the Bot's Inbox items and counts to the new name. |
 | `bot-memory-restore` | `workspace`, `name`, `version` | Brings back kept memory `version`, 1 the newest of 5; the current one is kept in its place |
 | `assistant-update` | `enabled`, `worker`?, `soul_text`? | Sets `[assistant]`; `soul_text` replaces `assistant/soul.md` beside `workspaces.toml` |
 | `worker-add`, `worker-update` | `worker`: WorkerSpec | Adds a worker, or replaces the one named `worker.name` |

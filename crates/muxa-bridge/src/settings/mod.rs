@@ -324,6 +324,26 @@ impl SettingsStore {
                 )));
             }
         }
+        // A renamed Bot's folder moves after the files; its new place must be free.
+        let mut moves: Vec<(PathBuf, PathBuf)> = Vec::new();
+        for (name, from, to) in &effects.bot_renames {
+            let ws = all
+                .get(name)
+                .ok_or_else(|| SettingsError::Invalid(format!("no Workspace named {name:?}")))?;
+            let bots = routines_dir(ws)
+                .map_err(SettingsError::Invalid)?
+                .join(crate::records::bots::BOTS_DIR);
+            let (old, new) = (bots.join(from), bots.join(to));
+            if new.exists() {
+                return Err(SettingsError::Invalid(format!(
+                    "{} exists already; move or remove it first",
+                    new.display()
+                )));
+            }
+            if old.is_dir() {
+                moves.push((old, new));
+            }
+        }
         let mut writes: Vec<(PathBuf, String)> = Vec::new();
         for (name, rel, text) in &effects.instructions {
             let ws = all
@@ -358,6 +378,10 @@ impl SettingsStore {
         }
         for (target, text) in &writes {
             files::write_atomic(target, text).map_err(|e| failed(e.to_string()))?;
+        }
+        for (old, new) in &moves {
+            std::fs::rename(old, new)
+                .map_err(|e| failed(format!("cannot move {}: {e}", old.display())))?;
         }
         for (name, bot, version) in &effects.memory_restores {
             restore_memory(all, name, bot, *version).map_err(failed)?;

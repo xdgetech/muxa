@@ -285,3 +285,57 @@ fn a_talks_output_that_is_a_symlink_is_refused() {
     );
     assert!(!h.dir.join("work/.muxa/bots/b/memory.md").exists());
 }
+
+#[test]
+fn a_renamed_bot_keeps_its_routines_team_and_files() {
+    let h = host("rename");
+    let s = add_bot(&h, "lisk-cheif", json!({}));
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![
+                op(json!({"op": "bot-update", "workspace": "Work", "bot": {"name": "lisk-cheif", "enabled": true}, "soul_text": "I help.\n"})),
+                op(json!({"op": "routine-add", "workspace": "Work",
+                    "routine": {"name": "todo", "instructions": "routines/todo.md", "enabled": false, "bot": "lisk-cheif", "at": "09:00", "timezone": "UTC"},
+                    "instructions_text": "List to-dos.\n"})),
+                op(json!({"op": "bot-add", "workspace": "Work", "bot": {"name": "lead", "enabled": true, "members": ["lisk-cheif"]}})),
+            ],
+        )
+        .unwrap();
+    let folder = |n: &str| h.dir.join("work/.muxa/bots").join(n);
+    assert!(folder("lisk-cheif").join("soul.md").is_file());
+
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(json!({"op": "bot-rename", "workspace": "Work", "from": "lisk-cheif", "to": "lisk-chief"}))],
+        )
+        .unwrap();
+    let ws = &s.workspaces[0];
+    assert!(ws.bots.iter().any(|b| b.spec.name == "lisk-chief"));
+    assert!(!ws.bots.iter().any(|b| b.spec.name == "lisk-cheif"));
+    let todo = ws.routines.iter().find(|r| r.spec.name == "todo").unwrap();
+    assert_eq!(todo.spec.bot.as_deref(), Some("lisk-chief"));
+    let lead = ws.bots.iter().find(|b| b.spec.name == "lead").unwrap();
+    assert_eq!(lead.spec.members, ["lisk-chief"]);
+    assert_eq!(
+        fs::read_to_string(folder("lisk-chief").join("soul.md")).unwrap(),
+        "I help.\n"
+    );
+    assert!(!folder("lisk-cheif").exists(), "the folder moved");
+
+    let taken = h.store.update(
+        &s.revision,
+        vec![op(
+            json!({"op": "bot-rename", "workspace": "Work", "from": "lisk-chief", "to": "lead"}),
+        )],
+    );
+    assert!(matches!(taken, Err(SettingsError::Invalid(_))), "{taken:?}");
+    let bad = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "bot-rename", "workspace": "Work", "from": "lisk-chief", "to": "Lisk Chief"}))],
+    );
+    assert!(bad.is_err(), "names are lowercase");
+}

@@ -90,6 +90,26 @@ impl Book {
         Ok((before, suggestion))
     }
 
+    /// A Bot of `workspace` renamed `from` → `to` (ADR 0089): its open and
+    /// done items and its counts follow the new name, so its page keeps them.
+    pub fn rename_bot(&mut self, workspace: &str, from: &str, to: &str) {
+        let mut changed = false;
+        for s in self.items.iter_mut().chain(self.done.iter_mut()) {
+            let item = &mut s.item;
+            if item.workspace.as_deref() == Some(workspace) && item.bot.as_deref() == Some(from) {
+                item.bot = Some(to.to_owned());
+                changed = true;
+            }
+        }
+        if let Some(ledger) = self.bots.remove(&super::bots::key(workspace, from)) {
+            self.bots.insert(super::bots::key(workspace, to), ledger);
+            changed = true;
+        }
+        if changed {
+            self.revision += 1;
+        }
+    }
+
     /// The settings proposal of the open item `id`.
     pub fn settings_proposal(&self, id: &str) -> Result<SettingsProposal, InboxError> {
         self.item(id)?
@@ -225,6 +245,34 @@ mod tests {
                 .all(|i| i.workspace.as_deref() == Some("home"))
         );
         assert_eq!(view.done[0].id, id);
+    }
+
+    #[test]
+    fn a_renamed_bots_items_and_counts_follow_it() {
+        let mut book = Book::default();
+        let mut new = NewItem {
+            kind: ItemKind::Todo,
+            title: "t".into(),
+            note: None,
+            workspace: Some("Lisk".into()),
+            due: None,
+            source: "routine".into(),
+            key: Some("k".into()),
+            once: false,
+            terminal: None,
+            routine: None,
+            place: None,
+            extra: Extra::default(),
+        };
+        new.extra.bot = Some("cheif".into());
+        book.add_from_bot(new, 3, "2026-11-24", 1).unwrap();
+        book.rename_bot("Lisk", "cheif", "chief");
+        let view = book.view();
+        assert_eq!(view.items[0].bot.as_deref(), Some("chief"));
+        assert_eq!(
+            (view.bots[0].bot.as_str(), view.bots[0].added),
+            ("chief", 1)
+        );
     }
 
     #[test]

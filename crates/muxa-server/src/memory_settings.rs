@@ -309,6 +309,35 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             }
             remove(&mut ws.bots, &name, |b| &b.spec.name)
         }
+        SettingsOp::BotRename {
+            workspace: w,
+            from,
+            to,
+        } => {
+            let ws = workspace(s, &w)?;
+            if ws.bots.iter().any(|b| b.spec.name == to) {
+                return Err(format!("bot {to:?} exists already"));
+            }
+            let bot = ws
+                .bots
+                .iter_mut()
+                .find(|b| b.spec.name == from)
+                .ok_or_else(|| format!("there is no bot {from:?}"))?;
+            bot.spec.name = to.clone();
+            for r in ws
+                .routines
+                .iter_mut()
+                .filter(|r| r.spec.bot.as_deref() == Some(&from))
+            {
+                r.spec.bot = Some(to.clone());
+            }
+            for b in ws.bots.iter_mut() {
+                for m in b.spec.members.iter_mut().filter(|m| **m == from) {
+                    *m = to.clone();
+                }
+            }
+            Ok(())
+        }
         SettingsOp::BotMemoryRestore {
             workspace: w,
             name,

@@ -528,8 +528,33 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
             ClientMsg::SettingsUpdate { id, revision, ops } => {
+                let renames: Vec<(String, String, String)> = ops
+                    .iter()
+                    .filter_map(|op| match op {
+                        muxa_protocol::v2::SettingsOp::BotRename {
+                            workspace,
+                            from,
+                            to,
+                        } => Some((workspace.clone(), from.clone(), to.clone())),
+                        _ => None,
+                    })
+                    .collect();
                 match self.host.settings_update(&revision, ops).await {
-                    Ok(settings) => self.reply(id, Reply::Settings { settings }),
+                    Ok(settings) => {
+                        // A renamed Bot's items follow it (ADR 0089).
+                        if !renames.is_empty() {
+                            let renamed = self.inbox.change(|b, _| {
+                                for (w, from, to) in &renames {
+                                    b.rename_bot(w, from, to);
+                                }
+                                Ok(())
+                            });
+                            if let Err(e) = renamed {
+                                tracing::warn!(error = %e, "a renamed Bot's items keep the old name");
+                            }
+                        }
+                        self.reply(id, Reply::Settings { settings })
+                    }
                     Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
                 }
             }

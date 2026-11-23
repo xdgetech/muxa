@@ -15,6 +15,7 @@ ADR 0083 let a talk write only its memory and a settings proposal; only a Routin
 3. **They reach the Inbox at once**, as the Bot's items with the talk's `terminal`, keyed by the Workspace, the Bot and the item's `key`, so the same key never makes a second item.
 4. **They do not count against `daily_items`.** The limit keeps a Bot's unattended runs from flooding the Inbox; the user asked for these.
 5. Settings still change only through a proposal the user applies.
+6. **A Bot can be renamed** (`bot-rename`, from Settings only, never from a talk): its table, the Routines and teams that name it, its folder with the Soul and Memory, and its Inbox items and counts move to the new name in one update. A typo in a name no longer means remove and add again, losing the memory.
 
 ## Consequences
 

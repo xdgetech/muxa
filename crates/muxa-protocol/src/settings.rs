@@ -445,6 +445,13 @@ pub enum SettingsOp {
         workspace: String,
         name: String,
     },
+    /// Renames a Bot: its table, the Routines and teams that name it, and its
+    /// folder with the Soul and Memory (ADR 0089).
+    BotRename {
+        workspace: String,
+        from: String,
+        to: String,
+    },
     /// Brings back kept memory `version` (1 is the newest); the current one
     /// is kept in its place.
     BotMemoryRestore {
@@ -495,6 +502,7 @@ impl SettingsOp {
             Self::BotAdd { .. } => "bot-add",
             Self::BotUpdate { .. } => "bot-update",
             Self::BotRemove { .. } => "bot-remove",
+            Self::BotRename { .. } => "bot-rename",
             Self::BotMemoryRestore { .. } => "bot-memory-restore",
             Self::AssistantUpdate { .. } => "assistant-update",
             Self::WorkerAdd { .. } => "worker-add",
@@ -526,6 +534,7 @@ impl SettingsOp {
             | Self::BotAdd { workspace, .. }
             | Self::BotUpdate { workspace, .. }
             | Self::BotRemove { workspace, .. }
+            | Self::BotRename { workspace, .. }
             | Self::BotMemoryRestore { workspace, .. } => Some(workspace),
             Self::AssistantUpdate { .. }
             | Self::WorkerAdd { .. }

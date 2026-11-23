@@ -26,6 +26,8 @@ pub struct Effects {
     pub memory_restores: Vec<(String, String, u32)>,
     /// The Capture assistant's new Soul (ADR 0084).
     pub assistant_soul: Option<String>,
+    /// Workspace, old and new name of each renamed Bot, for its folder.
+    pub bot_renames: Vec<(String, String, String)>,
 }
 
 pub fn account(workspace: &str, name: &str) -> String {
@@ -300,6 +302,24 @@ pub fn apply(
             find_ws(workspaces, &workspace)?;
             let doc = routines_doc(routines, changed_routines, &workspace)?;
             remove_named(doc.as_table_mut(), "bot", &name)
+        }
+        SettingsOp::BotRename {
+            workspace,
+            from,
+            to,
+        } => {
+            find_ws(workspaces, &workspace)?;
+            crate::records::bots::name(&to)?;
+            let doc = routines_doc(routines, changed_routines, &workspace)?;
+            if find_named(doc.as_table_mut(), "bot", &to)?.is_some() {
+                return Err(format!("bot {to:?} exists already"));
+            }
+            let t = find_named(doc.as_table_mut(), "bot", &from)?
+                .ok_or_else(|| format!("there is no bot {from:?}"))?;
+            t.insert("name", value(to.clone()));
+            rename_refs(doc.as_table_mut(), &from, &to)?;
+            effects.bot_renames.push((workspace, from, to));
+            Ok(())
         }
         SettingsOp::BotMemoryRestore {
             workspace,
@@ -636,6 +656,35 @@ fn write_routine(t: &mut Table, r: &RoutineSpec) -> Result<(), String> {
         }
     }
     set_bool(out, "direct_writes", r.direct_writes, false);
+    Ok(())
+}
+
+/// Every Routine with `bot = from` and every team that lists `from`, now `to`.
+fn rename_refs(root: &mut Table, from: &str, to: &str) -> Result<(), String> {
+    for r in aot(root, "routine")?.iter_mut() {
+        if r.get("bot").and_then(Item::as_str) == Some(from) {
+            r.insert("bot", value(to));
+        }
+    }
+    for b in aot(root, "bot")?.iter_mut() {
+        let Some(members) = b.get("members").and_then(Item::as_array) else {
+            continue;
+        };
+        if members.iter().any(|m| m.as_str() == Some(from)) {
+            let renamed: Vec<String> = members
+                .iter()
+                .filter_map(|m| m.as_str())
+                .map(|m| {
+                    if m == from {
+                        to.to_owned()
+                    } else {
+                        m.to_owned()
+                    }
+                })
+                .collect();
+            set_list(b, "members", &renamed);
+        }
+    }
     Ok(())
 }
 
