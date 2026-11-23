@@ -492,7 +492,10 @@ async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     let backend = FakeBackend::new();
     let t = h.started(&backend).await;
     let line = &backend.launches()[0].argv[2];
-    assert!(line.starts_with("claude --permission-mode dontAsk --mcp-config "), "{line}");
+    assert!(
+        line.starts_with("claude --permission-mode dontAsk --mcp-config "),
+        "{line}"
+    );
     assert!(
         line.contains("--strict-mcp-config"),
         "a Bot gets nothing beyond its Workspace's servers, even with none: {line}"

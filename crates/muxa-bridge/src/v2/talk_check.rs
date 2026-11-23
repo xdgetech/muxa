@@ -78,7 +78,24 @@ pub fn check_ops(
                 SettingsOp::BotUpdate { bot: ref b, .. } if b.name != bot => {
                     Err(refuse(&format!("only Bot {bot:?} can be changed")))
                 }
-                SettingsOp::BotAdd { .. } | SettingsOp::BotUpdate { .. } => Ok(op),
+                // bot-update replaces the whole Bot. A talk that leaves `commands`
+                // out keeps the granted ones: it adds commands by naming them, and
+                // only the user removes one, in the editor (ADR 0088).
+                SettingsOp::BotUpdate {
+                    workspace,
+                    mut bot,
+                    soul_text,
+                } => {
+                    if bot.commands.is_empty() {
+                        bot.commands = current_commands(ws, &bot.name);
+                    }
+                    Ok(SettingsOp::BotUpdate {
+                        workspace,
+                        bot,
+                        soul_text,
+                    })
+                }
+                SettingsOp::BotAdd { .. } => Ok(op),
                 SettingsOp::RoutineAdd {
                     workspace,
                     mut routine,
@@ -111,6 +128,14 @@ pub fn check_ops(
             }
         })
         .collect()
+}
+
+fn current_commands(ws: &SettingsWorkspace, bot: &str) -> Vec<String> {
+    ws.bots
+        .iter()
+        .find(|b| b.spec.name == bot)
+        .map(|b| b.spec.commands.clone())
+        .unwrap_or_default()
 }
 
 /// One line per op for the item's note.

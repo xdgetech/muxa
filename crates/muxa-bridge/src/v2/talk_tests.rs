@@ -152,3 +152,23 @@ fn a_proposed_command_is_named_in_full() {
         "Change Bot b, may run: /x/collect.sh delivery:*; gh pr diff:*"
     );
 }
+
+#[test]
+fn a_talk_that_leaves_commands_out_keeps_the_granted_ones() {
+    let mut w = ws();
+    w.bots[0].spec.commands = vec!["/x/collect.sh delivery:*".into()];
+    let checked = check_ops(
+        &w,
+        "b",
+        ops(json!([{"op": "bot-update", "workspace": "w", "bot": {"name": "b", "enabled": true}, "soul_text": "New soul."}])),
+    )
+    .unwrap();
+    let SettingsOp::BotUpdate { bot, .. } = &checked[0] else {
+        panic!("{checked:?}");
+    };
+    assert_eq!(bot.commands, ["/x/collect.sh delivery:*"]);
+    assert!(
+        describe(&checked[0]).contains("may run: /x/collect.sh delivery:*"),
+        "the note still names them"
+    );
+}

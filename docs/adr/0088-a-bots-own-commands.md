@@ -11,7 +11,7 @@ ADR 0087 gave a Workspace's Bots one set of rules. A Bot that needs a script (a 
 ## Decision
 
 1. **`commands` on a `[[bot]]`** lists shell command patterns only that Bot may run, each the inside of a Claude Code `Bash(...)` rule, such as `/path/collect.sh delivery:*`. They join the Workspace's Bot rules as allow rules for that Bot alone. The Workspace's deny rules still win.
-2. **Granted only explicitly.** The user adds a command in the Bot editor, or applies a talk's `bot-update` proposal, whose note names every command. A run cannot change it.
+2. **Granted only explicitly.** The user adds a command in the Bot editor, or applies a talk's `bot-update` proposal, whose note names every command. A run cannot change it. A talk's `bot-update` that leaves `commands` out keeps the granted ones, so a talk only adds commands by naming them, and only the user removes one.
 3. **Runs refuse instead of asking.** A Bot's Routine runs and team members start with `--permission-mode dontAsk`: an allowed command runs, any other is refused at once and the run goes on. The Bot is told to say in a briefing which command it needed and why. Talks keep prompts, since the user is there to answer.
 4. **Each Bot is told its commands** and how to ask for more (ADR 0086's muxa Bot section).
 
