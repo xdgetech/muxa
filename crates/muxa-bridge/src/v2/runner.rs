@@ -18,7 +18,7 @@ use muxa_backend::{
 use muxa_protocol::RoutineFailure;
 
 use super::git as brief;
-use super::mcp;
+use super::{bot_run, mcp};
 use crate::loops::CheckEnd;
 use crate::records::routines::Routine;
 use crate::records::workers::{LaunchCommand, WorkerChoice};
@@ -335,7 +335,18 @@ fn ready(
     let instructions = routine
         .read_instructions()
         .map_err(|e| fail(StartError::Failed(e.to_string())))?;
-    let goal = crate::routines::brief::goal(&routine, &instructions);
+    let bot = match routine.bot.as_deref() {
+        None => None,
+        Some(b) => {
+            let found = workspaces.bot(&routine.workspace, b).ok_or_else(|| {
+                fail(StartError::Failed(format!(
+                    "the Routine's bot {b:?} is gone"
+                )))
+            })?;
+            Some(bot_run::brief(found).map_err(|e| fail(StartError::Failed(e)))?)
+        }
+    };
+    let goal = crate::routines::brief::goal(&routine, &instructions, bot.as_ref());
     runs::claim(&store, &routine, &occurrence, when)?;
     // After the claim: a failure ends the claimed run with its reason.
     made(
@@ -395,6 +406,11 @@ fn made(
     } else {
         mcp::only_claude(crate::launch::program(&resolved.command), &servers)?;
         resolved.command
+    };
+    let command = if crate::launch::is_claude_code(&command) {
+        bot_run::with_settings(command, &dir, &bot_run::deny_rules(ws, &routine))?
+    } else {
+        command
     };
     let given = crate::connections::env(ws)?;
     crate::connections::merge(&mut resolved.environment.env, given);

@@ -2,6 +2,7 @@
 //! Routines, and the Task Loop's stored form. Independent of the protocol.
 
 pub mod agent_env;
+pub mod bots;
 pub mod connections;
 pub mod cron;
 pub mod lock;

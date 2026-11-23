@@ -306,3 +306,43 @@ async fn a_run_gets_every_mcp_server_of_its_workspace_whatever_it_names() {
         "the run's start is noted for the servers it got"
     );
 }
+
+#[tokio::test]
+async fn a_bot_run_carries_its_soul_and_memory_and_may_not_edit_muxa() {
+    let h = Host::with(
+        "bot",
+        "bot = \"pr-watch\"\n[[bot]]\nname = \"pr-watch\"\nenabled = true\n",
+    );
+    let folder = h.base.join("root/.muxa/bots/pr-watch");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("soul.md"), "I watch the PRs.\n").unwrap();
+    std::fs::write(folder.join("memory.md"), "PR 12 was seen.\n").unwrap();
+    let backend = FakeBackend::new();
+    h.started(&backend).await;
+    let launch = &backend.launches()[0];
+    let dir = launch.cwd.clone().unwrap();
+    let brief = std::fs::read_to_string(dir.join(".muxa/TASK.md")).unwrap();
+    assert!(brief.contains("I watch the PRs.") && brief.contains("PR 12 was seen."));
+    assert!(launch.argv[2].contains("--settings"), "{:?}", launch.argv);
+    let settings = std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap();
+    let muxa = h.base.join("root/.muxa");
+    assert!(
+        settings.contains(&format!("Edit(/{}/**)", muxa.display())),
+        "{settings}"
+    );
+}
+
+#[tokio::test]
+async fn a_routine_of_a_turned_off_bot_does_not_start() {
+    let h = Host::with(
+        "bot-off",
+        "bot = \"b\"\n[[bot]]\nname = \"b\"\nenabled = false\n",
+    );
+    let backend = FakeBackend::new();
+    let refused = h
+        .runner
+        .start(&backend, "w", "Brief", When::Now(now()))
+        .await;
+    assert!(matches!(refused, Err(StartError::Bad(_))), "{refused:?}");
+    assert!(backend.launches().is_empty());
+}

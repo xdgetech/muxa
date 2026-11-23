@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
+use super::bots::Bot;
 use super::connections::{self, Connection, RawConnection};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
@@ -81,6 +82,7 @@ pub struct Workspaces {
     list: Vec<Workspace>,
     workers: Vec<Worker>,
     routines: Vec<Routine>,
+    bots: Vec<Bot>,
     problems: Vec<RoutineProblem>,
     /// `[codex] owned_threads` (ADR 0028); off without it.
     codex_threads: bool,
@@ -281,11 +283,15 @@ impl Workspaces {
             tracing::warn!("[assistant] is no longer used; remove it");
         }
         let mut all_routines = Vec::new();
+        let mut all_bots = Vec::new();
         let mut problems = Vec::new();
         for w in &list {
             let Some(gate) = w.routines else { continue };
             match routines::load(w, gate, &workers) {
-                Ok(found) => all_routines.extend(found),
+                Ok(found) => {
+                    all_routines.extend(found.routines);
+                    all_bots.extend(found.bots);
+                }
                 Err(reason) => problems.push(RoutineProblem {
                     workspace: w.name.clone(),
                     reason,
@@ -296,6 +302,7 @@ impl Workspaces {
             list,
             workers,
             routines: all_routines,
+            bots: all_bots,
             problems,
             codex_threads,
         })
@@ -309,6 +316,16 @@ impl Workspaces {
 
     pub fn routines(&self) -> &[Routine] {
         &self.routines
+    }
+
+    pub fn bots(&self) -> &[Bot] {
+        &self.bots
+    }
+
+    pub fn bot(&self, workspace: &str, name: &str) -> Option<&Bot> {
+        self.bots
+            .iter()
+            .find(|b| b.workspace == workspace && b.name == name)
     }
 
     /// Workspaces whose routines file could not be used.

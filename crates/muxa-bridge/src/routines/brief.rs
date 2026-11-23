@@ -1,10 +1,52 @@
-//! The goal of a Routine run: the Routine's instructions, then muxa's fixed
-//! section on where and how to write the output. It lands in `.muxa/TASK.md`.
+//! The goal of a Routine run: its Bot's Soul and Memory (ADR 0082), the
+//! Routine's instructions, then muxa's fixed section on where and how to
+//! write the output. It lands in `.muxa/TASK.md`.
+use crate::records::bots::MAX_MEMORY;
 use crate::records::routines::Routine;
 
-/// The run's goal. `instructions` is at most 12 KiB, so this stays under the
-/// record's 16 KiB goal limit.
-pub fn goal(routine: &Routine, instructions: &str) -> String {
+/// The Bot that owns the run, with its files as read for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BotBrief {
+    pub name: String,
+    pub soul: String,
+    pub memory: String,
+}
+
+/// The run's goal.
+pub fn goal(routine: &Routine, instructions: &str, bot: Option<&BotBrief>) -> String {
+    let mut text = String::new();
+    if let Some(bot) = bot {
+        text.push_str(&bot_section(bot));
+    }
+    text.push_str(&routine_goal(routine, instructions));
+    if bot.is_some() {
+        text.push_str(&format!(
+            "- Your memory: put the whole new memory in \"memory\" as Markdown, at most {} KiB. \
+             It replaces the file, so keep what still matters. Leave it out to keep the memory as it is.\n",
+            MAX_MEMORY / 1024
+        ));
+    }
+    text
+}
+
+fn bot_section(bot: &BotBrief) -> String {
+    let soul = bot.soul.trim();
+    let memory = bot.memory.trim();
+    format!(
+        "## Who you are\n\nYou are the bot \"{name}\". This is your soul, written by the user:\n\n{soul}\n\n\
+         ## Your memory\n\nWhat you kept from earlier runs:\n\n{memory}\n\n## This run\n\n",
+        name = bot.name,
+        soul = if soul.is_empty() { "(empty)" } else { soul },
+        memory = if memory.is_empty() {
+            "(empty: this is your first run)"
+        } else {
+            memory
+        },
+    )
+}
+
+/// `instructions` is at most 12 KiB.
+fn routine_goal(routine: &Routine, instructions: &str) -> String {
     let writes = if routine.direct_writes {
         "You may change external systems directly when the instructions say so. Report each change in a briefing."
     } else {
@@ -52,12 +94,44 @@ mod tests {
             direct_writes: false,
             project: None,
             enabled: true,
+            bot: None,
+            read_only: false,
         };
         let full = "x".repeat(crate::records::routines::MAX_INSTRUCTIONS);
-        let g = goal(&routine, &full);
+        let g = goal(&routine, &full, None);
         assert!(g.len() <= 16 * 1024);
         assert!(g.contains("At most 5 items") && g.contains("Do not change anything"));
+        assert!(!g.contains("memory"));
         routine.direct_writes = true;
-        assert!(goal(&routine, "Read.").contains("You may change external systems"));
+        assert!(goal(&routine, "Read.", None).contains("You may change external systems"));
+    }
+
+    #[test]
+    fn a_bot_run_starts_from_its_soul_and_memory() {
+        let routine = Routine {
+            workspace: "w".into(),
+            name: "Scan".into(),
+            trigger: None,
+            worker: None,
+            instructions: "/i.md".into(),
+            dir: "/".into(),
+            items: 5,
+            direct_writes: false,
+            project: None,
+            enabled: true,
+            bot: Some("pr-watch".into()),
+            read_only: true,
+        };
+        let bot = BotBrief {
+            name: "pr-watch".into(),
+            soul: "I watch the PRs that wait for Shu.".into(),
+            memory: String::new(),
+        };
+        let g = goal(&routine, "Look at open PRs.", Some(&bot));
+        let soul = g.find("I watch the PRs").unwrap();
+        let instructions = g.find("Look at open PRs.").unwrap();
+        assert!(soul < instructions);
+        assert!(g.contains("this is your first run"));
+        assert!(g.contains("\"memory\""));
     }
 }

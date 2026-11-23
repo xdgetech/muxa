@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicBool;
 use serde::Deserialize;
 
 use super::Workspace;
+use super::bots::{Bot, RawBot};
 use super::cron::{self, Days, Times};
 use super::workers::Worker;
 
@@ -77,7 +78,19 @@ pub struct Routine {
     /// The agent may write to external systems without a proposal.
     pub direct_writes: bool,
     pub project: Option<String>,
+    /// False also when its Bot is turned off.
     pub enabled: bool,
+    /// The Bot that owns it, in the same file (ADR 0082).
+    pub bot: Option<String>,
+    /// Claude Code's edit tools are denied to the run's agent.
+    pub read_only: bool,
+}
+
+/// What one routines file holds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Loaded {
+    pub routines: Vec<Routine>,
+    pub bots: Vec<Bot>,
 }
 
 /// A workspace whose routines file could not be used. It lists no Routines.
@@ -93,6 +106,8 @@ pub struct RoutineProblem {
 struct RawFile {
     #[serde(default)]
     routine: Vec<RawRoutine>,
+    #[serde(default)]
+    bot: Vec<RawBot>,
 }
 
 #[derive(Deserialize)]
@@ -106,6 +121,9 @@ struct RawRoutine {
     instructions: String,
     project: Option<String>,
     enabled: bool,
+    bot: Option<String>,
+    #[serde(default)]
+    read_only: bool,
     output: Option<RawOutput>,
     /// Read and ignored: a run gets all its workspace's connections and
     /// MCP servers (ADR 0075).
@@ -139,10 +157,10 @@ pub(super) fn load(
     workspace: &Workspace,
     gate: RoutineGate,
     workers: &[Worker],
-) -> Result<Vec<Routine>, String> {
+) -> Result<Loaded, String> {
     match read_file(workspace)? {
         Some((dir, text)) => parse_text(&text, workspace, gate, &dir, workers),
-        None => Ok(Vec::new()),
+        None => Ok(Loaded::default()),
     }
 }
 
@@ -190,27 +208,37 @@ pub fn read_file(workspace: &Workspace) -> Result<Option<(PathBuf, String)>, Str
     Ok(Some((dir, text)))
 }
 
-/// The Routines in `text`, a routines file whose folder is `dir`.
+/// The Bots and Routines in `text`, a routines file whose folder is `dir`.
 pub fn parse_text(
     text: &str,
     workspace: &Workspace,
     gate: RoutineGate,
     dir: &Path,
     workers: &[Worker],
-) -> Result<Vec<Routine>, String> {
+) -> Result<Loaded, String> {
     if text.len() > MAX_ROUTINES_FILE {
         return Err(at("is too large"));
     }
     let raw: RawFile = toml::from_str(text).map_err(|e| at(e.message()))?;
+    let mut bots: Vec<Bot> = Vec::with_capacity(raw.bot.len());
+    for b in raw.bot {
+        let bot = b.check(workspace, dir, workers).map_err(|r| at(&r))?;
+        if bots.iter().any(|other| other.name == bot.name) {
+            return Err(at(&format!("bot {:?} appears twice", bot.name)));
+        }
+        bots.push(bot);
+    }
     let mut routines: Vec<Routine> = Vec::with_capacity(raw.routine.len());
     for r in raw.routine {
-        let routine = r.check(workspace, gate, dir, workers).map_err(|r| at(&r))?;
+        let routine = r
+            .check(workspace, gate, dir, workers, &bots)
+            .map_err(|r| at(&r))?;
         if routines.iter().any(|other| other.name == routine.name) {
             return Err(at(&format!("routine {:?} appears twice", routine.name)));
         }
         routines.push(routine);
     }
-    Ok(routines)
+    Ok(Loaded { routines, bots })
 }
 
 impl RawRoutine {
@@ -221,6 +249,7 @@ impl RawRoutine {
         gate: RoutineGate,
         dir: &Path,
         workers: &[Worker],
+        bots: &[Bot],
     ) -> Result<Routine, String> {
         line(&self.name, MAX_NAME).map_err(|r| format!("routine name {r}"))?;
         let at = |field: &str| format!("routine {:?}: {field}", self.name);
@@ -243,6 +272,16 @@ impl RawRoutine {
                 Some(name.to_owned())
             }
         };
+        let bot = match self.bot.as_deref() {
+            None => None,
+            Some(name) => Some(
+                bots.iter()
+                    .find(|b| b.name == name)
+                    .ok_or_else(|| at("bot is not a [[bot]] of this file"))?,
+            ),
+        };
+        // A Routine's own worker wins over its Bot's.
+        let worker = worker.or_else(|| bot.and_then(|b| b.worker.clone()));
         let instructions = dir.join(relative(&self.instructions).map_err(at)?);
         if let Some(project) = &self.project {
             line(project, MAX_PROJECT).map_err(|r| at(&format!("project {r}")))?;
@@ -276,7 +315,9 @@ impl RawRoutine {
             items,
             direct_writes: output.direct_writes,
             project: self.project,
-            enabled: self.enabled,
+            enabled: self.enabled && bot.is_none_or(|b| b.enabled),
+            bot: bot.map(|b| b.name.clone()),
+            read_only: self.read_only,
         })
     }
 }
@@ -295,14 +336,14 @@ fn relative(raw: &str) -> Result<&Path, &'static str> {
     }
 }
 
-enum ReadFail {
+pub(super) enum ReadFail {
     Io(io::Error),
     Invalid(&'static str),
 }
 
 /// At most `max` bytes of a regular file. NONBLOCK rejects a FIFO without
 /// waiting for a writer.
-fn read_regular(path: &Path, max: usize) -> Result<Vec<u8>, ReadFail> {
+pub(super) fn read_regular(path: &Path, max: usize) -> Result<Vec<u8>, ReadFail> {
     let file = File::from(
         rustix::fs::open(
             path,

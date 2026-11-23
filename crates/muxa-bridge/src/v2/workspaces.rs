@@ -216,6 +216,8 @@ mod tests {
             direct_writes: false,
             project: None,
             enabled: true,
+            bot: None,
+            read_only: false,
         }
     }
 

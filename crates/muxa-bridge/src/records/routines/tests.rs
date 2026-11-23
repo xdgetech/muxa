@@ -297,3 +297,72 @@ fn instructions_are_read_on_each_run_and_stay_in_the_folder() {
         Err(InstructionsError::Invalid { .. })
     ));
 }
+
+#[test]
+fn a_bot_owns_routines_and_lends_them_its_worker() {
+    let f = Fixture::new();
+    let config = f
+        .load(
+            "[[bot]]\nname = 'pr-watch'\ndescription = 'Watches my PRs'\n\
+             worker = 'Researcher'\nenabled = true\n\
+             [[routine]]\nname = 'Scan'\ninstructions = 'scan.md'\nenabled = true\n\
+             bot = 'pr-watch'\nread_only = true\nschedule = '*/30 9-18 * * 1-5'\ntimezone = 'UTC'\n\
+             [[routine]]\nname = 'Plain'\ninstructions = 'p.md'\nenabled = true\n",
+        )
+        .unwrap();
+    let bot = config.bot("Company", "pr-watch").unwrap();
+    assert_eq!(bot.daily_items, crate::records::bots::DEFAULT_DAILY_ITEMS);
+    assert_eq!(bot.description.as_deref(), Some("Watches my PRs"));
+    let scan = config.routine("Company", "Scan").unwrap();
+    assert_eq!(scan.bot.as_deref(), Some("pr-watch"));
+    assert_eq!(scan.worker.as_deref(), Some("Researcher"));
+    assert!(scan.read_only && scan.enabled);
+    let plain = config.routine("Company", "Plain").unwrap();
+    assert_eq!((plain.bot.as_deref(), plain.read_only), (None, false));
+}
+
+#[test]
+fn a_turned_off_bot_turns_off_its_routines() {
+    let f = Fixture::new();
+    let config = f
+        .load(
+            "[[bot]]\nname = 'b'\nenabled = false\n\
+             [[routine]]\nname = 'R'\ninstructions = 'r.md'\nenabled = true\nbot = 'b'\n",
+        )
+        .unwrap();
+    assert!(!config.routine("Company", "R").unwrap().enabled);
+}
+
+#[test]
+fn bad_bots_break_only_their_file() {
+    let f = Fixture::new();
+    for (routines, wanted) in [
+        (
+            "[[routine]]\nname = 'R'\ninstructions = 'r.md'\nenabled = true\nbot = 'ghost'\n",
+            "bot is not a [[bot]] of this file",
+        ),
+        (
+            "[[bot]]\nname = 'Bad Name'\nenabled = true\n",
+            "bot name must be",
+        ),
+        (
+            "[[bot]]\nname = 'b'\nenabled = true\n[[bot]]\nname = 'b'\nenabled = true\n",
+            "appears twice",
+        ),
+        (
+            "[[bot]]\nname = 'b'\nenabled = true\ndaily_items = 0\n",
+            "daily_items must be",
+        ),
+        (
+            "[[bot]]\nname = 'b'\nenabled = true\nworker = 'Nobody'\n",
+            "worker is not configured",
+        ),
+        (
+            "[[bot]]\nname = 'b'\nenabled = true\nsoul = 'x'\n",
+            "unknown field",
+        ),
+    ] {
+        let problem = f.problem(routines).unwrap();
+        assert!(problem.contains(wanted), "{problem}");
+    }
+}

@@ -3,6 +3,7 @@
 //! relays an SSH client's stdin and stdout to it.
 
 mod adopt;
+mod bot_run;
 pub mod chat;
 mod close;
 pub mod feed;
