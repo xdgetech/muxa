@@ -389,7 +389,10 @@ fn ready(
                 .iter()
                 .filter_map(|m| workspaces.bot(&routine.workspace, m))
                 .collect();
-            Some(bot_run::brief(found, &team).map_err(|e| fail(StartError::Failed(e)))?)
+            let ws = workspaces.get(&routine.workspace).ok_or_else(|| {
+                fail(StartError::Failed("the Routine's Workspace is gone".into()))
+            })?;
+            Some(bot_run::brief(found, &team, ws).map_err(|e| fail(StartError::Failed(e)))?)
         }
     };
     let goal = crate::routines::brief::goal(&routine, &instructions, bot.as_ref());

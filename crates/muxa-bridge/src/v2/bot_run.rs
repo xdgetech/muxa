@@ -9,13 +9,25 @@ use crate::records::bots::Bot;
 use crate::records::routines::Routine;
 use crate::records::workers::LaunchCommand;
 use crate::routines::brief::BotBrief;
+use crate::routines::identity::Reach;
 
 const SETTINGS_FILE: &str = "claude-settings.json";
 const SETTINGS_FLAG: &str = "--settings";
 
-/// Blocking. The Bot's files as they are now, and its team when it leads one.
-pub fn brief(bot: &Bot, team: &[&Bot]) -> Result<BotBrief, String> {
+/// Blocking. The Bot's files as they are now, its team when it leads one,
+/// and what it can use in its Workspace `ws`.
+pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, String> {
     Ok(BotBrief {
+        reach: Reach {
+            workspace: ws.name.clone(),
+            daily_items: bot.daily_items,
+            connections: ws
+                .connections
+                .iter()
+                .map(|c| format!("{} (${})", c.name, c.env))
+                .collect(),
+            mcp: ws.mcp.iter().map(|m| m.name.clone()).collect(),
+        },
         name: bot.name.clone(),
         soul: bot.read_soul().map_err(|e| e.to_string())?,
         memory: bot.read_memory().map_err(|e| e.to_string())?,

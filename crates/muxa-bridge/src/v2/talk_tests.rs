@@ -120,11 +120,13 @@ fn the_brief_says_what_runs_can_use_and_what_the_daily_limit_does() {
     let text = brief(&w, "b");
     for part in [
         "not Claude cloud routines",
-        "MCP servers of this Workspace: linear.",
-        "Connections of this Workspace, as environment variables: none.",
+        "its MCP servers: linear.",
+        "as environment variables: none;",
+        "You are a muxa Bot",
+        "you may propose",
         "claude.ai connectors do not",
         "\"N more\"",
-        "one item per `key`",
+        "One item per key",
     ] {
         assert!(text.contains(part), "{part}");
     }

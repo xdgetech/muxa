@@ -1,6 +1,7 @@
 //! The goal of a Routine run: its Bot's Soul and Memory (ADR 0082), the
 //! Routine's instructions, then muxa's fixed section on where and how to
 //! write the output. It lands in `.muxa/TASK.md`.
+use super::identity::{self, Place, Reach};
 use crate::records::bots::MAX_MEMORY;
 use crate::records::routines::Routine;
 
@@ -12,6 +13,8 @@ pub struct BotBrief {
     pub memory: String,
     /// Its members' names and descriptions when it leads a team (ADR 0085).
     pub team: Vec<(String, Option<String>)>,
+    /// What it can use, for the muxa Bot section (ADR 0086).
+    pub reach: Reach,
 }
 
 /// Steps of a lead in one occurrence: its run, and up to two more with its
@@ -56,9 +59,9 @@ fn bot_section(bot: &BotBrief) -> String {
     let soul = bot.soul.trim();
     let memory = bot.memory.trim();
     format!(
-        "## Who you are\n\nYou are the bot \"{name}\". This is your soul, written by the user:\n\n{soul}\n\n\
+        "{intro}## Your Soul\n\nWritten by the user:\n\n{soul}\n\n\
          ## Your memory\n\nWhat you kept from earlier runs:\n\n{memory}\n\n## This run\n\n",
-        name = bot.name,
+        intro = identity::section(&bot.name, &bot.reach, Place::Run),
         soul = if soul.is_empty() { "(empty)" } else { soul },
         memory = if memory.is_empty() {
             "(empty: this is your first run)"
@@ -151,6 +154,7 @@ mod tests {
         };
         let bot = BotBrief {
             team: Vec::new(),
+            reach: Reach::default(),
             name: "pr-watch".into(),
             soul: "I watch the PRs that wait for me.".into(),
             memory: String::new(),
@@ -160,6 +164,9 @@ mod tests {
         let instructions = g.find("Look at open PRs.").unwrap();
         assert!(soul < instructions);
         assert!(g.contains("this is your first run"));
+        assert!(
+            g.contains("You are a muxa Bot") && g.contains("cannot change your settings in a run")
+        );
         assert!(g.contains("\"memory\""));
     }
 }

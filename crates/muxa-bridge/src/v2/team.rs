@@ -16,6 +16,7 @@ use crate::records::workers::WorkerChoice;
 use crate::records::{Workspaces, now};
 use crate::routines::brief::MAX_STEPS;
 use crate::routines::check::{self, HANDOFFS, RunAt};
+use crate::routines::identity::{self, Place};
 use crate::routines::output::Handoff;
 use crate::routines::runs::{self, When};
 
@@ -199,7 +200,7 @@ fn member_launch(
     if !crate::launch::is_claude_code(&resolved.command) {
         return Err("a member needs Claude Code".into());
     }
-    let brief = bot_run::brief(member, &[])?;
+    let brief = bot_run::brief(member, &[], ws)?;
     super::git::write_file(&dir, "TASK.md", &member_text(&brief, lead, h))?;
     let rules = [bot_run::deny(&member.dir)];
     let agent = runner::agent_in(ws, resolved.command, &dir, &rules, &[])?;
@@ -226,12 +227,13 @@ pub fn member_text(brief: &crate::routines::brief::BotBrief, lead: &str, h: &Han
     let soul = brief.soul.trim();
     let memory = brief.memory.trim();
     format!(
-        "# {name} for {lead}\n\n## Who you are\n\nYou are the bot \"{name}\". This is your soul, written by the user:\n\n{soul}\n\n\
+        "# {name} for {lead}\n\n{intro}## Your Soul\n\nWritten by the user:\n\n{soul}\n\n\
          ## Your memory\n\n{memory}\n\n## What your lead asks\n\nThe bot \"{lead}\" leads your team and asks:\n\n{asked}\n\n\
          ## Output\n\nWhen you are done, write .muxa/result.json, then end your turn:\n\n\
          ```json\n{{\"summary\": \"what you found or did, for your lead, at most 8 KiB\", \"memory\": \"your whole new memory (optional)\"}}\n```\n\n\
          Do not change anything in external systems. You never write to the user's Inbox: your lead does.\n",
         name = brief.name,
+        intro = identity::section(&brief.name, &brief.reach, Place::Member { lead }),
         soul = if soul.is_empty() { "(empty)" } else { soul },
         memory = if memory.is_empty() { "(empty)" } else { memory },
         asked = h.brief.trim(),

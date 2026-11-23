@@ -5,6 +5,7 @@
 
 pub mod brief;
 pub mod check;
+pub mod identity;
 pub mod output;
 pub mod record;
 pub mod runs;
