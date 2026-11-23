@@ -1,5 +1,6 @@
 package tech.xdge.muxa.app.next
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
@@ -46,6 +47,7 @@ fun McpSettings(editor: SettingsEditor, ws: SettingsWorkspace, usage: Workspace?
         ActionRow("+ Add MCP server", "settings.mcp.add", !editor.readOnly) { editing = McpDraft(isNew = true) }
     }
     ClaudeConnectors(editor, ws)
+    BotRulesBlock(editor, ws)
     editing?.let { McpDialog(editor, ws, it) { editing = null } }
 }
 
@@ -61,6 +63,27 @@ private fun ClaudeConnectors(editor: SettingsEditor, ws: SettingsWorkspace) {
         }
     }
     SettingsNote("Agents here also get your claude.ai connectors, such as Calendar or Sheets, beside the MCP servers above.")
+    save.Error()
+}
+
+/** `[workspace.bots]` (ADR 0087): each list saves on its own, and the other list goes with it unchanged. */
+@Composable
+private fun BotRulesBlock(editor: SettingsEditor, ws: SettingsWorkspace) {
+    val save = rememberInlineSave(editor)
+    val on = !editor.readOnly
+    val rules = ws.botRules
+    SettingsHeader("Bot rules")
+    SettingsCard {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Lines(rules.allow, "Allowed", "settings.botrules.allow", on, "WebSearch") {
+                save.run(listOf(SettingsOp.WorkspaceUpdate(ws.name, botRules = rules.copy(allow = it))))
+            }
+            Lines(rules.deny, "Denied", "settings.botrules.deny", on, "Bash") {
+                save.run(listOf(SettingsOp.WorkspaceUpdate(ws.name, botRules = rules.copy(deny = it))))
+            }
+        }
+    }
+    SettingsNote("Claude Code permission rules, such as Bash or mcp__claude_ai_Gmail. Only this Workspace's Bots get them.")
     save.Error()
 }
 

@@ -37,6 +37,8 @@ class SettingsTest {
                 """{"op":"routine-add","workspace":"w","routine":{"name":"r","instructions":"routines/r.md","enabled":true,"direct_writes":false,"read_only":false,"on":"review"}}""",
             SettingsOp.WorkspaceUpdate("w", claudeConnectors = true) to
                 """{"op":"workspace-update","workspace":"w","claude_connectors":true}""",
+            SettingsOp.WorkspaceUpdate("w", botRules = BotRules(deny = listOf("Bash"))) to
+                """{"op":"workspace-update","workspace":"w","bot_rules":{"allow":[],"deny":["Bash"]}}""",
             SettingsOp.AssistantUpdate(true) to """{"op":"assistant-update","enabled":true}""",
             SettingsOp.AssistantUpdate(false, "reviewer", "Be brief.") to
                 """{"op":"assistant-update","enabled":false,"worker":"reviewer","soul_text":"Be brief."}""",
@@ -111,6 +113,9 @@ class SettingsTest {
         assertEquals(false, w.claudeConnectors)
         val on = json.decodeFromString<Settings>("""{"revision":"r","workspaces":[{"name":"w","root":"~/w","claude_connectors":true}]}""")
         assertEquals(true, on.workspaces.single().claudeConnectors)
+        assertEquals(BotRules(), w.botRules)
+        val rules = json.decodeFromString<Settings>("""{"revision":"r","workspaces":[{"name":"w","root":"~/w","bot_rules":{"allow":["WebSearch"]}}]}""")
+        assertEquals(BotRules(allow = listOf("WebSearch")), rules.workspaces.single().botRules)
         val counts = json.decodeFromString<Inbox>(
             """{"revision":1,"items":[],"done":[],"bots":[{"workspace":"w","bot":"b","done":1,"deleted":0,"day":"2026-11-23","added":2},{"workspace":"w","bot":"old","done":0,"deleted":0}]}""",
         ).bots

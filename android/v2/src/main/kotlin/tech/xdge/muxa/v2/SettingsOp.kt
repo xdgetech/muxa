@@ -51,6 +51,8 @@ sealed class SettingsOp(val op: String) {
         val hiddenRepos: List<String>? = null,
         /** Whether claude.ai connectors load beside its MCP servers (ADR 0087); null keeps it. */
         val claudeConnectors: Boolean? = null,
+        /** Replaces both lists of `[workspace.bots]`; null keeps them. */
+        val botRules: BotRules? = null,
     ) : SettingsOp("workspace-update")
 
     /** Also removes the Keychain secrets of its connections; its folder and `.muxa/` stay. */
@@ -156,6 +158,7 @@ sealed class SettingsOp(val op: String) {
                 patch("agent_command", o.agentCommand)
                 patch("park_after", o.parkAfter)
                 o.claudeConnectors?.let { put("claude_connectors", it) }
+                o.botRules?.let { put("bot_rules", enc(it)) }
             }
             is WorkspaceRemove -> put("workspace", o.workspace)
             is EnvSet -> { put("workspace", o.workspace); put("key", o.key); put("value", o.value) }
@@ -210,7 +213,7 @@ sealed class SettingsOp(val op: String) {
                 "workspace-add" -> WorkspaceAdd(req("name"), req("root"), strings("repos").orEmpty())
                 "workspace-update" -> WorkspaceUpdate(
                     ws(), s("root"), strings("repos"), patch("agent_command"), patch("park_after"), strings("hidden_repos"),
-                    bool("claude_connectors"),
+                    bool("claude_connectors"), o["bot_rules"]?.let { opsJson.decodeFromJsonElement<BotRules>(it) },
                 )
                 "workspace-remove" -> WorkspaceRemove(ws())
                 "env-set" -> EnvSet(ws(), req("key"), req("value"))

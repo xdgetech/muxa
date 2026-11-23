@@ -840,6 +840,7 @@ private val DEMO_SETTINGS = Settings(
             agent = SettingsAgent("claude", listOf(EnvKey("CLAUDE_CONFIG_DIR", true))),
             loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
             routinesEnabled = true,
+            botRules = BotRules(allow = listOf("WebSearch", "WebFetch"), deny = listOf("Bash")),
             connections = listOf(
                 SettingsConnection("github", "GITHUB_TOKEN", "demo@example.com", "read", secret = SecretState.SET),
             ),

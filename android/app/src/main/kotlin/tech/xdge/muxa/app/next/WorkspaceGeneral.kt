@@ -80,7 +80,7 @@ private fun SavedField(value: String, label: String, tag: String, enabled: Boole
 
 /** A list of lines, each removable, and a field to add one. */
 @Composable
-private fun Lines(values: List<String>, label: String, tag: String, enabled: Boolean, placeholder: String, save: (List<String>) -> Unit) {
+fun Lines(values: List<String>, label: String, tag: String, enabled: Boolean, placeholder: String, save: (List<String>) -> Unit) {
     var adding by remember(values) { mutableStateOf("") }
     Text(label, fontSize = 13.sp)
     for (v in values) {

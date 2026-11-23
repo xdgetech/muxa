@@ -58,6 +58,8 @@ data class SettingsWorkspace(
     @SerialName("direct_writes") val directWrites: Boolean = false,
     /** The user's claude.ai connectors load beside [mcp] (ADR 0087). */
     @SerialName("claude_connectors") val claudeConnectors: Boolean = false,
+    /** `[workspace.bots]`: Claude Code permission rules for the Workspace's Bots only (ADR 0087). */
+    @SerialName("bot_rules") val botRules: BotRules = BotRules(),
     val connections: List<SettingsConnection> = emptyList(),
     val mcp: List<McpSpec> = emptyList(),
     /** Listed also while [routinesEnabled] is false. */
@@ -67,6 +69,10 @@ data class SettingsWorkspace(
     /** Why `.muxa/routines.toml` cannot be used as it is now. */
     @SerialName("routines_problem") val routinesProblem: String? = null,
 )
+
+/** Claude Code permission rules, such as `Bash` or `mcp__claude_ai_Gmail`. */
+@Serializable
+data class BotRules(val allow: List<String> = emptyList(), val deny: List<String> = emptyList())
 
 /** `[workspace.agent]`. [command] null: the daemon's `--task-command`. */
 @Serializable

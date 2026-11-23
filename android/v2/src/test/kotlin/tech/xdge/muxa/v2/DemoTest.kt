@@ -596,6 +596,22 @@ class DemoTest {
         }
     }
 
+    @Test
+    fun aWorkspacesBotRulesAreReplacedTogether() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings().workspaces
+            assertEquals(BotRules(listOf("WebSearch", "WebFetch"), listOf("Bash")), before.first { it.name == "app" }.botRules)
+            assertEquals(BotRules(), before.first { it.name == "Personal" }.botRules)
+            val rules = BotRules(listOf("WebSearch"), listOf("Bash", "mcp__claude_ai_Gmail"))
+            val s = c.settingsUpdate("1", listOf(SettingsOp.WorkspaceUpdate("app", botRules = rules)))
+            assertEquals(rules, s.workspaces.first { it.name == "app" }.botRules)
+            val kept = c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", claudeConnectors = true)))
+            assertEquals(rules, kept.workspaces.first { it.name == "app" }.botRules)
+            c.close()
+        }
+    }
+
     private suspend fun refusal(block: suspend () -> Unit): V2Error.Refused {
         try {
             block()
