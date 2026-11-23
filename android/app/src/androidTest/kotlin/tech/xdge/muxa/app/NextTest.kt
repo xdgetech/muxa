@@ -9,6 +9,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -199,13 +200,69 @@ class NextTest {
         compose.onNodeWithTag("task.goal").assert(hasText("review-approve on example/app#57:", substring = true))
     }
 
+    // ADR 0086: Bots replace the Routines tab; a Bot's Routines are on its page, the rest in their own section.
     @Test
-    fun routinesAreGroupedByTheirBot() {
+    fun botsListBotsByWorkspaceThenRoutinesWithoutABot() {
         launch()
-        compose.onNodeWithTag("home.part.Routines").performClick()
-        compose.waitUntilAtLeastOneExists(hasTestTag("routines.group.pr-watch"), TIMEOUT)
-        compose.onNodeWithTag("routine.scan").assertExists()
-        compose.onNodeWithTag("routines.group.other").assertExists()
+        compose.onNodeWithTag("home.part.Bots").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.app.pr-watch"), TIMEOUT)
+        compose.onNodeWithTag("bots.workspace.app").assertExists()
+        compose.onNodeWithTag("bot.app.pr-watch.count", useUnmergedTree = true).assert(hasText("3"))
+        compose.onNodeWithTag("bots.list").performScrollToNode(hasTestTag("bots.routines"))
+        // A failed Routine comes first.
+        compose.onNodeWithTag("bots.list").performScrollToNode(hasTestTag("routine.nightly-backup"))
+        compose.onNodeWithTag("routine.scan").assertDoesNotExist()
+    }
+
+    @Test
+    fun aBotsHomeShowsWhatNeedsYouRunsAndIsPlanned() {
+        launch()
+        compose.openBot("pr-watch")
+        compose.onNodeWithTag("bot.home.needsyou").assert(hasText("Needs you · 3"))
+        compose.onNodeWithTag("bot.item.d10").assertExists()
+        compose.onNodeWithTag("bot.terminal.t8").performScrollTo().assert(hasText("run of scan", substring = true))
+        compose.onNodeWithTag("bot.planned.scan").performScrollTo()
+        // An item opens on the Bot's page, with the Inbox's actions.
+        compose.onNodeWithTag("bot.item.d10").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.proposal"), TIMEOUT)
+        compose.onNodeWithTag("bot.item.back").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.home.needsyou"), TIMEOUT)
+    }
+
+    @Test
+    fun aProposalIsAppliedFromItsChat() {
+        launch()
+        compose.openBot("pr-watch")
+        compose.onNodeWithTag("bot.tab.chats").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.chat.t7"), TIMEOUT)
+        compose.onNodeWithTag("bot.chat.t7").assert(hasText("proposal waiting", substring = true)).performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.proposal"), TIMEOUT)
+        compose.onNodeWithTag("chat.list").assertExists()
+        compose.onNodeWithTag("bot.proposal.apply").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("bot.proposal"), TIMEOUT)
+        compose.onNodeWithTag("bot.conversation.back").performClick()
+        compose.onNodeWithTag("bot.tab.routines").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.routine.nightly-sweep"), TIMEOUT)
+        compose.onNodeWithTag("bot.routine.nightly-sweep.enabled").assertIsOff()
+    }
+
+    @Test
+    fun aNewBotOpensItsFirstChatOnItsPage() {
+        launch()
+        compose.onNodeWithTag("home.part.Bots").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bots.new"), TIMEOUT)
+        compose.onNodeWithTag("bots.new").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("newbot.name"), TIMEOUT)
+        compose.onNodeWithTag("newbot.name").performTextInput("pr-watch")
+        compose.onNodeWithTag("newbot.hint").assert(hasText("has a Bot named pr-watch", substring = true))
+        compose.onNodeWithTag("newbot.create").assertIsNotEnabled()
+        compose.onNodeWithTag("newbot.name").performTextReplacement("deps")
+        compose.onNodeWithTag("newbot.description").performTextInput("Keeps the dependencies up to date")
+        compose.onNodeWithTag("newbot.create").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.conversation"), TIMEOUT)
+        compose.onNodeWithTag("bot.conversation.bot", useUnmergedTree = true).assert(hasText("with deps"))
+        compose.onNodeWithTag("bot.conversation.back").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.title") and hasText("deps"), TIMEOUT)
     }
 
     @Test
@@ -308,7 +365,7 @@ class NextTest {
     }
 
     @Test
-    fun talkingToABotOpensItsTask() {
+    fun talkingToABotOpensItOnTheBotsPage() {
         launch()
         compose.openWorkspaceSettings("app")
         compose.onNodeWithTag("settings.tab.BOTS").performClick()
@@ -316,7 +373,8 @@ class NextTest {
         compose.waitUntilAtLeastOneExists(hasTestTag("bot.talk"), TIMEOUT)
         compose.onNodeWithTag("bot.talk").performScrollTo().performClick()
         compose.waitUntilAtLeastOneExists(screenContains("Starting the agent for Talk to pr-watch"), TIMEOUT)
-        compose.onNodeWithTag("focus.bot", useUnmergedTree = true).assert(hasText("with pr-watch"))
+        // A talk opens on its Bot's page, not in Focus (ADR 0086).
+        compose.onNodeWithTag("bot.conversation.bot", useUnmergedTree = true).assert(hasText("with pr-watch"))
     }
 
     @Test
@@ -359,8 +417,9 @@ class NextTest {
         compose.onNodeWithTag("detail.main").performClick()
         compose.backToList()
         compose.waitUntilDoesNotExist(hasTestTag("item.d5"), TIMEOUT)
-        compose.onNodeWithTag("home.part.Routines").performClick()
-        compose.waitUntilAtLeastOneExists(hasTestTag("routine.nightly-backup"), TIMEOUT)
+        compose.onNodeWithTag("home.part.Bots").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bots.list"), TIMEOUT)
+        compose.onNodeWithTag("bots.list").performScrollToNode(hasTestTag("routine.nightly-backup"))
         compose.onNodeWithTag("routine.nightly-backup").performClick()
         compose.waitUntilAtLeastOneExists(hasText("Running since"), TIMEOUT)
     }
@@ -473,8 +532,9 @@ class NextTest {
     @Test
     fun aRoutineRunsNow() {
         launch()
-        compose.onNodeWithTag("home.part.Routines").performClick()
-        compose.waitUntilAtLeastOneExists(hasTestTag("routine.release-notes"), TIMEOUT)
+        compose.onNodeWithTag("home.part.Bots").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bots.list"), TIMEOUT)
+        compose.onNodeWithTag("bots.list").performScrollToNode(hasTestTag("routine.release-notes"))
         compose.onNodeWithTag("routine.release-notes").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("routine.run"), TIMEOUT)
         compose.onNodeWithTag("routine.run").performClick()
@@ -662,6 +722,14 @@ private fun ComposeTestRule.openWorkspaceSettings(name: String) {
 }
 
 private const val WAIT = 10_000L
+
+@OptIn(ExperimentalTestApi::class)
+private fun ComposeTestRule.openBot(name: String) {
+    onNodeWithTag("home.part.Bots").performClick()
+    waitUntilAtLeastOneExists(hasTestTag("bot.app.$name"), WAIT)
+    onNodeWithTag("bot.app.$name").performClick()
+    waitUntilAtLeastOneExists(hasTestTag("bot.home.needsyou"), WAIT)
+}
 
 /** A phone shows the detail over the list; go back to it. A tablet shows both. */
 @OptIn(ExperimentalTestApi::class)

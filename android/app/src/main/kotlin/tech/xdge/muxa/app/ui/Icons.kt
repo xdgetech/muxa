@@ -51,6 +51,7 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings as OutlinedSettings
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.ViewAgenda
 
@@ -109,6 +110,7 @@ object Icons {
     val inbox = Material.Outlined.Inbox
     val workspaces = Material.Outlined.ViewAgenda
     val routines = Material.Outlined.Schedule
+    val bots = Material.Outlined.SmartToy
     val settingsTab = Material.Outlined.OutlinedSettings
     val filter = Material.Outlined.FilterList
     val reorder = Material.Outlined.SwapVert

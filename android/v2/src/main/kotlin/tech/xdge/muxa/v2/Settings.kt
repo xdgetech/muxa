@@ -205,6 +205,8 @@ data class SettingsBot(
     val members: List<String> = emptyList(),
     @SerialName("handoffs_per_day") val handoffsPerDay: Int? = null,
     val commands: List<String> = emptyList(),
+    /** When each earlier memory was replaced, newest first; empty from servers before ADR 0086. */
+    @SerialName("memory_history") val memoryHistory: List<MemoryVersion> = emptyList(),
 ) {
     val spec: BotSpec
         get() = BotSpec(name, description, worker, dailyItems, enabled, members, handoffsPerDay, commands)
@@ -215,6 +217,10 @@ data class SettingsBot(
         }
     }
 }
+
+/** An earlier memory `bot-memory-restore` can bring back: [version] 1 is the newest; [at] is Unix seconds when it was replaced. */
+@Serializable
+data class MemoryVersion(val version: Int, val at: Long)
 
 /** A Routine as the files define it, with its instruction file's content; null when it cannot be read. */
 @Serializable

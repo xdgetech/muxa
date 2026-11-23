@@ -47,17 +47,26 @@ import tech.xdge.muxa.app.ui.StateColors
 import tech.xdge.muxa.v2.Terminal
 
 /** The app's places once connected. Settings is a phone tab; a tablet opens it from the host in the sidebar's footer. */
-enum class Section { INBOX, TASKS, ROUTINES, SETTINGS }
+enum class Section { INBOX, TASKS, BOTS, SETTINGS }
 
-/** Where a screen can send the user: another section, a new Task, or a Task's terminal in Focus. */
-class Nav(val section: Section, val go: (Section) -> Unit, val newTask: (TaskSeed) -> Unit, val open: (Terminal) -> Unit)
+/**
+ * Where a screen can send the user: another section, a new Task, or a terminal: a Task's in Focus,
+ * a Bot's talk, run or member on the Bot's page (ADR 0086). [bots] is where the Bots place stands.
+ */
+class Nav(
+    val section: Section,
+    val go: (Section) -> Unit,
+    val newTask: (TaskSeed) -> Unit,
+    val open: (Terminal) -> Unit,
+    val bots: BotNav,
+)
 
 private data class Tab(val section: Section, val title: String, val icon: ImageVector, val tag: String)
 
 private val tabs = listOf(
     Tab(Section.INBOX, "Inbox", Icons.inbox, "home.part.Inbox"),
     Tab(Section.TASKS, "Workspaces", Icons.workspaces, "mode.focus"),
-    Tab(Section.ROUTINES, "Routines", Icons.routines, "home.part.Routines"),
+    Tab(Section.BOTS, "Bots", Icons.bots, "home.part.Bots"),
     Tab(Section.SETTINGS, "Settings", Icons.settingsTab, "home.settings"),
 )
 
@@ -92,7 +101,7 @@ fun PhoneTabs(nav: Nav, content: @Composable ColumnScope.() -> Unit) {
 }
 
 /**
- * A tablet's sidebar: its title and New Task, Inbox | Tasks | Routines, the
+ * A tablet's sidebar: its title and New Task, Inbox | Tasks | Bots, the
  * list, and the host in the footer.
  */
 @Composable
@@ -103,7 +112,7 @@ fun Sidebar(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val parts = listOf(Section.INBOX, Section.TASKS, Section.ROUTINES)
+    val parts = listOf(Section.INBOX, Section.TASKS, Section.BOTS)
     val open = model.inbox.items.size
     var settings by remember { mutableStateOf(false) }
     Column(modifier.width(SIDEBAR_WIDTH.dp).fillMaxHeight().background(Palette.surface).endBorder()) {
@@ -117,7 +126,7 @@ fun Sidebar(
                 listOf(
                     Segment(if (open > 0) "Inbox $open" else "Inbox", "home.part.Inbox"),
                     Segment("Tasks", "mode.focus"),
-                    Segment("Routines", "home.part.Routines"),
+                    Segment("Bots", "home.part.Bots"),
                 ),
                 parts.indexOf(nav.section).coerceAtLeast(0),
                 { nav.go(parts[it]) },
@@ -137,7 +146,7 @@ fun Sidebar(
 private fun sectionTitle(s: Section) = when (s) {
     Section.INBOX -> "Inbox"
     Section.TASKS -> "Tasks"
-    Section.ROUTINES -> "Routines"
+    Section.BOTS -> "Bots"
     Section.SETTINGS -> "Settings"
 }
 
@@ -203,7 +212,7 @@ fun NeedsYouBanner(model: NextModel, open: (Terminal) -> Unit, showTasks: () -> 
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Dot(StateColors.needsYou)
-        Text(if (one != null) "${one.title} needs you" else "${waiting.size} Tasks need you", Modifier.weight(1f), fontSize = 14.sp)
+        Text(if (one != null) "${one.title} needs you" else "${waiting.size} agents need you", Modifier.weight(1f), fontSize = 14.sp)
         Icon(Icons.chevron, null, Modifier.size(18.dp), tint = Palette.textSecondary)
     }
 }

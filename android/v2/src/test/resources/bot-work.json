@@ -1,0 +1,65 @@
+{
+  "now": 1000,
+  "inbox": {
+    "revision": 1,
+    "items": [
+      {"id": "i1", "kind": "decide", "title": "Approve PR 57?", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch"},
+      {"id": "i2", "kind": "read", "title": "Back at 2000", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch", "later_until": 2000},
+      {"id": "i3", "kind": "read", "title": "Back already", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch", "later_until": 500},
+      {"id": "i4", "kind": "todo", "title": "Other Workspace", "created": 900, "source": "routine", "workspace": "Personal", "bot": "pr-watch"},
+      {"id": "i5", "kind": "todo", "title": "Captured", "created": 900, "source": "capture", "workspace": "app"}
+    ],
+    "done": [
+      {"id": "i9", "kind": "reply", "title": "Anna asked", "created": 800, "source": "routine", "workspace": "app", "bot": "pr-watch"},
+      {"id": "i8", "kind": "read", "title": "Weekly done", "created": 700, "source": "routine", "workspace": "app", "bot": "weekly"}
+    ]
+  },
+  "terminals": [
+    {"id": "t1", "live": true, "status": {"state": "working"}, "cols": 80, "rows": 24,
+     "labels": {"muxa.kind": "routine", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "pr-watch"}},
+    {"id": "t2", "live": true, "status": {"state": "blocked"}, "cols": 80, "rows": 24,
+     "labels": {"muxa.kind": "task", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "pr-watch"}},
+    {"id": "t3", "live": false, "status": {"state": "waiting"}, "cols": 80, "rows": 24,
+     "labels": {"muxa.kind": "task", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "pr-watch"}},
+    {"id": "t4", "live": true, "status": {"state": "working"}, "cols": 80, "rows": 24,
+     "labels": {"muxa.kind": "routine", "muxa.role": "agent", "muxa.workspace": "Personal", "muxa.bot": "pr-watch"}},
+    {"id": "t5", "live": true, "status": {"state": "working"}, "cols": 80, "rows": 24,
+     "labels": {"muxa.kind": "routine", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "weekly"}},
+    {"id": "t6", "live": true, "status": {"state": "waiting"}, "cols": 80, "rows": 24,
+     "labels": {"muxa.kind": "handoff", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "writer", "muxa.lead": "weekly"}},
+    {"id": "t7", "live": true, "status": {"state": "working"}, "cols": 80, "rows": 24,
+     "labels": {"muxa.kind": "task", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "deps"}}
+  ],
+  "routines": [
+    {"workspace": "app", "name": "scan", "enabled": true, "next_due": 1800, "bot": "pr-watch"},
+    {"workspace": "app", "name": "sweep", "enabled": true, "next_due": 1200, "bot": "pr-watch"},
+    {"workspace": "app", "name": "review", "enabled": true, "on": "review", "bot": "pr-watch"},
+    {"workspace": "app", "name": "manual", "enabled": true, "bot": "pr-watch"},
+    {"workspace": "app", "name": "off", "enabled": false, "next_due": 1100, "bot": "pr-watch"},
+    {"workspace": "Personal", "name": "elsewhere", "enabled": true, "next_due": 1100, "bot": "pr-watch"},
+    {"workspace": "app", "name": "weekly-summary", "enabled": true, "next_due": 5000, "bot": "weekly"}
+  ],
+  "cases": [
+    {"bot": "pr-watch", "workspace": "app", "enabled": true,
+     "items": ["i1", "i3"], "terminals": ["t1", "t2"], "needs_you": ["i1", "i3", "t2"], "in_progress": ["t1"],
+     "planned": ["sweep", "scan", "review"], "recent": ["i9"], "status": "needs-you"},
+    {"bot": "weekly", "workspace": "app", "enabled": true,
+     "items": [], "terminals": ["t5", "t6"], "needs_you": ["t6"], "in_progress": ["t5"],
+     "planned": ["weekly-summary"], "recent": ["i8"], "status": "needs-you"},
+    {"bot": "writer", "workspace": "app", "enabled": true,
+     "items": [], "terminals": ["t6"], "needs_you": ["t6"], "in_progress": [],
+     "planned": [], "recent": [], "status": "needs-you"},
+    {"bot": "pr-watch", "workspace": "Personal", "enabled": true,
+     "items": ["i4"], "terminals": ["t4"], "needs_you": ["i4"], "in_progress": ["t4"],
+     "planned": ["elsewhere"], "recent": [], "status": "needs-you"},
+    {"bot": "deps", "workspace": "app", "enabled": false,
+     "items": [], "terminals": ["t7"], "needs_you": [], "in_progress": ["t7"],
+     "planned": [], "recent": [], "status": "running"},
+    {"bot": "chores", "workspace": "Personal", "enabled": false,
+     "items": [], "terminals": [], "needs_you": [], "in_progress": [],
+     "planned": [], "recent": [], "status": "paused"},
+    {"bot": "reviewer", "workspace": "app", "enabled": true,
+     "items": [], "terminals": [], "needs_you": [], "in_progress": [],
+     "planned": [], "recent": [], "status": "idle"}
+  ]
+}

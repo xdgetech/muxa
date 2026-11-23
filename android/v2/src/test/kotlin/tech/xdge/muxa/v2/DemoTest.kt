@@ -290,16 +290,17 @@ class DemoTest {
             val c = open()
             val app = c.workspaces().first()
             val every = listOf("dependency-digest", "nightly-backup", "release-notes")
-            assertEquals(UsedBy(every, listOf("t1", "t2")), app.connections[0].usedBy)
+            // t7, the talk with pr-watch, is a Task agent and gets them too (ADR 0083).
+            assertEquals(UsedBy(every, listOf("t1", "t2", "t7")), app.connections[0].usedBy)
             assertEquals(1_764_000_000L, app.connections[0].lastUsed)
-            assertEquals(UsedBy(every, listOf("t1", "t2")), app.connections[1].usedBy)
+            assertEquals(UsedBy(every, listOf("t1", "t2", "t7")), app.connections[1].usedBy)
             // A named connection is ignored: every agent gets all of them (ADR 0075).
             val (t, _) = c.startTask("app", "Triage", connections = listOf("linear"))
             assertEquals("""["github","linear"]""", t.labels["muxa.connections"])
             assertEquals("""["docs"]""", t.labels["muxa.mcp"])
             val after = c.workspaces().first()
-            assertEquals(listOf("t1", "t2", t.id), after.connections[1].usedBy.tasks)
-            assertEquals(listOf("t1", "t2", t.id), after.mcp[0].usedBy.tasks)
+            assertEquals(listOf("t1", "t2", "t7", t.id), after.connections[1].usedBy.tasks)
+            assertEquals(listOf("t1", "t2", "t7", t.id), after.mcp[0].usedBy.tasks)
             c.close()
         }
     }
@@ -422,7 +423,7 @@ class DemoTest {
             assertTrue(app.routines.all { it.instructionsText.orEmpty().isNotEmpty() })
             val bot = app.bots.single()
             assertEquals("pr-watch", bot.name)
-            assertEquals(1, bot.memoryVersions)
+            assertEquals(2, bot.memoryVersions)
             assertEquals("pr-watch", app.routines.first { it.name == "scan" }.bot)
             assertEquals(listOf("reviewer"), s.workers.map { it.name })
             c.close()

@@ -130,8 +130,9 @@ class NextModel(
     private val channelOf = mutableMapOf<String, Int>()
 
     /** Agents waiting on the user: a short-lived state, never an Inbox item. */
+    /** Every live agent waiting on the user, of a Task, a Routine run or a team member (ADR 0086 §7). */
     val needsYou: List<Terminal>
-        get() = terminals.filter { it.live && it.isTaskAgent && it.status?.state in WAITING }
+        get() = terminals.filter { it.live && it.isAgent && it.status?.state in WAITING }
 
     val isConnected: Boolean get() = link == Link.Connected
     val currentHost: Host? get() = hosts.host(hostId)
@@ -486,6 +487,26 @@ class NextModel(
         return opened
     }
 
+    /**
+     * As [openChat], for an agent that may have just started: its session shows up some seconds after
+     * the terminal, so "no Claude Code or Codex runs" is tried again each second before it is an error.
+     */
+    suspend fun openChatWhenReady(terminal: String, seconds: Int = CHAT_WAIT_SECONDS): Int? {
+        repeat(seconds - 1) {
+            val c = client ?: return openChat(terminal)
+            try {
+                val (n, update) = c.chatOpen(terminal)
+                chats = chats + (n to update.appliedTo(emptyList()))
+                update.prompt?.let { p -> chatPrompts = chatPrompts + (n to p) }
+                return n
+            } catch (e: V2Error.Refused) {
+                if (NOT_STARTED !in e.message.orEmpty()) return openChat(terminal)
+                delay(1.seconds)
+            }
+        }
+        return openChat(terminal)
+    }
+
     fun closeChat(n: Int) {
         val open = n in chats
         chats = chats - n
@@ -611,6 +632,10 @@ class NextModel(
         private const val HISTORY = 2000
         private const val WOULD_LOSE_WORK = "would-lose-work"
         private const val CONFLICT = "conflict"
+        private const val CHAT_WAIT_SECONDS = 20
+
+        /** The host's words for an agent whose session has not shown up yet. */
+        private const val NOT_STARTED = "no Claude Code or Codex runs"
 
         /** The device's local date, `YYYY-MM-DD`, as Capture reads `due`. */
         fun today(): String = LocalDate.now().toString()

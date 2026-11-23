@@ -61,9 +61,16 @@ fun NextRoot(model: NextModel) {
     var section by rememberSaveable { mutableStateOf(Section.INBOX) }
     var terminal by rememberSaveable { mutableStateOf<String?>(null) }
     var newTask by remember { mutableStateOf<TaskSeed?>(null) }
+    val bots = remember(model) { BotNav() }
+    // A Bot's talk, run or member opens on its page; any other terminal in Focus (ADR 0086).
     fun open(t: Terminal) {
-        terminal = t.id
-        section = Section.TASKS
+        if (t.belongsToBot) {
+            bots.open(t)
+            section = Section.BOTS
+        } else {
+            terminal = t.id
+            section = Section.TASKS
+        }
     }
 
     // Ctrl+Shift+H and Ctrl+Shift+F, as on the desktop (ADR 0070); Ctrl+Shift+N for a new Task,
@@ -85,9 +92,10 @@ fun NextRoot(model: NextModel) {
                     NextModel.Link.Connected, is NextModel.Link.Reconnecting -> {
                         // A tablet has no Settings tab: the host in its sidebar's footer opens Settings as a sheet.
                         val shown = if (layout != WindowLayout.Phone && section == Section.SETTINGS) Section.INBOX else section
-                        val nav = Nav(shown, { section = it }, { newTask = it }, ::open)
+                        val nav = Nav(shown, { section = it }, { newTask = it }, ::open, bots)
                         when (shown) {
-                            Section.INBOX, Section.ROUTINES -> Home(model, nav, ::open)
+                            Section.INBOX -> Home(model, nav, ::open)
+                            Section.BOTS -> BotsScreen(model, nav)
                             Section.TASKS -> Focus(model, nav, terminal) { terminal = it }
                             Section.SETTINGS -> SettingsScreen(model, nav)
                         }

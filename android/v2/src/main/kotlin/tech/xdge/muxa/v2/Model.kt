@@ -309,8 +309,17 @@ data class Terminal(
     val taskTitle: String? get() = labels["muxa.title"]
     val isTaskAgent: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent"
 
-    /** The Bot a talk Task talks with (ADR 0083). */
+    /** The Bot a talk Task talks with (ADR 0083); also on a Bot's Routine runs and its member runs (ADR 0086). */
     val bot: String? get() = labels["muxa.bot"]
+
+    /** The team lead a member's run works for (ADR 0086). */
+    val lead: String? get() = labels["muxa.lead"]
+
+    /** A Bot's talk, run or member: it opens on the Bot's page, never among Focus's Tasks (ADR 0086). */
+    val belongsToBot: Boolean get() = bot != null || lead != null
+
+    /** An agent, of a Task, a Routine run or a member, as opposed to a shell. */
+    val isAgent: Boolean get() = labels["muxa.role"] == "agent"
 
     /** A shell beside a Task's agent (ADR 0079); it shares the agent's `muxa.dir`. */
     val isTaskShell: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "shell"

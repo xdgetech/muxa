@@ -15,8 +15,9 @@ data class TerminalGroups(val tasks: List<Terminal>, val others: List<Terminal>)
 
     companion object {
         fun of(terminals: List<Terminal>): TerminalGroups {
-            // A Task's shells are listed with their Task, never on their own.
-            val live = terminals.filter { it.live && !it.isTaskShell }
+            // A Task's shells are listed with their Task, never on their own; a Bot's talks, runs
+            // and members stay on its page (ADR 0086).
+            val live = terminals.filter { it.live && !it.isTaskShell && !it.belongsToBot }
             val (tasks, others) = live.partition { it.isTask }
             return TerminalGroups(tasks, others)
         }

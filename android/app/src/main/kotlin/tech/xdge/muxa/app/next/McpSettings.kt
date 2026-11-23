@@ -53,7 +53,7 @@ fun McpSettings(editor: SettingsEditor, ws: SettingsWorkspace, usage: Workspace?
 
 /** ADR 0087: the user's claude.ai connectors may load beside the Workspace's MCP servers. */
 @Composable
-private fun ClaudeConnectors(editor: SettingsEditor, ws: SettingsWorkspace) {
+fun ClaudeConnectors(editor: SettingsEditor, ws: SettingsWorkspace) {
     val save = rememberInlineSave(editor)
     SettingsCard {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
@@ -68,7 +68,7 @@ private fun ClaudeConnectors(editor: SettingsEditor, ws: SettingsWorkspace) {
 
 /** `[workspace.bots]` (ADR 0087): each list saves on its own, and the other list goes with it unchanged. */
 @Composable
-private fun BotRulesBlock(editor: SettingsEditor, ws: SettingsWorkspace) {
+fun BotRulesBlock(editor: SettingsEditor, ws: SettingsWorkspace) {
     val save = rememberInlineSave(editor)
     val on = !editor.readOnly
     val rules = ws.botRules

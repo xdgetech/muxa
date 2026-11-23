@@ -129,6 +129,7 @@ internal class DemoSettings(initial: Settings) {
             w.copy(routines = w.routines.filter { it.name != op.name })
         }
         is SettingsOp.BotAdd -> {
+            require(BOT_NAME.matches(op.bot.name)) { "a Bot's name is 1 to 64 lowercase letters, digits, - and _" }
             requireTeam(w, op.bot)
             require(w.bots.none { it.name == op.bot.name }) { "${op.bot.name} exists" }
             w.copy(bots = w.bots + SettingsBot.of(op.bot, op.soulText ?: ""))
@@ -137,7 +138,7 @@ internal class DemoSettings(initial: Settings) {
             requireTeam(w, op.bot)
             val old = w.bots.firstOrNull { it.name == op.bot.name } ?: throw IllegalArgumentException("no Bot ${op.bot.name}")
             val updated = SettingsBot.of(op.bot, op.soulText ?: old.soulText)
-                .copy(memoryText = old.memoryText, memoryVersions = old.memoryVersions)
+                .copy(memoryText = old.memoryText, memoryVersions = old.memoryVersions, memoryHistory = old.memoryHistory)
             w.copy(bots = w.bots.map { if (it.name == old.name) updated else it })
         }
         is SettingsOp.BotRename -> {

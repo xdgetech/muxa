@@ -77,7 +77,7 @@ class ChatLink(private val model: NextModel) {
 fun rememberChat(model: NextModel, terminal: Terminal): ChatLink? {
     val link = remember(terminal.id) { ChatLink(model) }
     val follows = terminal.isTaskAgent
-    LaunchedEffect(terminal.id, link.attempt, follows) { if (follows) link.number = model.openChat(terminal.id) }
+    LaunchedEffect(terminal.id, link.attempt, follows) { if (follows) link.number = model.openChatWhenReady(terminal.id) }
     DisposableEffect(terminal.id) { onDispose { link.number?.let(model::closeChat) } }
     return link.takeIf { follows }
 }

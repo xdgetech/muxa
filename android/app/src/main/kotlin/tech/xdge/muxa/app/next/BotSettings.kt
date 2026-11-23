@@ -145,20 +145,12 @@ private fun BotDialog(
  * [renamed] gets the new name, so the editor goes on with it.
  */
 @Composable
-private fun BotRename(editor: SettingsEditor, workspace: String, name: String, names: List<String>, renamed: (String) -> Unit) {
-    // A TextFieldValue keeps the cursor and the keyboard's composition while the text is rewritten;
-    // the rewrite keeps the length, so both stay valid.
+fun BotRename(editor: SettingsEditor, workspace: String, name: String, names: List<String>, renamed: (String) -> Unit) {
     var field by remember(name) { mutableStateOf(TextFieldValue(name)) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val typed = field.text
-    OutlinedTextField(
-        field, { field = it.copy(text = BotDraft.typedName(it.text)) }, Modifier.fillMaxWidth().testTag("bot.name"),
-        label = { Text("Name") },
-        supportingText = { Text(BotDraft.NAME_RULE) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
-    )
+    val typed = BotDraft.typedName(field.text)
+    BotNameField(field, { field = it }, "bot.name", BotDraft.NAME_RULE)
     SecondaryButton("Rename", {
         val to = typed
         scope.launch {
@@ -170,11 +162,28 @@ private fun BotRename(editor: SettingsEditor, workspace: String, name: String, n
 }
 
 /**
+ * A Bot's name as typed: lowercase, with spaces as `-`. The text is rewritten only between words: a
+ * rewrite while the keyboard composes a word makes it drop letters. Read the name with [BotDraft.typedName].
+ */
+@Composable
+fun BotNameField(value: TextFieldValue, change: (TextFieldValue) -> Unit, tag: String, help: String?, placeholder: String? = null) {
+    OutlinedTextField(
+        value, { change(if (it.composition == null) it.copy(text = BotDraft.typedName(it.text)) else it) },
+        Modifier.fillMaxWidth().testTag(tag),
+        label = { Text("Name") },
+        placeholder = placeholder?.let { { Text(it) } },
+        supportingText = help?.let { { Text(it) } },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+    )
+}
+
+/**
  * The Bots this one leads (ADR 0085): others of the Workspace that lead no team. Hidden for a Bot
  * that is a member of another lead, and when there is no other Bot.
  */
 @Composable
-private fun BotTeam(d: BotDraft, bots: List<SettingsBot>, change: (BotDraft) -> Unit) {
+fun BotTeam(d: BotDraft, bots: List<SettingsBot>, change: (BotDraft) -> Unit) {
     val choices = BotDraft.memberChoices(d.name.trim(), bots)
     if (choices.isEmpty()) return
     NameChips("Team", choices, d.members, "bot.member") { change(d.copy(members = it)) }
@@ -217,6 +226,6 @@ private enum class BotAsk(val action: String, val text: String) {
 }
 
 private val MEMORY_SHAPE = RoundedCornerShape(8.dp)
-private const val DEFAULT_DAILY_ITEMS = 3
+const val DEFAULT_DAILY_ITEMS = 3
 private const val DEFAULT_HANDOFFS = 10
 private const val SOUL_LINES = 8

@@ -50,4 +50,14 @@ class TerminalGroupsTest {
         assertEquals("Terminal t3", terminal("t3").title)
         assertEquals("fix-login", terminal("t1", name = "Fix", labels = mapOf("muxa.branch" to "fix-login")).title)
     }
+
+    @Test
+    fun aBotsTalkRunAndMemberStayOffFocus() {
+        val talk = terminal("t7", labels = mapOf("muxa.kind" to "task", "muxa.role" to "agent", "muxa.dir" to "/w/talk", "muxa.bot" to "pr-watch"))
+        val run = terminal("t8", labels = mapOf("muxa.kind" to "routine", "muxa.role" to "agent", "muxa.dir" to "/w/scan", "muxa.bot" to "pr-watch"))
+        val member = terminal("t9", labels = mapOf("muxa.kind" to "handoff", "muxa.role" to "agent", "muxa.lead" to "weekly"))
+        val groups = TerminalGroups.of(listOf(task("t1", "app"), talk, run, member))
+        assertEquals(listOf("t1"), groups.tasks.map { it.id })
+        assertTrue(groups.others.isEmpty())
+    }
 }

@@ -8,16 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,22 +46,19 @@ import kotlinx.coroutines.delay
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.Palette
-import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.ItemKind
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.V2Request
 
 /**
- * Home (ADR 0066): the Inbox and the Routines, a list and a detail. A phone
+ * Home (ADR 0066): the Inbox, a list and a detail. A phone
  * shows them as two screens; a tablet shows the list in the sidebar.
  */
 @Composable
 fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
-    val inboxPart = nav.section != Section.ROUTINES
     val newTask = nav.newTask
     var selectedItem by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedRoutine by rememberSaveable { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf(InboxFilter()) }
     var reordering by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(nowSeconds()) }
@@ -106,7 +98,7 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
 
     val keys = Modifier.onPreviewKeyEvent { e ->
         if (e.type != KeyEventType.KeyDown || e.isShiftPressed) return@onPreviewKeyEvent false
-        val item = selected?.takeIf { inboxPart && it.id in model.inbox.items.map(InboxItem::id) }
+        val item = selected?.takeIf { it.id in model.inbox.items.map(InboxItem::id) }
         // While the comment field is open, its own keys win.
         val commenting = item != null && actions.commenting == item.id
         when {
@@ -127,45 +119,37 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
     }
 
     val tools: @Composable RowScope.() -> Unit = {
-        if (inboxPart) InboxTools(model, filter, { filter = it }, reordering) { reordering = it }
+        InboxTools(model, filter, { filter = it }, reordering) { reordering = it }
     }
     val list: @Composable ColumnScope.() -> Unit = {
-        if (inboxPart) {
-            Column(Modifier.padding(horizontal = if (phone) 18.dp else 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                NeedsYouBanner(model, openTerminal) { nav.go(Section.TASKS) }
-                CaptureField(model, capture)
-            }
-            Box(Modifier.weight(1f)) { InboxList(model, visible, filter, now, selectedItem, reordering) { selectedItem = it } }
-        } else {
-            Box(Modifier.weight(1f)) { RoutineList(model, selectedRoutine) { selectedRoutine = it } }
+        Column(Modifier.padding(horizontal = if (phone) 18.dp else 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            NeedsYouBanner(model, openTerminal) { nav.go(Section.TASKS) }
+            CaptureField(model, capture)
         }
+        Box(Modifier.weight(1f)) { InboxList(model, visible, filter, now, selectedItem, reordering) { selectedItem = it } }
         LinkBanner(model)
     }
     val detail: @Composable (Modifier) -> Unit = { modifier ->
         Box(modifier) {
-            if (inboxPart) {
-                if (selected != null) {
-                    val position = model.inbox.items.indexOfFirst { it.id == selected.id }.takeIf { it >= 0 }?.plus(1)
-                    InboxItemPane(model, selected, position, actions, openTerminal, newTask) { selectedItem = nextVisible(selected.id) }
-                } else {
-                    Empty(if (model.inbox.items.isEmpty()) "Inbox zero" else "Select an item")
-                }
+            if (selected != null) {
+                val position = model.inbox.items.indexOfFirst { it.id == selected.id }.takeIf { it >= 0 }?.plus(1)
+                InboxItemPane(model, selected, position, actions, openTerminal, newTask) { selectedItem = nextVisible(selected.id) }
             } else {
-                model.routines.firstOrNull { it.id == selectedRoutine }?.let { RoutinePane(model, it) } ?: Empty("Select a Routine")
+                Empty(if (model.inbox.items.isEmpty()) "Inbox zero" else "Select an item")
             }
         }
     }
 
-    val shown = if (inboxPart) selectedItem else selectedRoutine
+    val shown = selectedItem
     fun back() {
-        if (inboxPart) selectedItem = null else selectedRoutine = null
+        selectedItem = null
     }
     Box(Modifier.fillMaxSize().then(keys)) {
         if (phone) {
             if (shown == null) {
                 PhoneTabs(nav) {
-                    LargeTitle(if (inboxPart) "Inbox" else "Routines") {
-                        if (inboxPart) HostMenu(model) { nav.go(Section.SETTINGS) }
+                    LargeTitle("Inbox") {
+                        HostMenu(model) { nav.go(Section.SETTINGS) }
                         tools()
                     }
                     list()
@@ -183,43 +167,6 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
             Row(Modifier.fillMaxSize()) {
                 Sidebar(model, nav, actions = tools, content = list)
                 detail(Modifier.weight(1f).fillMaxHeight())
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoutineList(model: NextModel, selected: String?, select: (String) -> Unit) {
-    LaunchedEffect(Unit) { model.refreshRoutines() }
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        val groups = routineGroups(model.routines)
-        for (group in groups) {
-            // Headers only once some Routine has a Bot.
-            if (groups.size > 1 || group.bot != null) {
-                item(key = "group-" + (group.bot ?: "")) {
-                    Text(
-                        group.bot ?: "Other",
-                        Modifier.padding(start = 6.dp, top = 10.dp, bottom = 2.dp).testTag("routines.group.${group.bot ?: "other"}"),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Palette.textSecondary,
-                    )
-                }
-            }
-            items(group.routines, key = { it.id }) { r ->
-                RoutineRow(r, Modifier.clip(RoundedCornerShape(14.dp)).background(Palette.raised).selectable(r.id == selected) { select(r.id) })
-            }
-        }
-        if (model.routineProblems.isNotEmpty()) {
-            item { Text("Cannot read", Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall) }
-            items(model.routineProblems, key = { "problem-" + it.workspace }) { p ->
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    Text(p.workspace)
-                    Text(p.reason, color = Theme.failure, style = MaterialTheme.typography.labelMedium)
-                }
             }
         }
     }

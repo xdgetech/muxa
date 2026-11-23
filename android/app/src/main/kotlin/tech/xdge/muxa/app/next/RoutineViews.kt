@@ -36,16 +36,6 @@ val Routine.whenText: String
         return schedule?.let { "$base · $it" } ?: base
     }
 
-/** A Bot's Routines, or the Routines of no Bot when [bot] is null. */
-data class RoutineGroup(val bot: String?, val routines: List<Routine>)
-
-/** Routines by Bot (ADR 0082), the Bots in name order, then the rest as "Other". One group with no Bot when none has one. */
-fun routineGroups(routines: List<Routine>): List<RoutineGroup> {
-    val byBot = routines.groupBy { it.bot }
-    val owned = byBot.entries.filter { it.key != null }.sortedBy { it.key }.map { RoutineGroup(it.key, it.value) }
-    return owned + listOfNotNull(byBot[null]?.let { RoutineGroup(null, it) })
-}
-
 private enum class Health { RUNNING, FAILED, OK, NEVER }
 
 private val Routine.health: Health

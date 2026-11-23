@@ -56,7 +56,7 @@ private fun scheduleText(r: SettingsRoutine): String {
 }
 
 @Composable
-private fun RoutineDialog(
+fun RoutineDialog(
     editor: SettingsEditor,
     workspace: String,
     workers: List<String>,

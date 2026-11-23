@@ -342,7 +342,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             if (bot != null) put("muxa.bot", bot)
         }
         val t = Terminal(
-            "t${terminals.size + 1}", title, live = true, status = TerminalStatus("working", "claude-code"),
+            newTerminalId(), title, live = true, status = TerminalStatus("working", "claude-code"),
             labels = labels, cols = 80, rows = 24,
         )
         terminals += t
@@ -693,6 +693,23 @@ private fun standardContent(): DemoContent {
                 "t6", "fix-login-sh", live = true, cols = 80, rows = 24,
                 labels = mapOf("muxa.kind" to "task", "muxa.role" to "shell", "muxa.workspace" to "app", "muxa.dir" to "/demo/app-fix-login"),
             ),
+            // A talk with pr-watch (ADR 0083); d12 is its proposal.
+            Terminal(
+                "t7", "Talk to pr-watch", live = true, status = TerminalStatus("done", "claude-code"), cols = 80, rows = 24,
+                labels = mapOf(
+                    "muxa.kind" to "task", "muxa.role" to "agent", "muxa.workspace" to "app", "muxa.bot" to "pr-watch",
+                    "muxa.title" to "Talk to pr-watch", "muxa.dir" to TALK_DIR,
+                    "muxa.places" to """[{"kind":"folder","path":"$TALK_DIR"}]""",
+                ),
+            ),
+            // A run of pr-watch's Routine scan (ADR 0086).
+            Terminal(
+                "t8", live = true, status = TerminalStatus("working", "claude-code"), cols = 80, rows = 24,
+                labels = mapOf(
+                    "muxa.kind" to "routine", "muxa.role" to "agent", "muxa.workspace" to "app", "muxa.bot" to "pr-watch",
+                    "muxa.routine" to "scan", "muxa.dir" to "/demo/runs/scan",
+                ),
+            ),
         ),
         screens = mapOf(
             "t1" to "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
@@ -700,6 +717,9 @@ private fun standardContent(): DemoContent {
             "t3" to "$ ",
             "t4" to "$ ",
             "t6" to "~/demo/app-fix-login $ ",
+            "t7" to "› Every night, list the PRs nobody touched for a week.\r\n\r\n" +
+                "● I wrote a proposal: a nightly-sweep Routine, turned off. Apply it from the bar above or the Inbox.\r\n",
+            "t8" to "● Listing the PRs that wait for review\r\n",
         ),
         inbox = listOf(
             item("d1", ItemKind.REVIEW, "Review fix-login", note = "Draft PR #42: refresh the session before it expires.", source = "task", terminal = "t1"),
@@ -732,7 +752,7 @@ private fun standardContent(): DemoContent {
             ),
             item(
                 "d12", ItemKind.DECIDE, "pr-watch proposes: a nightly sweep",
-                note = "- routine-add nightly-sweep (off)\n- bot-update pr-watch\n", source = "task", bot = "pr-watch",
+                note = "- routine-add nightly-sweep (off)\n- bot-update pr-watch\n", source = "task", bot = "pr-watch", terminal = "t7",
                 settingsProposal = SettingsProposal("1", NIGHTLY_SWEEP_OPS),
             ),
             item(
@@ -747,7 +767,9 @@ private fun standardContent(): DemoContent {
             routine("dependency-digest", "09:00", RoutineLast(1_764_000_000, ok = true, published = 1)),
             routine("nightly-backup", "02:00", RoutineLast(1_764_000_000, ok = false, reason = "gh login expired.")),
             routine("release-notes", null, null),
-            routine("scan", "09:00", RoutineLast(1_764_000_000, ok = true, published = 2), schedule = SCAN_SCHEDULE, bot = "pr-watch"),
+            // t8 runs it.
+            routine("scan", "09:00", RoutineLast(1_764_000_000, ok = true, published = 2), schedule = SCAN_SCHEDULE, bot = "pr-watch")
+                .copy(nextDue = 1_764_001_800, runningSince = 1_764_000_000),
         ),
         workspaces = listOf(
             Workspace(
@@ -781,6 +803,13 @@ private fun standardContent(): DemoContent {
             ),
         ),
         chats = mapOf(
+            "t7" to ChatUpdate(
+                reset = true,
+                entries = listOf(
+                    ChatEntry("u1", "user", "Every night, list the PRs nobody touched for a week."),
+                    ChatEntry("a1", "assistant", "I wrote a proposal: a **nightly-sweep** Routine, turned off. Apply it from the bar above or the Inbox."),
+                ),
+            ),
             "t1" to ChatUpdate(
                 reset = true,
                 entries = listOf(
@@ -807,6 +836,9 @@ private fun standardContent(): DemoContent {
 }
 
 private const val SCAN_SCHEDULE = "*/30 9-18 * * 1-5"
+
+/** The folder of the demo's talk with pr-watch. */
+private const val TALK_DIR = "/demo/tasks/talk-to-pr-watch"
 
 /** The shell commands only pr-watch may run (ADR 0088). */
 private val PR_WATCH_COMMANDS = listOf("gh pr list:*")
@@ -877,8 +909,9 @@ private val DEMO_SETTINGS = Settings(
                     "pr-watch", "Watches the app's open PRs", dailyItems = 3,
                     soulText = "You watch the open PRs of example/app.\nPropose a review only when CI passed. Write short items.\n",
                     memoryText = "- Sam reviews the auth code.\n- Dependabot PRs merge on Fridays.\n",
-                    memoryVersions = 1,
+                    memoryVersions = 2,
                     commands = PR_WATCH_COMMANDS,
+                    memoryHistory = listOf(MemoryVersion(1, 1_764_000_240), MemoryVersion(2, 1_763_913_600)),
                 ),
             ),
         ),
