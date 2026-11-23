@@ -266,6 +266,13 @@ fn check_item(raw: RawItem) -> Result<Item, Vec<String>> {
     bytes_line("key", &raw.key, MAX_KEY, &mut reasons);
     chars_line("title", &raw.title, MAX_TITLE, &mut reasons);
     text("body", &raw.body, MAX_BODY, true, &mut reasons);
+    // A title alone is not enough to act on: the user reads the body next.
+    if raw.body.trim().is_empty() {
+        reasons.push(
+            "body is empty. Say why it matters or what is asked, then the context; a reply ends with a draft answer."
+                .into(),
+        );
+    }
     if raw.links.len() > MAX_LINKS {
         reasons.push(format!("links has more than {MAX_LINKS} entries."));
     }

@@ -209,8 +209,9 @@ fn reply_and_todo_items_take_a_due_date_and_a_bot_its_memory() {
             "version": 1,
             "items": [
                 {"kind": "reply", "key": "slack:1", "title": "Ana asks about the release", "due": "2026-11-24",
+                 "body": "She asks if it moves to Thursday.\n\nDraft: Yes, Thursday.",
                  "links": [{"url": "https://slack.example/archives/C1/p1"}]},
-                {"kind": "todo", "key": "ci:main", "title": "main is red"}
+                {"kind": "todo", "key": "ci:main", "title": "main is red", "body": "The last 3 runs failed in auth."}
             ],
             "memory": "Ana owns the release."
         }))
@@ -232,4 +233,17 @@ fn reply_and_todo_items_take_a_due_date_and_a_bot_its_memory() {
             "{bad}"
         );
     }
+}
+
+#[test]
+fn an_item_with_only_a_title_is_refused() {
+    let refused = validate(
+        &serde_json::to_vec(&json!({"version": 1, "items": [
+            {"kind": "todo", "key": "k", "title": "Do the thing", "body": "  "}
+        ]}))
+        .unwrap(),
+        10,
+    )
+    .unwrap_err();
+    assert!(refused.iter().any(|r| r.contains("body is empty")), "{refused:?}");
 }
