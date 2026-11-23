@@ -32,6 +32,12 @@ fun BotChip(bot: String, modifier: Modifier = Modifier) {
     Chip("from $bot", KindPalette.todo, modifier)
 }
 
+/** "with pr-watch": the Bot a talk Task talks with (ADR 0083). */
+@Composable
+fun TalkChip(bot: String, modifier: Modifier = Modifier) {
+    Chip("with $bot", KindPalette.todo, modifier)
+}
+
 /** The pages the item is about; each opens in the browser. */
 @Composable
 fun ItemLinks(links: List<ItemLink>) {
@@ -74,7 +80,7 @@ private fun ProposalFact(label: String, value: String, tag: String) {
 
 /** A titled box like the item's Summary. */
 @Composable
-private fun ItemBox(title: String, modifier: Modifier, content: @Composable () -> Unit) {
+fun ItemBox(title: String, modifier: Modifier, content: @Composable () -> Unit) {
     Column(
         modifier.fillMaxWidth().background(Palette.surface, BOX).border(1.dp, Palette.border, BOX).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),

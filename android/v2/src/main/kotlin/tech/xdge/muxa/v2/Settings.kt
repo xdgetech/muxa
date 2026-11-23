@@ -1,5 +1,7 @@
 package tech.xdge.muxa.v2
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -22,6 +24,19 @@ data class Settings(
     val problem: String? = null,
     val workspaces: List<SettingsWorkspace> = emptyList(),
     val workers: List<WorkerSpec> = emptyList(),
+    /** The Capture assistant (ADR 0084); null from an older server. */
+    val assistant: SettingsAssistant? = null,
+)
+
+/** `[assistant]` in `workspaces.toml`, and its `soul.md` and `memory.md` beside it. A text is null when it cannot be read. */
+@Serializable
+data class SettingsAssistant(
+    val enabled: Boolean = false,
+    /** Null: the default agent. */
+    val worker: String? = null,
+    @SerialName("soul_text") val soulText: String? = null,
+    /** Read only: the assistant writes it. */
+    @SerialName("memory_text") val memoryText: String? = null,
 )
 
 /** A `[[workspace]]`. Paths are as written, `~/` included. */
@@ -145,9 +160,15 @@ data class RoutineSpec(
     val bot: String? = null,
     /** Claude Code's edit tools are denied to the run. */
     @SerialName("read_only") val readOnly: Boolean = false,
+    /** `review` or null (ADR 0084): it then has no [at] or [schedule]. */
+    val on: String? = null,
 )
 
-/** A `[[bot]]` (ADR 0082). [name] is lowercase letters, digits, `-` and `_`; [dailyItems] null is 3. */
+/**
+ * A `[[bot]]` (ADR 0082). [name] is lowercase letters, digits, `-` and `_`; [dailyItems] null is 3.
+ * [members] make it a team lead (ADR 0085); [handoffsPerDay] null is 10.
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class BotSpec(
     val name: String,
@@ -155,6 +176,9 @@ data class BotSpec(
     val worker: String? = null,
     @SerialName("daily_items") val dailyItems: Int? = null,
     val enabled: Boolean = true,
+    // Absent when empty, as the server writes it.
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val members: List<String> = emptyList(),
+    @SerialName("handoffs_per_day") val handoffsPerDay: Int? = null,
 )
 
 /** A Bot with its `soul.md`, its `memory.md` (which its runs write), and how many earlier memories can come back. */
@@ -168,13 +192,15 @@ data class SettingsBot(
     @SerialName("soul_text") val soulText: String? = null,
     @SerialName("memory_text") val memoryText: String? = null,
     @SerialName("memory_versions") val memoryVersions: Int = 0,
+    val members: List<String> = emptyList(),
+    @SerialName("handoffs_per_day") val handoffsPerDay: Int? = null,
 ) {
     val spec: BotSpec
-        get() = BotSpec(name, description, worker, dailyItems, enabled)
+        get() = BotSpec(name, description, worker, dailyItems, enabled, members, handoffsPerDay)
 
     companion object {
         fun of(spec: BotSpec, soulText: String?) = with(spec) {
-            SettingsBot(name, description, worker, dailyItems, enabled, soulText, "", 0)
+            SettingsBot(name, description, worker, dailyItems, enabled, soulText, "", 0, members, handoffsPerDay)
         }
     }
 }
@@ -195,15 +221,16 @@ data class SettingsRoutine(
     @SerialName("instructions_text") val instructionsText: String? = null,
     val bot: String? = null,
     @SerialName("read_only") val readOnly: Boolean = false,
+    val on: String? = null,
 ) {
     val spec: RoutineSpec
-        get() = RoutineSpec(name, at, schedule, timezone, worker, instructions, project, enabled, items, directWrites, bot, readOnly)
+        get() = RoutineSpec(name, at, schedule, timezone, worker, instructions, project, enabled, items, directWrites, bot, readOnly, on)
 
     companion object {
         fun of(spec: RoutineSpec, instructionsText: String?) = with(spec) {
             SettingsRoutine(
                 name, at, schedule, timezone, worker, instructions, project, enabled, items, directWrites, instructionsText,
-                bot, readOnly,
+                bot, readOnly, on,
             )
         }
     }

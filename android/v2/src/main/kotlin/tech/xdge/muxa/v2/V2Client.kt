@@ -150,8 +150,9 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         mcp: List<String> = emptyList(),
         plan: Boolean = false,
         loop: LoopSpec? = null,
+        bot: String? = null,
     ): Pair<Terminal, Boolean> {
-        val reply = request(V2Request.StartTask(workspace, title, goal, places, connections, mcp, plan, loop))
+        val reply = request(V2Request.StartTask(workspace, title, goal, places, connections, mcp, plan, loop, bot))
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 

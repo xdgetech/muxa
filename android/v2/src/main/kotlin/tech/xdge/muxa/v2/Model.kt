@@ -54,9 +54,37 @@ data class InboxItem(
     val proposal: ItemProposal? = null,
     /** The Bot of [workspace] whose run made this item. */
     val bot: String? = null,
+    /** Settings a Bot proposed in a talk (ADR 0083); `inbox-apply` applies them. */
+    @SerialName("settings_proposal") val settingsProposal: SettingsProposal? = null,
+    /** What the Capture assistant suggests (ADR 0084). */
+    val suggestion: ItemSuggestion? = null,
 ) {
     fun isLater(now: Long) = (laterUntil ?: 0) > now
 }
+
+/** Settings changes a Bot proposed, against the settings at [revision]. */
+@Serializable
+data class SettingsProposal(
+    val revision: String,
+    /** An op this client does not know is left out; the server applies the ones it stored. */
+    @Serializable(with = SettingsOpListSerializer::class) val ops: List<SettingsOp> = emptyList(),
+)
+
+/** The Capture assistant's suggestion for an item; each part is optional. */
+@Serializable
+data class ItemSuggestion(
+    val kind: ItemKind? = null,
+    val workspace: String? = null,
+    /** `YYYY-MM-DD`. */
+    val due: String? = null,
+    val note: String? = null,
+    /** Titles of the items to make instead of this one. */
+    val split: List<String> = emptyList(),
+    /** A goal for Start Task. */
+    @SerialName("task_goal") val taskGoal: String? = null,
+    /** A Bot of the suggested (or the item's) Workspace to ask. */
+    val bot: String? = null,
+)
 
 /** A page an item is about: `http` or `https`. */
 @Serializable
@@ -119,6 +147,8 @@ data class Routine(
     val last: RoutineLast? = null,
     /** The Bot of [workspace] that owns it (ADR 0082). */
     val bot: String? = null,
+    /** The event that runs it, e.g. `review` (ADR 0084). */
+    val on: String? = null,
 ) {
     val id: String get() = "$workspace/$name"
 }
@@ -269,6 +299,9 @@ data class Terminal(
     /** A Task's title as the user wrote it; the name is only a slug of it. */
     val taskTitle: String? get() = labels["muxa.title"]
     val isTaskAgent: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent"
+
+    /** The Bot a talk Task talks with (ADR 0083). */
+    val bot: String? get() = labels["muxa.bot"]
 
     /** A shell beside a Task's agent (ADR 0079); it shares the agent's `muxa.dir`. */
     val isTaskShell: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "shell"

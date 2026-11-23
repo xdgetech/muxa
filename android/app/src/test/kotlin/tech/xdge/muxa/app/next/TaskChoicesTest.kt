@@ -7,8 +7,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.ItemKind
+import tech.xdge.muxa.v2.ItemLink
 import tech.xdge.muxa.v2.ItemPlace
 import tech.xdge.muxa.v2.ItemProposal
+import tech.xdge.muxa.v2.ItemSuggestion
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.PlaceSpec
@@ -77,5 +79,28 @@ class TaskChoicesTest {
         assertEquals(TaskSeed("Approve PR #57?", "app", ""), TaskSeed.startTask(item))
         val proposed = item.copy(proposal = ItemProposal("review-approve", "example/app#57", "Approving."))
         assertEquals("review-approve on example/app#57:\n\nApproving.", TaskSeed.startTask(proposed).goal)
+    }
+
+    @Test
+    fun aTalkIsAFolderTaskWithItsBot() {
+        assertEquals(
+            TaskDraft("app", "Talk to pr-watch", null, emptyList(), plan = false, loop = null, bot = "pr-watch"),
+            TaskDraft.talk("app", "pr-watch"),
+        )
+    }
+
+    @Test
+    fun askingABotTakesTheItemAsTheGoal() {
+        val item = InboxItem(
+            "i", ItemKind.TODO, "Look at the flaky test", note = "Twice this week.", created = 1, source = "capture",
+            links = listOf(ItemLink("https://ci/1", "CI run"), ItemLink("https://ci/2")),
+            suggestion = ItemSuggestion(workspace = "app"),
+        )
+        val ask = TaskDraft.ask(item, "pr-watch")
+        assertEquals("app" to "Ask pr-watch: Look at the flaky test", ask?.workspace to ask?.title)
+        assertEquals("Look at the flaky test\n\nTwice this week.\n\nCI run: https://ci/1\nhttps://ci/2", ask?.goal)
+        assertEquals("pr-watch", ask?.bot)
+        assertNull(TaskDraft.ask(item.copy(suggestion = null), "pr-watch"))
+        assertEquals("Personal", TaskDraft.ask(item.copy(suggestion = null, workspace = "Personal"), "b")?.workspace)
     }
 }

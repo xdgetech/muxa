@@ -426,7 +426,7 @@ class NextModel(
     suspend fun startTask(draft: TaskDraft): Terminal? {
         var started: Terminal? = null
         request { c ->
-            val (t, _) = c.startTask(draft.workspace, draft.title, draft.goal, draft.places, plan = draft.plan, loop = draft.loop)
+            val (t, _) = c.startTask(draft.workspace, draft.title, draft.goal, draft.places, plan = draft.plan, loop = draft.loop, bot = draft.bot)
             if (terminals.none { it.id == t.id }) terminals = terminals + t
             started = t
         }
@@ -439,6 +439,33 @@ class NextModel(
         val started = startTask(draft) ?: return null
         inboxNow(V2Request.InboxDone(item.id))
         return started
+    }
+
+    /** Applies a Bot's settings proposal (ADR 0083); true when the host took it, else [requestError] says why. */
+    suspend fun applyProposal(item: InboxItem): Boolean {
+        var ok = false
+        request { c ->
+            try {
+                inbox = c.inbox(V2Request.InboxApply(item.id))
+                ok = true
+            } catch (e: V2Error.Refused) {
+                if (e.code != CONFLICT) throw e
+                requestError = "The settings changed since ${item.bot ?: "the Bot"} proposed this. Ask it again."
+            }
+        }
+        return ok
+    }
+
+    /** The Bots of [workspace] from the host's settings; empty when they cannot be read. Never sets [requestError]. */
+    suspend fun botNames(workspace: String): List<String> {
+        val c = client ?: return emptyList()
+        return try {
+            c.settings().workspaces.firstOrNull { it.name == workspace }?.bots.orEmpty().map { it.name }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun refreshRoutines() = scope.launch {
@@ -583,6 +610,7 @@ class NextModel(
         private const val KEY_COMMENT = "muxa-android"
         private const val HISTORY = 2000
         private const val WOULD_LOSE_WORK = "would-lose-work"
+        private const val CONFLICT = "conflict"
 
         /** The device's local date, `YYYY-MM-DD`, as Capture reads `due`. */
         fun today(): String = LocalDate.now().toString()

@@ -50,6 +50,10 @@ internal class DemoSettings(initial: Settings) {
             require(s.workers.any { it.name == op.name }) { "no worker ${op.name}" }
             s.copy(workers = s.workers.filter { it.name != op.name })
         }
+        is SettingsOp.AssistantUpdate -> {
+            val old = s.assistant ?: SettingsAssistant(soulText = "", memoryText = "")
+            s.copy(assistant = old.copy(enabled = op.enabled, worker = op.worker, soulText = op.soulText ?: old.soulText))
+        }
         else -> {
             val ws = workspace(s, op.workspaceName ?: "")
             s.copy(workspaces = s.workspaces.map { if (it.name == ws.name) change(it, op) else it })
@@ -107,10 +111,12 @@ internal class DemoSettings(initial: Settings) {
             w.copy(mcp = w.mcp.filter { it.name != op.name })
         }
         is SettingsOp.RoutineAdd -> {
+            requireTiming(op.routine)
             require(w.routines.none { it.name == op.routine.name }) { "${op.routine.name} exists" }
             w.copy(routines = w.routines + SettingsRoutine.of(op.routine, op.instructionsText ?: ""))
         }
         is SettingsOp.RoutineUpdate -> {
+            requireTiming(op.routine)
             val old = w.routines.firstOrNull { it.name == op.routine.name }
                 ?: throw IllegalArgumentException("no Routine ${op.routine.name}")
             val updated = SettingsRoutine.of(op.routine, op.instructionsText ?: old.instructionsText)
@@ -121,10 +127,12 @@ internal class DemoSettings(initial: Settings) {
             w.copy(routines = w.routines.filter { it.name != op.name })
         }
         is SettingsOp.BotAdd -> {
+            requireTeam(w, op.bot)
             require(w.bots.none { it.name == op.bot.name }) { "${op.bot.name} exists" }
             w.copy(bots = w.bots + SettingsBot.of(op.bot, op.soulText ?: ""))
         }
         is SettingsOp.BotUpdate -> {
+            requireTeam(w, op.bot)
             val old = w.bots.firstOrNull { it.name == op.bot.name } ?: throw IllegalArgumentException("no Bot ${op.bot.name}")
             val updated = SettingsBot.of(op.bot, op.soulText ?: old.soulText)
                 .copy(memoryText = old.memoryText, memoryVersions = old.memoryVersions)
@@ -143,6 +151,24 @@ internal class DemoSettings(initial: Settings) {
         else -> throw IllegalArgumentException("not a Workspace op")
     }
 
+    /** As the server checks `on` (ADR 0084): only `review`, and then no time. */
+    private fun requireTiming(r: RoutineSpec) {
+        val on = r.on ?: return
+        require(on == "review") { "on is review or absent" }
+        require(r.at == null && r.schedule == null) { "a Routine with on has no at or schedule" }
+    }
+
+    /** As the server checks a team (ADR 0085): other Bots of the Workspace that lead none. */
+    private fun requireTeam(w: SettingsWorkspace, bot: BotSpec) {
+        require(bot.members.size <= MAX_MEMBERS) { "a team has at most $MAX_MEMBERS members" }
+        for (m in bot.members) {
+            require(m != bot.name) { "a Bot is not its own member" }
+            val member = w.bots.firstOrNull { it.name == m } ?: throw IllegalArgumentException("no Bot $m")
+            require(member.members.isEmpty()) { "$m leads a team itself" }
+        }
+        require(bot.handoffsPerDay == null || bot.handoffsPerDay in 1..MAX_HANDOFFS) { "handoffs_per_day is 1 to $MAX_HANDOFFS" }
+    }
+
     private fun patched(old: String?, p: Patch<String>): String? = when (p) {
         Patch.Keep -> old
         Patch.Clear -> null
@@ -151,4 +177,9 @@ internal class DemoSettings(initial: Settings) {
 
     private fun connection(spec: ConnectionSpec, secret: SecretState) =
         SettingsConnection(spec.name, spec.env, spec.account, spec.access, secret)
+
+    private companion object {
+        const val MAX_MEMBERS = 6
+        const val MAX_HANDOFFS = 50
+    }
 }

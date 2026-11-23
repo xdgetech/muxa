@@ -24,6 +24,8 @@ sealed interface V2Request {
         val mcp: List<String> = emptyList(),
         val plan: Boolean = false,
         val loop: LoopSpec? = null,
+        /** Talks to this Bot of [workspace] (ADR 0083); a valid name with no Bot yet may propose adding it. */
+        val bot: String? = null,
     ) : V2Request
     data object Watch : V2Request
     data object GetInbox : V2Request
@@ -60,6 +62,12 @@ sealed interface V2Request {
 
     /** Runs a Failed item's Routine or Task again. */
     data class InboxRetry(val item: String) : V2Request
+
+    /** Applies the item's settings proposal with its revision and marks it Done (ADR 0083); `conflict` when the settings changed. */
+    data class InboxApply(val item: String) : V2Request
+
+    /** Accepts or dismisses the item's suggestion (ADR 0084). */
+    data class InboxSuggestion(val item: String, val accept: Boolean) : V2Request
     data object Workspaces : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request
@@ -98,6 +106,7 @@ sealed interface V2Request {
                 if (r.mcp.isNotEmpty()) put("mcp", buildJsonArray { r.mcp.forEach { add(JsonPrimitive(it)) } })
                 put("plan", r.plan)
                 if (r.loop != null) put("loop", json.encodeToJsonElement(r.loop))
+                opt("bot", r.bot)
             }
             Watch -> type("watch")
             GetInbox -> type("inbox")
@@ -122,6 +131,8 @@ sealed interface V2Request {
             is InboxApprove -> { type("inbox-approve"); put("item", r.item); opt("worktree", r.worktree?.wire) }
             is InboxRequestChanges -> { type("inbox-request-changes"); put("item", r.item); put("comment", r.comment) }
             is InboxRetry -> { type("inbox-retry"); put("item", r.item) }
+            is InboxApply -> { type("inbox-apply"); put("item", r.item) }
+            is InboxSuggestion -> { type("inbox-suggestion"); put("item", r.item); put("accept", r.accept) }
             Workspaces -> type("workspaces")
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }

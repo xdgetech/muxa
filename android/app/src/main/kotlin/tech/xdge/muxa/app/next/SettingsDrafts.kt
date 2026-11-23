@@ -4,6 +4,7 @@ import tech.xdge.muxa.v2.BotSpec
 import tech.xdge.muxa.v2.ConnectionSpec
 import tech.xdge.muxa.v2.McpSpec
 import tech.xdge.muxa.v2.RoutineSpec
+import tech.xdge.muxa.v2.SettingsAssistant
 import tech.xdge.muxa.v2.SettingsBot
 import tech.xdge.muxa.v2.SettingsConnection
 import tech.xdge.muxa.v2.SettingsOp
@@ -103,11 +104,22 @@ data class McpDraft(
     }
 }
 
+/** When a Routine runs: at a time, on a cron schedule, or each time a Task asks for review (ADR 0084). */
+enum class RoutineTiming(private val tag: String) {
+    AT("at"),
+    CRON("cron"),
+    REVIEW("review"),
+    ;
+
+    /** The choice's test tag ends in it. */
+    override fun toString() = tag
+}
+
 /** A Routine's fields. [project] and [directWrites] are kept as the file has them. */
 data class RoutineDraft(
     val isNew: Boolean,
     val name: String = "",
-    val cron: Boolean = false,
+    val timing: RoutineTiming = RoutineTiming.AT,
     val at: String = "",
     val schedule: String = "",
     val timezone: String = "",
@@ -134,9 +146,10 @@ data class RoutineDraft(
 
     fun spec() = RoutineSpec(
         name = name.trim(),
-        at = at.trim().takeIf { !cron && it.isNotEmpty() },
-        schedule = schedule.trim().takeIf { cron && it.isNotEmpty() },
-        timezone = timezone.trim().ifEmpty { null },
+        at = at.trim().takeIf { timing == RoutineTiming.AT && it.isNotEmpty() },
+        schedule = schedule.trim().takeIf { timing == RoutineTiming.CRON && it.isNotEmpty() },
+        // A Routine run on review has no time of day.
+        timezone = timezone.trim().takeIf { timing != RoutineTiming.REVIEW && it.isNotEmpty() },
         worker = worker,
         instructions = instructions.trim().ifEmpty { "routines/${name.trim()}.md" },
         project = project,
@@ -145,6 +158,7 @@ data class RoutineDraft(
         directWrites = directWrites,
         bot = bot,
         readOnly = readOnly,
+        on = REVIEW.takeIf { timing == RoutineTiming.REVIEW },
     )
 
     /** The text goes only when it is new or changed, so an unreadable file is never emptied. */
@@ -154,15 +168,27 @@ data class RoutineDraft(
     }
 
     companion object {
+        /** The only event a Routine runs on. */
+        const val REVIEW = "review"
+
         fun of(r: SettingsRoutine) = RoutineDraft(
-            false, r.name, r.schedule != null, r.at.orEmpty(), r.schedule.orEmpty(), r.timezone.orEmpty(), r.worker,
+            false, r.name, timingOf(r), r.at.orEmpty(), r.schedule.orEmpty(), r.timezone.orEmpty(), r.worker,
             r.instructions, r.instructionsText.orEmpty(), r.instructionsText, r.enabled, r.items?.toString().orEmpty(),
             r.project, r.directWrites, r.bot, r.readOnly,
         )
+
+        private fun timingOf(r: SettingsRoutine) = when {
+            r.on != null -> RoutineTiming.REVIEW
+            r.schedule != null -> RoutineTiming.CRON
+            else -> RoutineTiming.AT
+        }
     }
 }
 
-/** A Bot's fields (ADR 0082). [soul] is its `soul.md`; blank [dailyItems] is the host's default, 3. */
+/**
+ * A Bot's fields (ADR 0082). [soul] is its `soul.md`; blank [dailyItems] is the host's default, 3.
+ * [members] make it a team lead (ADR 0085); blank [handoffs] is the host's default, 10.
+ */
 data class BotDraft(
     val isNew: Boolean,
     val name: String = "",
@@ -173,17 +199,26 @@ data class BotDraft(
     val soul: String = "",
     /** The Soul as read; null when it could not be read. A new Bot has none. */
     val originalSoul: String? = null,
+    val members: Set<String> = emptySet(),
+    val handoffs: String = "",
 ) {
     val problem: String?
         get() = when {
             name.isBlank() -> "Give it a name."
-            !BOT_NAME.matches(name.trim()) -> "A name has only lowercase letters, digits, - and _."
-            dailyItems.isNotBlank() && dailyItems.trim().toIntOrNull() !in DAILY_ITEMS -> "Daily items is a number from 1 to 50."
+            !isValidName(name.trim()) -> NAME_RULE
+            dailyItems.isNotBlank() && dailyItems.trim().toIntOrNull() !in PER_DAY -> "Daily items is a number from 1 to 50."
+            members.isNotEmpty() && handoffs.isNotBlank() && handoffs.trim().toIntOrNull() !in PER_DAY ->
+                "Handoffs a day is a number from 1 to 50."
+            members.size > MAX_MEMBERS -> "A team has at most $MAX_MEMBERS members."
             soul.toByteArray(Charsets.UTF_8).size > SOUL_BYTES -> "The Soul is at most 12 KiB."
             else -> null
         }
 
-    fun spec() = BotSpec(name.trim(), description.trim().ifEmpty { null }, worker, dailyItems.trim().toIntOrNull(), enabled)
+    fun spec() = BotSpec(
+        name.trim(), description.trim().ifEmpty { null }, worker, dailyItems.trim().toIntOrNull(), enabled,
+        // Handoffs mean nothing without a team.
+        members.sorted(), handoffs.trim().toIntOrNull().takeIf { members.isNotEmpty() },
+    )
 
     /** As a Routine's text: the Soul goes only when it is new or changed, so an unreadable file is never emptied. */
     fun op(workspace: String): SettingsOp {
@@ -192,14 +227,43 @@ data class BotDraft(
     }
 
     companion object {
-        private val BOT_NAME = Regex("[a-z0-9_-]+")
-        private val DAILY_ITEMS = 1..50
+        const val NAME_RULE = "A name has only lowercase letters, digits, - and _."
+        private val BOT_NAME = Regex("[a-z0-9_-]{1,64}")
+        private val PER_DAY = 1..50
+        private const val MAX_MEMBERS = 6
         private const val SOUL_BYTES = 12 * 1024
+
+        fun isValidName(name: String) = BOT_NAME.matches(name)
+
+        /**
+         * The Bots of [bots] that [bot] may lead: the others that lead no team. Its current members stay,
+         * so a choice the host would now refuse still shows. Empty when [bot] is itself a member of a lead.
+         */
+        fun memberChoices(bot: String, bots: List<SettingsBot>): List<String> {
+            if (bots.any { it.name != bot && bot in it.members }) return emptyList()
+            val current = bots.firstOrNull { it.name == bot }?.members.orEmpty()
+            return bots.filter { it.name != bot && (it.members.isEmpty() || it.name in current) }.map { it.name }
+        }
 
         fun of(b: SettingsBot) = BotDraft(
             false, b.name, b.description.orEmpty(), b.worker, b.dailyItems?.toString().orEmpty(), b.enabled,
-            b.soulText.orEmpty(), b.soulText,
+            b.soulText.orEmpty(), b.soulText, b.members.toSet(), b.handoffsPerDay?.toString().orEmpty(),
         )
+    }
+}
+
+/** The Capture assistant's fields (ADR 0084). As a Bot's, the Soul goes only when it changed. */
+data class AssistantDraft(
+    val enabled: Boolean = false,
+    val worker: String? = null,
+    val soul: String = "",
+    /** The Soul as read; null when it could not be read. */
+    val originalSoul: String? = null,
+) {
+    fun op() = SettingsOp.AssistantUpdate(enabled, worker, soul.takeIf { it != (originalSoul ?: "") })
+
+    companion object {
+        fun of(a: SettingsAssistant) = AssistantDraft(a.enabled, a.worker, a.soulText.orEmpty(), a.soulText)
     }
 }
 

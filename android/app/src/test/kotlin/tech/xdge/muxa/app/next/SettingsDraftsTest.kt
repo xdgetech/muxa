@@ -8,7 +8,9 @@ import tech.xdge.muxa.v2.BotCount
 import tech.xdge.muxa.v2.BotSpec
 import tech.xdge.muxa.v2.ConnectionSpec
 import tech.xdge.muxa.v2.McpSpec
+import tech.xdge.muxa.v2.RoutineSpec
 import tech.xdge.muxa.v2.SecretState
+import tech.xdge.muxa.v2.SettingsAssistant
 import tech.xdge.muxa.v2.SettingsBot
 import tech.xdge.muxa.v2.SettingsConnection
 import tech.xdge.muxa.v2.SettingsOp
@@ -48,7 +50,7 @@ class SettingsDraftsTest {
         val same = RoutineDraft.of(r).op("app") as SettingsOp.RoutineUpdate
         assertNull(same.instructionsText)
         assertEquals("app", same.routine.project)
-        val edited = RoutineDraft.of(r).copy(text = "New\n", cron = true, schedule = "0 9 * * *").op("app") as SettingsOp.RoutineUpdate
+        val edited = RoutineDraft.of(r).copy(text = "New\n", timing = RoutineTiming.CRON, schedule = "0 9 * * *").op("app") as SettingsOp.RoutineUpdate
         assertEquals("New\n", edited.instructionsText)
         assertNull(edited.routine.at)
         assertEquals("0 9 * * *", edited.routine.schedule)
@@ -119,5 +121,46 @@ class SettingsDraftsTest {
         assertEquals("1 Routine · 3 a day · worker reviewer", botSummary(bot, ws, emptyList()))
         val counts = listOf(BotCount("Personal", "pr-watch", 9, 9), BotCount("app", "pr-watch", 4, 1))
         assertEquals("1 Routine · 3 a day · worker reviewer · 4 done · 1 deleted", botSummary(bot, ws, counts))
+    }
+
+    @Test
+    fun aRoutineOnReviewHasNoTime() {
+        val r = SettingsRoutine("check", at = "09:00", timezone = "Europe/Berlin", instructions = "routines/check.md", instructionsText = "")
+        val spec = RoutineDraft.of(r).copy(timing = RoutineTiming.REVIEW).spec()
+        assertEquals(listOf("review", null, null, null), listOf(spec.on, spec.at, spec.schedule, spec.timezone))
+        assertEquals(RoutineTiming.REVIEW, RoutineDraft.of(SettingsRoutine.of(spec, "")).timing)
+        assertEquals("routine.timing.review", "routine.timing.${RoutineTiming.REVIEW}")
+    }
+
+    @Test
+    fun aTeamLeadPicksOtherBotsThatLeadNone() {
+        val bots = listOf(
+            SettingsBot("lead", members = listOf("a")),
+            SettingsBot("a"),
+            SettingsBot("b"),
+            SettingsBot("other-lead", members = listOf("b")),
+        )
+        assertEquals(listOf("a", "b"), BotDraft.memberChoices("lead", bots))
+        assertEquals(emptyList<String>(), BotDraft.memberChoices("a", bots))
+        assertEquals(listOf("a", "b"), BotDraft.memberChoices("new", bots))
+        val d = BotDraft.of(bots[0])
+        assertEquals(BotSpec("lead", members = listOf("a"), handoffsPerDay = 5), d.copy(handoffs = "5").spec())
+        assertEquals("Handoffs a day is a number from 1 to 50.", d.copy(handoffs = "51").problem)
+        assertEquals(BotSpec("lead"), d.copy(members = emptySet(), handoffs = "5").spec())
+        assertEquals("1 Routine · 3 a day · Leads a", botSummary(bots[0], SettingsWorkspace("w", "/w", routines = listOf(SettingsRoutine("r", instructions = "r.md", bot = "lead"))), emptyList()))
+    }
+
+    @Test
+    fun theAssistantSendsItsSoulOnlyWhenItChanged() {
+        val a = SettingsAssistant(true, "reviewer", "Old\n", "- memory\n")
+        assertEquals(SettingsOp.AssistantUpdate(false, "reviewer", null), AssistantDraft.of(a).copy(enabled = false).op())
+        assertEquals(SettingsOp.AssistantUpdate(true, null, "New"), AssistantDraft.of(a).copy(worker = null, soul = "New").op())
+    }
+
+    @Test
+    fun aProposedOpReadsAsALine() {
+        val off = RoutineSpec("nightly-sweep", instructions = "r.md", enabled = false)
+        assertEquals("Add Routine nightly-sweep (off)", proposalLine(SettingsOp.RoutineAdd("app", off)))
+        assertEquals("Change Bot pr-watch", proposalLine(SettingsOp.BotUpdate("app", BotSpec("pr-watch"))))
     }
 }

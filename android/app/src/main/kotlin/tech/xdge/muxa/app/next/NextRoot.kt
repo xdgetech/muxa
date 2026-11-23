@@ -85,7 +85,7 @@ fun NextRoot(model: NextModel) {
                     NextModel.Link.Connected, is NextModel.Link.Reconnecting -> {
                         // A tablet has no Settings tab: the host in its sidebar's footer opens Settings as a sheet.
                         val shown = if (layout != WindowLayout.Phone && section == Section.SETTINGS) Section.INBOX else section
-                        val nav = Nav(shown, { section = it }) { newTask = it }
+                        val nav = Nav(shown, { section = it }, { newTask = it }, ::open)
                         when (shown) {
                             Section.INBOX, Section.ROUTINES -> Home(model, nav, ::open)
                             Section.TASKS -> Focus(model, nav, terminal) { terminal = it }

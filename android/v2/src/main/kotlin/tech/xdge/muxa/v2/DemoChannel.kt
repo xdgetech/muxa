@@ -71,7 +71,8 @@ data class DemoContent(
     companion object {
         /**
          * Two Tasks (one waits on the user), a shell, every Inbox kind, a v1 item to resume (`d9`), and four Routines.
-         * Approving `d8` needs force. The Bot `pr-watch` owns the Routine `scan` and made `d10` and `d11`.
+         * Approving `d8` needs force. The Bot `pr-watch` owns the Routine `scan` and made `d10` and `d11`; `d12` holds
+         * its settings proposal. The Capture assistant suggests a Workspace, a due date and a Task for `d13`.
          */
         val STANDARD: DemoContent = standardContent()
     }
@@ -224,6 +225,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             "upload" -> upload(id, m)
             "inbox-request-changes" -> requestChanges(id, item, m.str("comment") ?: "")
             "inbox-retry" -> retry(id, item)
+            "inbox-apply" -> applyProposal(id, item)
+            "inbox-suggestion" -> suggestion(id, item, (m["accept"] as? JsonPrimitive)?.booleanOrNull == true)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {}, "off" to enc(routinesOff()))
             "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
@@ -309,6 +312,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         val loop = m["loop"] as? JsonObject
         val wsName = m.str("workspace") ?: "app"
         val workspace = workspaces.firstOrNull { it.name == wsName }
+        val bot = m.str("bot")
+        if (bot != null && !BOT_NAME.matches(bot)) return send(error(id, "bad-request", "a Bot's name is lowercase letters, digits, - and _"))
         // Every agent gets all the Workspace's connections and servers (ADR 0075);
         // `connections` and `mcp` in the request are ignored.
         val named = workspace?.connections.orEmpty().map { it.name }
@@ -333,6 +338,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             if (checkout != null) put("muxa.checkout", checkout)
             if (named.isNotEmpty()) put("muxa.connections", enc(named).toString())
             if (servers.isNotEmpty()) put("muxa.mcp", enc(servers).toString())
+            if (bot != null) put("muxa.bot", bot)
         }
         val t = Terminal(
             "t${terminals.size + 1}", title, live = true, status = TerminalStatus("working", "claude-code"),
@@ -486,6 +492,49 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         resolve(id, failed)
     }
 
+    /** Sends the item's ops as `settings-update` with its revision, then marks it Done (ADR 0083). */
+    private fun applyProposal(id: Long, item: String) {
+        val decide = openItem(id, item, ItemKind.DECIDE) ?: return
+        val proposal = decide.settingsProposal ?: return send(error(id, "bad-request", "$item has no settings proposal"))
+        try {
+            settings.update(proposal.revision, proposal.ops.map { it.json() })
+        } catch (e: DemoSettings.Refusal) {
+            val message = if (e.code == "conflict") "the settings changed since the Bot proposed this; ask it again" else e.message.orEmpty()
+            return send(error(id, e.code, message))
+        }
+        resolve(id, decide)
+    }
+
+    /**
+     * Accept applies the kind, Workspace, due date and note (after the item's own); a split
+     * puts its parts in the item's place and the item becomes Done. Either way the suggestion goes.
+     */
+    private fun suggestion(id: Long, item: String, accept: Boolean) {
+        val open = inbox.items.firstOrNull { it.id == item } ?: return send(error(id, "not-found", "no such item"))
+        val s = open.suggestion ?: return send(error(id, "bad-request", "$item has no suggestion"))
+        val cleared = open.copy(suggestion = null)
+        change(id) { i ->
+            val at = i.items.indexOf(open)
+            val rest = i.items - open
+            when {
+                !accept -> i.copy(items = i.items.map { if (it === open) cleared else it })
+                s.split.isNotEmpty() -> {
+                    val parts = s.split.map { title ->
+                        InboxItem(newId(), s.kind ?: open.kind, title, workspace = s.workspace ?: open.workspace, created = now(), source = "capture")
+                    }
+                    i.copy(items = rest.toMutableList().apply { addAll(at, parts) }, done = listOf(cleared) + i.done)
+                }
+                else -> {
+                    val note = listOfNotNull(open.note, s.note).joinToString("\n\n").ifEmpty { null }
+                    val accepted = cleared.copy(
+                        kind = s.kind ?: open.kind, workspace = s.workspace ?: open.workspace, due = s.due ?: open.due, note = note,
+                    )
+                    i.copy(items = i.items.map { if (it === open) accepted else it })
+                }
+            }
+        }
+    }
+
     /** The open item of [kind], or null after an error. */
     private fun openItem(id: Long, item: String, kind: ItemKind): InboxItem? {
         val open = inbox.items.firstOrNull { it.id == item }
@@ -569,6 +618,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         const val CR: Byte = 13
         const val LF: Byte = 10
         val CAPTURE_KINDS = mapOf("reply" to ItemKind.REPLY, "read" to ItemKind.READ, "decide" to ItemKind.DECIDE)
+        val BOT_NAME = Regex("[a-z0-9_-]{1,64}")
 
         fun now() = System.currentTimeMillis() / 1000
     }
@@ -605,9 +655,11 @@ private fun standardContent(): DemoContent {
         links: List<ItemLink> = emptyList(),
         proposal: ItemProposal? = null,
         bot: String? = null,
+        settingsProposal: SettingsProposal? = null,
+        suggestion: ItemSuggestion? = null,
     ) = InboxItem(
         id, kind, title, note, workspace, due, created = 1_764_000_000, source = source, terminal = terminal, routine = routine,
-        place = place, links = links, proposal = proposal, bot = bot,
+        place = place, links = links, proposal = proposal, bot = bot, settingsProposal = settingsProposal, suggestion = suggestion,
     )
 
     fun routine(name: String, at: String?, last: RoutineLast?, schedule: String? = null, bot: String? = null) =
@@ -664,6 +716,18 @@ private fun standardContent(): DemoContent {
                 "d11", ItemKind.REPLY, "Answer Sam on PR #61", note = "Sam asks why the retry waits 30 s.", due = "2026-11-26",
                 source = "routine", routine = scan, bot = "pr-watch",
                 links = listOf(ItemLink("https://github.com/example/app/pull/61")),
+            ),
+            item(
+                "d12", ItemKind.DECIDE, "pr-watch proposes: a nightly sweep",
+                note = "routine-add nightly-sweep (off)\nbot-update pr-watch", source = "task", bot = "pr-watch",
+                settingsProposal = SettingsProposal("1", NIGHTLY_SWEEP_OPS),
+            ),
+            item(
+                "d13", ItemKind.TODO, "Look at the flaky login test", workspace = null, source = "capture",
+                suggestion = ItemSuggestion(
+                    workspace = "app", due = "2026-11-28", note = "It failed twice on CI this week.",
+                    taskGoal = "Find why the login test fails now and then, and fix it.", bot = "pr-watch",
+                ),
             ),
         ),
         routines = listOf(
@@ -729,6 +793,16 @@ private fun standardContent(): DemoContent {
 }
 
 private const val SCAN_SCHEDULE = "*/30 9-18 * * 1-5"
+
+/** What pr-watch proposed in a talk: an off Routine of its own, and a day's items more. */
+private val NIGHTLY_SWEEP_OPS = listOf(
+    SettingsOp.RoutineAdd(
+        "app",
+        RoutineSpec("nightly-sweep", at = "02:00", timezone = "Europe/Berlin", instructions = "routines/nightly-sweep.md", enabled = false, bot = "pr-watch"),
+        "Close the stale PRs of example/app.\n",
+    ),
+    SettingsOp.BotUpdate("app", BotSpec("pr-watch", "Watches the app's open PRs", dailyItems = 4)),
+)
 
 private val DEMO_PLAN = """
     # Plan
@@ -799,5 +873,10 @@ private val DEMO_SETTINGS = Settings(
         ),
     ),
     workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
+    assistant = SettingsAssistant(
+        enabled = true,
+        soulText = "Sort what I capture. Name the Workspace and a due date only when the item says so.\n",
+        memoryText = "- Items about the login go to app.\n",
+    ),
 )
 private const val MAX_SHELLS = 3

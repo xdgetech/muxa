@@ -42,7 +42,12 @@ fun RoutineSettings(editor: SettingsEditor, ws: SettingsWorkspace) {
 }
 
 private fun scheduleText(r: SettingsRoutine): String {
-    val whenText = r.schedule?.let { "cron $it" } ?: r.at?.let { "at $it" } ?: "only when run by hand"
+    val whenText = when {
+        r.on == RoutineDraft.REVIEW -> "On review"
+        r.schedule != null -> "cron ${r.schedule}"
+        r.at != null -> "at ${r.at}"
+        else -> "only when run by hand"
+    }
     return listOfNotNull(
         whenText, r.timezone, r.bot?.let { "Bot $it" }, r.worker?.let { "worker $it" }, r.items?.let { "$it items" },
         "read only".takeIf { r.readOnly },
@@ -65,16 +70,20 @@ private fun RoutineDialog(
         removeTitle = "Remove Routine",
     ) {
         Field(d.name, { d = d.copy(name = it) }, "Name", "routine.name", enabled = d.isNew, placeholder = "daily-digest")
-        Choice(listOf(false, true), listOf("At a time", "Cron"), d.cron, "routine.kind") { d = d.copy(cron = it) }
-        if (d.cron) {
-            Field(
+        Choice(RoutineTiming.entries, listOf("At a time", "Cron", "On review"), d.timing, "routine.timing") { d = d.copy(timing = it) }
+        when (d.timing) {
+            RoutineTiming.CRON -> Field(
                 d.schedule, { d = d.copy(schedule = it) }, "Schedule", "routine.schedule", mono = true, placeholder = "0 9 * * 1-5",
                 help = "It may run several times a day, at least 15 minutes apart: */30 9-18 * * 1-5.",
             )
-        } else {
-            Field(d.at, { d = d.copy(at = it) }, "At", "routine.at", mono = true, placeholder = "09:00", help = "Empty: only when run by hand.")
+            RoutineTiming.AT -> Field(
+                d.at, { d = d.copy(at = it) }, "At", "routine.at", mono = true, placeholder = "09:00", help = "Empty: only when run by hand.",
+            )
+            RoutineTiming.REVIEW -> Text("It runs each time a Task of this Workspace asks for review.", style = MaterialTheme.typography.bodySmall)
         }
-        Field(d.timezone, { d = d.copy(timezone = it) }, "Time zone", "routine.timezone", placeholder = "The host's")
+        if (d.timing != RoutineTiming.REVIEW) {
+            Field(d.timezone, { d = d.copy(timezone = it) }, "Time zone", "routine.timezone", placeholder = "The host's")
+        }
         NamePicker("Worker", "routine.worker", workers, d.worker) { d = d.copy(worker = it) }
         NamePicker("Bot", "routine.bot", bots, d.bot) { d = d.copy(bot = it) }
         Field(d.instructions, { d = d.copy(instructions = it) }, "Instruction file", "routine.file", mono = true,

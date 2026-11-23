@@ -29,13 +29,21 @@ import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsWorkspace
+import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
 
 private enum class WorkspaceTab(val title: String) { GENERAL("General"), CONNECTIONS("Connections"), MCP("MCP"), ROUTINES("Routines"), BOTS("Bots") }
 
 /** One Workspace's settings in tabs. [usage] is its entry of `workspaces`: who uses what, and when. */
 @Composable
-fun WorkspaceSettings(editor: SettingsEditor, ws: SettingsWorkspace, usage: Workspace?, model: NextModel, back: () -> Unit) {
+fun WorkspaceSettings(
+    editor: SettingsEditor,
+    ws: SettingsWorkspace,
+    usage: Workspace?,
+    model: NextModel,
+    open: (Terminal) -> Unit,
+    back: () -> Unit,
+) {
     var tab by rememberSaveable { mutableStateOf(WorkspaceTab.GENERAL) }
     Column(Modifier.testTag("settings.detail.${ws.name}")) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 14.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -57,7 +65,7 @@ fun WorkspaceSettings(editor: SettingsEditor, ws: SettingsWorkspace, usage: Work
             WorkspaceTab.CONNECTIONS -> ConnectionSettings(editor, ws, usage, model)
             WorkspaceTab.MCP -> McpSettings(editor, ws, usage, model)
             WorkspaceTab.ROUTINES -> RoutineSettings(editor, ws)
-            WorkspaceTab.BOTS -> BotSettings(editor, ws, model.inbox.bots)
+            WorkspaceTab.BOTS -> BotSettings(editor, ws, model.inbox.bots, BotTalk(model, ws.name, open))
         }
     }
 }

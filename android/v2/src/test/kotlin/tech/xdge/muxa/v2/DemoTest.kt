@@ -472,6 +472,115 @@ class DemoTest {
         }
     }
 
+    @Test
+    fun applyingABotsSettingsProposalChangesTheSettingsAndEndsTheItem() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val proposal = c.inbox().items.first { it.id == "d12" }.settingsProposal
+            assertEquals(listOf("routine-add", "bot-update"), proposal?.ops?.map { it.op })
+            val inbox = c.inbox(V2Request.InboxApply("d12"))
+            assertTrue(inbox.items.none { it.id == "d12" })
+            assertEquals("d12", inbox.done.first().id)
+            val app = c.settings().workspaces.first { it.name == "app" }
+            val sweep = app.routines.first { it.name == "nightly-sweep" }
+            assertEquals(false to "pr-watch", sweep.enabled to sweep.bot)
+            assertEquals(4, app.bots.single().dailyItems)
+            c.close()
+        }
+    }
+
+    @Test
+    fun aProposalAfterTheSettingsChangedIsAConflictAndStaysOpen() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            c.settingsUpdate("1", listOf(SettingsOp.RoutinesGate("Personal", true)))
+            val conflict = refusal { c.inbox(V2Request.InboxApply("d12")) }
+            assertEquals("conflict", conflict.code)
+            assertTrue(conflict.message, "ask it again" in conflict.message.orEmpty())
+            assertTrue(c.inbox().items.any { it.id == "d12" })
+            assertTrue(c.settings().workspaces.first { it.name == "app" }.routines.none { it.name == "nightly-sweep" })
+            c.close()
+        }
+    }
+
+    @Test
+    fun anAcceptedSuggestionChangesTheItemAndADismissedOneOnlyGoes() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val suggested = c.inbox().items.first { it.id == "d13" }
+            assertEquals("pr-watch", suggested.suggestion?.bot)
+            val accepted = c.inbox(V2Request.InboxSuggestion("d13", accept = true)).items.first { it.id == "d13" }
+            assertEquals(Triple("app", "2026-11-28", "It failed twice on CI this week."), Triple(accepted.workspace, accepted.due, accepted.note))
+            assertEquals(null, accepted.suggestion)
+            assertEquals("bad-request", refusal { c.inbox(V2Request.InboxSuggestion("d13", accept = false)) }.code)
+            c.close()
+        }
+        withTimeout(10_000) {
+            val c = open()
+            val dismissed = c.inbox(V2Request.InboxSuggestion("d13", accept = false)).items.first { it.id == "d13" }
+            assertEquals(null to null, dismissed.workspace to dismissed.suggestion)
+            c.close()
+        }
+    }
+
+    @Test
+    fun anAcceptedSplitPutsItsPartsInTheItemsPlace() = runBlocking {
+        withTimeout(10_000) {
+            val item = InboxItem(
+                "s1", ItemKind.TODO, "Plan the trip", note = "In May.", created = 1, source = "capture",
+                suggestion = ItemSuggestion(workspace = "Personal", split = listOf("Book the flights", "Book a hotel")),
+            )
+            val first = InboxItem("s0", ItemKind.READ, "First", created = 1, source = "capture")
+            val c = V2Client.open(DemoChannel(DemoContent.STANDARD.copy(inbox = listOf(first, item))), "test")
+            val inbox = c.inbox(V2Request.InboxSuggestion("s1", accept = true))
+            assertEquals(listOf("First", "Book the flights", "Book a hotel"), inbox.items.map { it.title })
+            assertEquals(listOf("Personal", "Personal"), inbox.items.drop(1).map { it.workspace })
+            assertEquals("s1" to null, inbox.done.first().id to inbox.done.first().suggestion)
+            c.close()
+        }
+    }
+
+    @Test
+    fun aTalkWithABotIsATaskWithItsLabel() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val (talk, existing) = c.startTask("app", "Talk to pr-watch", bot = "pr-watch")
+            assertEquals(Triple("pr-watch", false, true), Triple(talk.bot, existing, talk.isTaskAgent))
+            assertEquals(null, c.startTask("app", "Fix", places = listOf(PlaceSpec.Folder)).first.bot)
+            assertEquals("bad-request", refusal { c.startTask("app", "Talk", bot = "PR Watch") }.code)
+            c.close()
+        }
+    }
+
+    @Test
+    fun theCaptureAssistantsSettingsAreSaved() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings().assistant
+            assertEquals(true, before?.enabled)
+            val s = c.settingsUpdate("1", listOf(SettingsOp.AssistantUpdate(false, "reviewer", "Be brief.\n")))
+            assertEquals(SettingsAssistant(false, "reviewer", "Be brief.\n", before?.memoryText), s.assistant)
+            val kept = c.settingsUpdate(s.revision, listOf(SettingsOp.AssistantUpdate(true)))
+            assertEquals(Triple(true, null, "Be brief.\n"), Triple(kept.assistant?.enabled, kept.assistant?.worker, kept.assistant?.soulText))
+            c.close()
+        }
+    }
+
+    @Test
+    fun aTeamLeadsOnlyBotsThatLeadNone() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val triage = SettingsOp.BotAdd("app", BotSpec("triage"))
+            val lead = SettingsOp.BotUpdate("app", BotSpec("pr-watch", members = listOf("triage"), handoffsPerDay = 5))
+            val s = c.settingsUpdate("1", listOf(triage, lead))
+            val bot = s.workspaces.first { it.name == "app" }.bots.first { it.name == "pr-watch" }
+            assertEquals(listOf("triage") to 5, bot.members to bot.handoffsPerDay)
+            val nested = SettingsOp.BotUpdate("app", BotSpec("triage", members = listOf("pr-watch")))
+            assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(nested)) }.code)
+            c.close()
+        }
+    }
+
     private suspend fun refusal(block: suspend () -> Unit): V2Error.Refused {
         try {
             block()

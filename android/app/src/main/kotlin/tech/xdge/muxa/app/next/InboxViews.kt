@@ -210,6 +210,19 @@ fun InboxItemPane(
         }
         if (item.links.isNotEmpty()) ItemLinks(item.links)
         item.proposal?.let { ProposalBox(it) }
+        item.settingsProposal?.let { p -> SettingsProposalBox(p, position != null, actions.busy) { actions.apply(item, onDone) } }
+        item.suggestion?.takeIf { position != null }?.let { s ->
+            SuggestionBox(
+                s,
+                answer = { accept ->
+                    model.inbox(V2Request.InboxSuggestion(item.id, accept))
+                    // A split ends the item; its parts take its place.
+                    if (accept && s.split.isNotEmpty()) onDone()
+                },
+                startTask = s.taskGoal?.let { goal -> { newTask(TaskSeed(item.title, s.workspace ?: item.workspace, goal)) } },
+                ask = s.bot?.takeIf { TaskDraft.ask(item, it) != null }?.let { bot -> { actions.ask(item, bot, openTerminal) } },
+            )
+        }
         if (position == null) {
             SecondaryButton("Reopen", { model.inbox(V2Request.InboxReopen(item.id)) })
         } else {

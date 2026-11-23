@@ -36,6 +36,7 @@ import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LinkButton
 import tech.xdge.muxa.app.ui.Palette
+import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
 
 /** The phone's Settings tab: the host this window is connected to and its settings. */
@@ -43,13 +44,13 @@ import tech.xdge.muxa.v2.Workspace
 fun SettingsScreen(model: NextModel, nav: Nav) {
     PhoneTabs(nav) {
         LargeTitle("Settings")
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { SettingsContent(model) }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { SettingsContent(model, nav.open) }
     }
 }
 
 /** A tablet's Settings, opened from the host in the sidebar's footer: the phone tab's content as a sheet. */
 @Composable
-fun SettingsDialog(model: NextModel, close: () -> Unit) {
+fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
     Dialog(close, DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             Modifier.widthIn(max = SHEET_WIDTH.dp).heightIn(max = SHEET_HEIGHT.dp).testTag("settings.sheet"),
@@ -62,18 +63,26 @@ fun SettingsDialog(model: NextModel, close: () -> Unit) {
                     Text("Settings", Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     LinkButton("Done", close, Modifier.testTag("settings.close"))
                 }
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { SettingsContent(model) }
+                // A talk with a Bot opens in Focus, without the sheet over it.
+                val open = { t: Terminal ->
+                    close()
+                    nav.open(t)
+                }
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { SettingsContent(model, open) }
             }
         }
     }
 }
 
-/** The host, then its settings (ADR 0074): the Workspaces list or one Workspace, and the workers. */
+/**
+ * The host, then its settings (ADR 0074): the Workspaces list or one Workspace, the workers and the
+ * Capture assistant. A talk with a Bot opens its Task with [open].
+ */
 @Composable
-private fun SettingsContent(model: NextModel) {
+private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
     val editor = remember(model) { SettingsEditor(model.settingsHost) }
     var usage by remember { mutableStateOf<List<Workspace>>(emptyList()) }
-    var open by remember { mutableStateOf<String?>(null) }
+    var openWorkspace by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(editor) { editor.load() }
     // Tasks that start or end change who uses what: ask again when the live terminals change.
     val live = model.terminals.filter { it.live }.map { it.id }
@@ -81,7 +90,7 @@ private fun SettingsContent(model: NextModel) {
 
     Column(Modifier.padding(bottom = 16.dp)) {
         val settings = editor.settings
-        val ws = settings?.workspaces?.firstOrNull { it.name == open }
+        val ws = settings?.workspaces?.firstOrNull { it.name == openWorkspace }
         if (ws == null) {
             HostCard(model)
             SettingsNote("Hosts are added and edited while disconnected.")
@@ -90,10 +99,11 @@ private fun SettingsContent(model: NextModel) {
         when {
             settings == null && editor.loadError != null -> SettingsNote(editor.loadError.orEmpty())
             settings == null -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            ws != null -> WorkspaceSettings(editor, ws, usage.firstOrNull { it.name == ws.name }, model) { open = null }
+            ws != null -> WorkspaceSettings(editor, ws, usage.firstOrNull { it.name == ws.name }, model, open) { openWorkspace = null }
             else -> {
-                WorkspaceList(editor) { open = it }
+                WorkspaceList(editor) { openWorkspace = it }
                 WorkersSection(editor, settings.workspaces.map { it.name })
+                AssistantSection(editor)
             }
         }
     }

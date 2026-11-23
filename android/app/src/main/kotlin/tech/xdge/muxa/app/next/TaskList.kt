@@ -159,6 +159,7 @@ private fun WorkspaceRow(t: Terminal, loop: LoopInfo?, onClick: () -> Unit) {
         Dot(state.color)
         Column(Modifier.weight(1f).padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            t.bot?.let { TalkChip(it, Modifier.testTag("terminal.${t.id}.bot")) }
             t.place?.let { Text(it, fontSize = 12.sp, color = Palette.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             loop?.let { LoopBadge(it) }
         }
@@ -229,6 +230,7 @@ private fun StateRow(t: Terminal, loop: LoopInfo?, picked: Boolean, onClick: () 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(t.path(), fontSize = 12.sp, color = Palette.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(t.title, fontSize = 14.sp, lineHeight = 19.sp, color = Palette.text)
+            t.bot?.let { TalkChip(it, Modifier.testTag("terminal.${t.id}.bot")) }
             loop?.let { LoopBadge(it) }
         }
     }

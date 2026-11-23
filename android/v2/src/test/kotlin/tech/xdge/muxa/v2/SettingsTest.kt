@@ -31,6 +31,13 @@ class SettingsTest {
             SettingsOp.WorkerAdd(WorkerSpec("r", agent = "codex", loop = WorkerLoop("make test", maxAttempts = 2))) to
                 """{"op":"worker-add","worker":{"name":"r","agent":"codex","args":[],"loop":{"check":"make test","max_attempts":2}}}""",
             SettingsOp.WorkerRemove("r") to """{"op":"worker-remove","name":"r"}""",
+            SettingsOp.BotUpdate("w", BotSpec("lead", members = listOf("a", "b"), handoffsPerDay = 5)) to
+                """{"op":"bot-update","workspace":"w","bot":{"name":"lead","enabled":true,"members":["a","b"],"handoffs_per_day":5}}""",
+            SettingsOp.RoutineAdd("w", RoutineSpec("r", instructions = "routines/r.md", on = "review")) to
+                """{"op":"routine-add","workspace":"w","routine":{"name":"r","instructions":"routines/r.md","enabled":true,"direct_writes":false,"read_only":false,"on":"review"}}""",
+            SettingsOp.AssistantUpdate(true) to """{"op":"assistant-update","enabled":true}""",
+            SettingsOp.AssistantUpdate(false, "reviewer", "Be brief.") to
+                """{"op":"assistant-update","enabled":false,"worker":"reviewer","soul_text":"Be brief."}""",
         )
         for ((op, expected) in ops) {
             assertEquals(json.parseToJsonElement(expected), op.json())
@@ -42,6 +49,34 @@ class SettingsTest {
             request,
         )
         assertEquals(json.parseToJsonElement("""{"id":8,"type":"settings"}"""), V2Request.GetSettings.json(8))
+    }
+
+    @Test
+    fun botRequestsEncodeToTheProtocolsJson() {
+        assertEquals(
+            json.parseToJsonElement("""{"id":1,"type":"start-task","workspace":"app","title":"Talk to pr-watch","places":[],"plan":false,"bot":"pr-watch"}"""),
+            V2Request.StartTask("app", "Talk to pr-watch", bot = "pr-watch").json(1),
+        )
+        assertEquals(json.parseToJsonElement("""{"id":2,"type":"inbox-apply","item":"d12"}"""), V2Request.InboxApply("d12").json(2))
+        assertEquals(
+            json.parseToJsonElement("""{"id":3,"type":"inbox-suggestion","item":"d13","accept":false}"""),
+            V2Request.InboxSuggestion("d13", accept = false).json(3),
+        )
+    }
+
+    @Test
+    fun anItemsProposalAndSuggestionDecodeAndAnUnknownOpIsLeftOut() {
+        val item = json.decodeFromString<InboxItem>(
+            """{"id":"i","kind":"decide","title":"t","created":1,"source":"task",
+               "settings_proposal":{"revision":"r7","ops":[{"op":"bot-update","workspace":"w","bot":{"name":"b","enabled":true}},{"op":"new-op","x":1}]},
+               "suggestion":{"kind":"reply","split":["a","b"],"task_goal":"Do it","bot":"b"}}""",
+        )
+        assertEquals(SettingsProposal("r7", listOf(SettingsOp.BotUpdate("w", BotSpec("b")))), item.settingsProposal)
+        assertEquals(ItemSuggestion(kind = ItemKind.REPLY, split = listOf("a", "b"), taskGoal = "Do it", bot = "b"), item.suggestion)
+        val old = json.decodeFromString<InboxItem>("""{"id":"i","kind":"todo","title":"t","created":1,"source":"capture"}""")
+        assertEquals(null to null, old.settingsProposal to old.suggestion)
+        val r = json.decodeFromString<Routine>("""{"workspace":"w","name":"r","enabled":true,"on":"review"}""")
+        assertEquals("review", r.on)
     }
 
     @Test
@@ -70,5 +105,10 @@ class SettingsTest {
         assertEquals(SecretState.UNKNOWN, w.connections.single().secret)
         assertEquals(null, w.routines.single().instructionsText)
         assertEquals(emptyList<WorkerSpec>(), s.workers)
+        assertEquals(null, s.assistant)
+        val withAssistant = json.decodeFromString<Settings>(
+            """{"revision":"r","assistant":{"enabled":true,"soul_text":"Be brief.","memory_text":null}}""",
+        )
+        assertEquals(SettingsAssistant(true, soulText = "Be brief."), withAssistant.assistant)
     }
 }

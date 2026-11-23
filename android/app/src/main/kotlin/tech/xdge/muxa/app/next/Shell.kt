@@ -49,8 +49,8 @@ import tech.xdge.muxa.v2.Terminal
 /** The app's places once connected. Settings is a phone tab; a tablet opens it from the host in the sidebar's footer. */
 enum class Section { INBOX, TASKS, ROUTINES, SETTINGS }
 
-/** Where a screen can send the user: another section, or a new Task. */
-class Nav(val section: Section, val go: (Section) -> Unit, val newTask: (TaskSeed) -> Unit)
+/** Where a screen can send the user: another section, a new Task, or a Task's terminal in Focus. */
+class Nav(val section: Section, val go: (Section) -> Unit, val newTask: (TaskSeed) -> Unit, val open: (Terminal) -> Unit)
 
 private data class Tab(val section: Section, val title: String, val icon: ImageVector, val tag: String)
 
@@ -131,7 +131,7 @@ fun Sidebar(
             HostMenu(model) { settings = true }
         }
     }
-    if (settings) SettingsDialog(model) { settings = false }
+    if (settings) SettingsDialog(model, nav) { settings = false }
 }
 
 private fun sectionTitle(s: Section) = when (s) {

@@ -1,6 +1,13 @@
 package tech.xdge.muxa.v2
 
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -99,13 +106,16 @@ sealed class SettingsOp(val op: String) {
 
     /** Brings back kept memory [version], 1 the newest. */
     data class BotMemoryRestore(val workspace: String, val name: String, val version: Int) : SettingsOp("bot-memory-restore")
+
+    /** The Capture assistant (ADR 0084). Null [worker]: the default agent. [soulText] replaces its `soul.md`. */
+    data class AssistantUpdate(val enabled: Boolean, val worker: String? = null, val soulText: String? = null) : SettingsOp("assistant-update")
     data class WorkerAdd(val worker: WorkerSpec) : SettingsOp("worker-add")
 
     /** Replaces the worker named `worker.name`. */
     data class WorkerUpdate(val worker: WorkerSpec) : SettingsOp("worker-update")
     data class WorkerRemove(val name: String) : SettingsOp("worker-remove")
 
-    /** The Workspace this op changes; null for a worker op. */
+    /** The Workspace this op changes; null for a worker or assistant op. */
     val workspaceName: String?
         get() = when (this) {
             is WorkspaceAdd -> name
@@ -129,7 +139,7 @@ sealed class SettingsOp(val op: String) {
             is BotUpdate -> workspace
             is BotRemove -> workspace
             is BotMemoryRestore -> workspace
-            is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
+            is AssistantUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
         }
 
     fun json(): JsonObject = buildJsonObject {
@@ -166,6 +176,11 @@ sealed class SettingsOp(val op: String) {
             is BotUpdate -> bot(o.workspace, o.bot, o.soulText)
             is BotRemove -> { put("workspace", o.workspace); put("name", o.name) }
             is BotMemoryRestore -> { put("workspace", o.workspace); put("name", o.name); put("version", o.version) }
+            is AssistantUpdate -> {
+                put("enabled", o.enabled)
+                o.worker?.let { put("worker", it) }
+                o.soulText?.let { put("soul_text", it) }
+            }
             is WorkerAdd -> put("worker", enc(o.worker))
             is WorkerUpdate -> put("worker", enc(o.worker))
             is WorkerRemove -> put("name", o.name)
@@ -214,12 +229,31 @@ sealed class SettingsOp(val op: String) {
                 "bot-memory-restore" -> BotMemoryRestore(
                     ws(), req("name"), (o["version"] as? JsonPrimitive)?.intOrNull ?: throw IllegalArgumentException("no version"),
                 )
+                "assistant-update" -> AssistantUpdate(
+                    bool("enabled") ?: throw IllegalArgumentException("no enabled"), s("worker"), s("soul_text"),
+                )
                 "worker-add" -> WorkerAdd(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-update" -> WorkerUpdate(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-remove" -> WorkerRemove(req("name"))
                 else -> null
             }
         }
+    }
+}
+
+/** Ops as JSON: one this client does not know is left out when read. */
+internal object SettingsOpListSerializer : KSerializer<List<SettingsOp>> {
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: List<SettingsOp>) {
+        val out = encoder as? JsonEncoder ?: throw SerializationException("settings ops are JSON only")
+        out.encodeJsonElement(JsonArray(value.map { it.json() }))
+    }
+
+    override fun deserialize(decoder: Decoder): List<SettingsOp> {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("settings ops are JSON only")
+        val list = input.decodeJsonElement() as? JsonArray ?: throw SerializationException("ops are a list")
+        return list.mapNotNull { (it as? JsonObject)?.let(SettingsOp::fromJson) }
     }
 }
 

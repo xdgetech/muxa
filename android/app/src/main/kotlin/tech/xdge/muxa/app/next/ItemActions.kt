@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,6 +81,19 @@ class ItemActionState(private val model: NextModel, private val scope: Coroutine
 
     fun retry(item: String, done: () -> Unit) = act({ model.retry(item) }, done)
 
+    /** Applies a Bot's settings proposal (ADR 0083); the item ends Done. */
+    fun apply(item: InboxItem, done: () -> Unit) = act({ model.applyProposal(item) }, done)
+
+    /** Asks [bot] about [item] in a talk, which opens in Focus with [open]. The item stays. */
+    fun ask(item: InboxItem, bot: String, open: (Terminal) -> Unit) {
+        val draft = TaskDraft.ask(item, bot) ?: return
+        var started: Terminal? = null
+        act({
+            started = model.startTask(draft)
+            started != null
+        }) { started?.let(open) }
+    }
+
     /** Resume Task of an item from v1; its agent opens in Focus with [open]. */
     fun resume(item: InboxItem, open: (Terminal) -> Unit, done: () -> Unit) {
         var started: Terminal? = null
@@ -124,6 +138,8 @@ fun ItemActions(
     val terminal = item.terminal?.let { id -> model.terminals.firstOrNull { it.id == id } }
     var later by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
+    val workspace = item.workspace
+    val bots by produceState(emptyList<String>(), workspace) { value = workspace?.let { model.botNames(it) }.orEmpty() }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             PrimaryButton(item.kind.mainAction, { actions.main(item, onDone) }, Modifier.testTag("detail.main"), enabled = !actions.busy)
@@ -141,6 +157,7 @@ fun ItemActions(
             if (terminal != null) {
                 SecondaryButton("Open in Focus", { openTerminal(terminal) }, Modifier.testTag("detail.open"))
             }
+            if (bots.isNotEmpty()) AskBotButton(bots, !actions.busy) { actions.ask(item, it, openTerminal) }
             Column {
                 SecondaryButton("Later", { later = true }, Modifier.testTag("detail.later"))
                 DropdownMenu(later, { later = false }) {

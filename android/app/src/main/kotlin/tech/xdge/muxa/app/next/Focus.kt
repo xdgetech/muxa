@@ -232,6 +232,7 @@ private fun Header(
             Text(terminal.path(), fontSize = if (phone) 12.sp else 13.sp, color = Palette.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(terminal.title, fontSize = if (phone) 16.sp else 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        terminal.bot?.let { TalkChip(it, Modifier.padding(horizontal = 6.dp).testTag("focus.bot")) }
         val lp = model.loops[terminal.id]
         if (lp?.isActive == true) {
             TextButton(openLoop, Modifier.testTag("focus.loop"), shape = Corners.link) {

@@ -24,8 +24,26 @@ data class TaskDraft(
     val places: List<PlaceSpec>,
     val plan: Boolean,
     val loop: LoopSpec?,
+    /** A talk with this Bot of [workspace] (ADR 0083): one folder, the Bot's Soul and Memory. */
+    val bot: String? = null,
 ) {
     companion object {
+        /** Talk to [bot], or set up a Bot of that name by talking. */
+        fun talk(workspace: String, bot: String) =
+            TaskDraft(workspace, "Talk to $bot", null, emptyList(), plan = false, loop = null, bot = bot)
+
+        /**
+         * Ask [bot] about [item]: a talk whose goal is the item. The Workspace is the suggested
+         * one, else the item's; null when there is none.
+         */
+        fun ask(item: InboxItem, bot: String): TaskDraft? {
+            val workspace = item.suggestion?.workspace ?: item.workspace ?: return null
+            val links = item.links.map { l -> l.title?.let { "$it: ${l.url}" } ?: l.url }
+            val goal = listOfNotNull(item.title, item.note?.takeIf { it.isNotBlank() }, links.joinToString("\n").ifEmpty { null })
+                .joinToString("\n\n")
+            return TaskDraft(workspace, "Ask $bot: ${item.title}", goal, emptyList(), plan = false, loop = null, bot = bot)
+        }
+
         /**
          * Resume Task of an item migrated from v1: the agent starts in the old
          * Task's place as it is. Null when the item has no place.

@@ -26,10 +26,11 @@ import tech.xdge.muxa.app.ui.PrimaryButton
 import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.v2.Routine
 
-/** `09:00 Europe/Berlin`, `09:00 Europe/Berlin · 0 9 * * 1-5`, `On request` or `Off`. */
+/** `09:00 Europe/Berlin`, `09:00 Europe/Berlin · 0 9 * * 1-5`, `On review`, `On request` or `Off`. */
 val Routine.whenText: String
     get() {
         if (!enabled) return "Off"
+        if (on == RoutineDraft.REVIEW) return "On review"
         val at = at ?: return "On request"
         val base = "$at ${timezone.orEmpty()}".trim()
         return schedule?.let { "$base · $it" } ?: base

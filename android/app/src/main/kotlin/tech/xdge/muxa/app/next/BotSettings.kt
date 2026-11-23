@@ -30,10 +30,11 @@ import tech.xdge.muxa.v2.SettingsBot
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsWorkspace
 
-/** A Workspace's Bots (ADR 0082), with how their items ended from the Inbox's [counts]. */
+/** A Workspace's Bots (ADR 0082), with how their items ended from the Inbox's [counts]. [talk] starts a talk with one. */
 @Composable
-fun BotSettings(editor: SettingsEditor, ws: SettingsWorkspace, counts: List<BotCount>) {
+fun BotSettings(editor: SettingsEditor, ws: SettingsWorkspace, counts: List<BotCount>, talk: BotTalk) {
     var editing by remember { mutableStateOf<BotDraft?>(null) }
+    var settingUp by remember { mutableStateOf(false) }
     SettingsHeader("Bots")
     SettingsCard {
         if (ws.bots.isEmpty()) SettingsNote("No Bots.")
@@ -46,10 +47,13 @@ fun BotSettings(editor: SettingsEditor, ws: SettingsWorkspace, counts: List<BotC
             CardDivider()
         }
         ActionRow("+ Add Bot", "settings.bot.add", !editor.readOnly) { editing = BotDraft(isNew = true) }
+        CardDivider()
+        ActionRow("Set up a Bot by talking", "settings.bot.talk", true) { settingUp = true }
     }
     SettingsNote("A Bot owns Routines. Each run starts from its Soul and Memory, and adds at most its daily items to the Inbox.")
     val workers = editor.settings?.workers.orEmpty().map { it.name }
-    editing?.let { BotDialog(editor, ws.name, workers, it) { editing = null } }
+    editing?.let { BotDialog(editor, ws, workers, talk, it) { editing = null } }
+    if (settingUp) TalkSetupDialog(talk) { settingUp = false }
 }
 
 /** "2 Routines · 3 a day · 4 done · 1 deleted"; the counts only when the Inbox knows them. */
@@ -60,12 +64,21 @@ fun botSummary(b: SettingsBot, ws: SettingsWorkspace, counts: List<BotCount>): S
         if (routines == 1) "1 Routine" else "$routines Routines",
         "${b.dailyItems ?: DEFAULT_DAILY_ITEMS} a day",
         b.worker?.let { "worker $it" },
+        b.members.takeIf { it.isNotEmpty() }?.let { "Leads " + it.joinToString(", ") },
         count?.let { "${it.done} done · ${it.deleted} deleted" },
     ).joinToString(" · ")
 }
 
 @Composable
-private fun BotDialog(editor: SettingsEditor, workspace: String, workers: List<String>, initial: BotDraft, close: () -> Unit) {
+private fun BotDialog(
+    editor: SettingsEditor,
+    ws: SettingsWorkspace,
+    workers: List<String>,
+    talk: BotTalk,
+    initial: BotDraft,
+    close: () -> Unit,
+) {
+    val workspace = ws.name
     var d by remember { mutableStateOf(initial) }
     var asking by remember { mutableStateOf<BotAsk?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -80,6 +93,7 @@ private fun BotDialog(editor: SettingsEditor, workspace: String, workers: List<S
         Field(d.dailyItems, { d = d.copy(dailyItems = it) }, "Daily items", "bot.daily", number = true,
             placeholder = "$DEFAULT_DAILY_ITEMS", help = "At most this many Inbox items a day, from 1 to 50.")
         SwitchField("Enabled", "bot.enabled", d.enabled) { d = d.copy(enabled = it) }
+        BotTeam(d, ws.bots) { d = it }
         if (!d.isNew && d.originalSoul == null) {
             Text("soul.md could not be read. Typing here replaces it.", style = MaterialTheme.typography.bodySmall)
         }
@@ -89,6 +103,12 @@ private fun BotDialog(editor: SettingsEditor, workspace: String, workers: List<S
         if (live != null) BotMemory(live, editor.readOnly) { asking = BotAsk.RESTORE }
         error?.let { Text(it, Modifier.testTag("bot.error"), color = Theme.failure) }
         if (!d.isNew) {
+            SecondaryButton("Talk to ${d.name}", {
+                scope.launch {
+                    error = talk.start(d.name)
+                    if (error == null) close()
+                }
+            }, Modifier.testTag("bot.talk"))
             DestructiveButton("Remove Bot", { asking = BotAsk.REMOVE }, Modifier.testTag("bot.remove"), enabled = !editor.readOnly)
         }
     }
@@ -107,22 +127,39 @@ private fun BotDialog(editor: SettingsEditor, workspace: String, workers: List<S
     }
 }
 
+/**
+ * The Bots this one leads (ADR 0085): others of the Workspace that lead no team. Hidden for a Bot
+ * that is a member of another lead, and when there is no other Bot.
+ */
+@Composable
+private fun BotTeam(d: BotDraft, bots: List<SettingsBot>, change: (BotDraft) -> Unit) {
+    val choices = BotDraft.memberChoices(d.name.trim(), bots)
+    if (choices.isEmpty()) return
+    NameChips("Team", choices, d.members, "bot.member") { change(d.copy(members = it)) }
+    Text("A team lead hands work to its members. None picked: no team.", style = MaterialTheme.typography.bodySmall)
+    if (d.members.isNotEmpty()) {
+        Field(d.handoffs, { change(d.copy(handoffs = it)) }, "Handoffs a day", "bot.handoffs", number = true,
+            placeholder = "$DEFAULT_HANDOFFS", help = "For all members together, from 1 to 50.")
+    }
+}
+
 /** What the Bot learned, as its last run wrote it. Only its runs change it; a kept version can come back. */
 @Composable
 private fun BotMemory(bot: SettingsBot, readOnly: Boolean, restore: () -> Unit) {
+    MemoryText(bot.memoryText, "bot.memory")
+    if (bot.memoryVersions > 0) {
+        SecondaryButton("Restore Earlier Memory", restore, Modifier.testTag("bot.memory.restore"), enabled = !readOnly)
+    }
+}
+
+/** A `memory.md` under its title, read only: only the runs that keep it write it. */
+@Composable
+fun MemoryText(text: String?, tag: String) {
     Text("Memory", style = MaterialTheme.typography.titleSmall)
     SelectionContainer(
         Modifier.fillMaxWidth().background(Palette.surface, MEMORY_SHAPE).border(1.dp, Palette.border, MEMORY_SHAPE).padding(10.dp),
     ) {
-        Text(
-            bot.memoryText?.takeIf { it.isNotBlank() } ?: "No memory yet.",
-            Modifier.testTag("bot.memory"),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.5.sp,
-        )
-    }
-    if (bot.memoryVersions > 0) {
-        SecondaryButton("Restore Earlier Memory", restore, Modifier.testTag("bot.memory.restore"), enabled = !readOnly)
+        Text(text?.takeIf { it.isNotBlank() } ?: "No memory yet.", Modifier.testTag(tag), fontFamily = FontFamily.Monospace, fontSize = 12.5.sp)
     }
 }
 
@@ -139,4 +176,5 @@ private enum class BotAsk(val action: String, val text: String) {
 
 private val MEMORY_SHAPE = RoundedCornerShape(8.dp)
 private const val DEFAULT_DAILY_ITEMS = 3
+private const val DEFAULT_HANDOFFS = 10
 private const val SOUL_LINES = 8

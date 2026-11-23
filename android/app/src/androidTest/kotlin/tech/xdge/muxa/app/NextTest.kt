@@ -245,6 +245,95 @@ class NextTest {
     }
 
     @Test
+    fun applyingABotsSettingsProposalAddsItsRoutineAndEndsTheItem() {
+        launch()
+        compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d12"))
+        compose.onNodeWithTag("item.d12").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.settingsproposal"), TIMEOUT)
+        compose.onNodeWithTag("detail.settingsproposal.0", useUnmergedTree = true).assert(hasText("Add Routine nightly-sweep (off)"))
+        compose.onNodeWithTag("detail.apply").performScrollTo().performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("detail.settingsproposal"), TIMEOUT)
+        compose.backToList()
+        compose.waitUntil(TIMEOUT) {
+            runCatching { compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d12")) }.isFailure
+        }
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.ROUTINES").performClick()
+        compose.onNodeWithTag("settings.routine.app.nightly-sweep").performScrollTo().assert(hasText("off", substring = true))
+    }
+
+    @Test
+    fun acceptingTheAssistantsSuggestionChangesTheItem() {
+        launch()
+        compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d13"))
+        compose.onNodeWithTag("item.d13").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.suggestion"), TIMEOUT)
+        compose.onNodeWithTag("suggestion.workspace", useUnmergedTree = true).assert(hasText("app"))
+        compose.onNodeWithTag("suggestion.ask").performScrollTo().assert(hasText("Ask pr-watch"))
+        compose.onNodeWithTag("suggestion.accept").performScrollTo().performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("detail.suggestion"), TIMEOUT)
+        // The note is Markdown: its text is in the note's children.
+        compose.waitUntil(TIMEOUT) { "It failed twice on CI this week." in compose.nodeText(compose.onNodeWithTag("detail.note").fetchSemanticsNode().id) }
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.title") and hasText("Look at the flaky login test"), TIMEOUT)
+    }
+
+    @Test
+    fun aRoutineRunOnReviewIsSaved() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.ROUTINES").performClick()
+        compose.onNodeWithTag("settings.routine.app.dependency-digest").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("routine.timing.review"), TIMEOUT)
+        compose.onNodeWithTag("routine.timing.review").performClick()
+        compose.onNodeWithTag("routine.timezone").assertDoesNotExist()
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("routine.timing.review"), TIMEOUT)
+        compose.onNodeWithTag("settings.routine.app.dependency-digest").performScrollTo().assert(hasText("On review", substring = true))
+    }
+
+    @Test
+    fun theCaptureAssistantsSettingsAreSaved() {
+        launch()
+        compose.openSettings()
+        compose.onNodeWithTag("settings.assistant").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("assistant.enabled"), TIMEOUT)
+        compose.onNodeWithTag("assistant.memory", useUnmergedTree = true).performScrollTo().assert(hasText("login go to app", substring = true))
+        compose.onNodeWithTag("assistant.enabled").performScrollTo().performClick()
+        compose.onNodeWithTag("assistant.soul").performScrollTo().performTextReplacement("Only name a Workspace.")
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("assistant.enabled"), TIMEOUT)
+        compose.onNodeWithTag("settings.assistant").performScrollTo().assert(hasText("off", substring = true)).performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("assistant.soul"), TIMEOUT)
+        compose.onNodeWithTag("assistant.soul").assert(hasText("Only name a Workspace."))
+    }
+
+    @Test
+    fun talkingToABotOpensItsTask() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.BOTS").performClick()
+        compose.onNodeWithTag("settings.bot.app.pr-watch").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.talk"), TIMEOUT)
+        compose.onNodeWithTag("bot.talk").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(screenContains("Starting the agent for Talk to pr-watch"), TIMEOUT)
+        compose.onNodeWithTag("focus.bot", useUnmergedTree = true).assert(hasText("with pr-watch"))
+    }
+
+    @Test
+    fun aBotIsSetUpByTalking() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.BOTS").performClick()
+        compose.onNodeWithTag("settings.bot.talk").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("bot.setup.name"), TIMEOUT)
+        compose.onNodeWithTag("bot.setup.name").performTextInput("Issue Triage")
+        compose.onNodeWithTag("bot.setup.start").assertIsNotEnabled()
+        compose.onNodeWithTag("bot.setup.name").performTextReplacement("issue-triage")
+        compose.onNodeWithTag("bot.setup.start").performClick()
+        compose.waitUntilAtLeastOneExists(screenContains("Starting the agent for Talk to issue-triage"), TIMEOUT)
+    }
+
+    @Test
     fun requestChangesTypesTheCommentToTheAgent() {
         launch()
         compose.onNodeWithTag("item.d1").performClick()
