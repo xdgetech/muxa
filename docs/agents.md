@@ -70,6 +70,16 @@ A Routine (ADR 0026, 0036, `src/routines/`) is a `[[routine]]` in a workspace's 
 - `memory` is only for a Bot's Routine: the Bot's whole new `memory.md`, at most 16 KiB. The daemon writes it after the publish and keeps the five before it in `.muxa/bots/<name>/history/`. Absent keeps the memory.
 - `state` is any JSON value, at most 16 KiB encoded. Absent keeps the previous state; it advances only with a successful publish.
 - The whole file is at most 256 KiB, a regular file, not a symlink. Unknown fields are refused, so a typo is not lost silently.
+- `handoffs` is only for a team lead's Routine (ADR 0085): `[{"to": "<member>", "brief": "…"}]`, one per member, a brief at most 4 KiB, never in the lead's last step (3 per occurrence). After the publish the daemon starts each member, within the team's `handoffs_per_day`. The lead's next run gets their results in `.muxa/TASK.md`; `.muxa/team-step` holds the step.
+
+### Other agent output
+
+Each of these is checked by the daemon, as Routine output is. Reasons go to `.muxa/CHECK.md`; the daemon does not type into these agents.
+
+- **A team member** (`src/v2/team.rs`, ADR 0085) writes `.muxa/result.json`: `{"summary": "…", "memory"?: "…"}`. The summary is 1 byte to 8 KiB and goes to the lead as data; `memory` replaces the member's `memory.md`. A member that ends without one, or runs past an hour, gets no result.
+- **A talk with a Bot** (`src/v2/talk.rs`, ADR 0083) writes `.muxa/bot.json`: `{"memory"?: "…", "proposal"?: {"summary": "…", "ops": [Op…]}}`. Ops are `settings-update` ops limited to the Bot's own Bot and Routines in its Workspace. A passed proposal becomes one Decide item with `settings_proposal`.
+- **The Capture assistant** (`src/v2/assistant.rs`, ADR 0084) writes `.muxa/suggestion.json`: `{"kind"?, "workspace"?, "due"?, "note"?, "split"?, "task_goal"?, "bot"?, "memory"?}`. It runs in `<state dir>/assistant/runs/<item>/`, and the folder goes after its turn.
+- **A review Routine** (`on = "review"`, ADR 0084) writes Routine output as any Routine does. Its brief names the Task, whose places it may read and not edit.
 
 ## Agent adapters
 

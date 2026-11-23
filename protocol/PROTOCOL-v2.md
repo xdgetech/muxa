@@ -80,7 +80,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"terminals"}` | `{"terminals":[Terminal...]}`: the live terminals |
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
-| `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"mcp"?,"plan"?,"loop"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal. `loop` (LoopSpec) also starts its Task Loop |
+| `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"mcp"?,"plan"?,"loop"?,"bot"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal. `loop` (LoopSpec) also starts its Task Loop. `bot` talks to a Bot; see Talking to a Bot |
 | `{"type":"task-shell","terminal"}` | `{"terminal":Terminal,"existing":false}`: a new shell in the working place of the Task whose live agent is `terminal`. See Task shells |
 | `{"type":"close-terminal","terminal"}` | `{}`. Ends a Task's shell and removes its terminal; any other terminal is `bad-request` |
 | `{"type":"upload","terminal","name","data"}` | `{"path"}`: a file from the device into the Task's working place, at `path` relative to it. See Uploads |
@@ -107,6 +107,8 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"inbox-approve","item","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of a Review item; `worktree` is `remove` (the default) or `force`. See Task actions |
 | `{"type":"inbox-request-changes","item","comment"}` | `{"inbox":Inbox}`. Types the comment into the Task's agent and resolves the Review item |
 | `{"type":"inbox-retry","item"}` | `{"inbox":Inbox}`. Runs again what made a Failed item and resolves it |
+| `{"type":"inbox-apply","item"}` | `{"inbox":Inbox}`. Applies the item's `settings_proposal` and marks it Done. See Talking to a Bot |
+| `{"type":"inbox-suggestion","item","accept"}` | `{"inbox":Inbox}`. Accepts or dismisses the item's `suggestion`. See Capture assistant |
 | `{"type":"settings"}` | `{"settings":Settings}`: the host's editable settings. See Settings |
 | `{"type":"settings-update","revision","ops":[Op...]}` | `{"settings":Settings}`: the settings after the ops. See Settings |
 | `{"type":"migrate-v1","dry_run"?}` | `{"tasks":[V1Task...],"added"}`: one Inbox item per open Task of protocol v1. See Migration from v1 |
@@ -135,6 +137,7 @@ If the Task's agent is still running in that working place, the reply has it wit
 - `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
 - `muxa.connections`: a JSON list of every connection the agent got, when it got any. Names only.
 - `muxa.mcp`: a JSON list of every MCP server the agent got, when it got any. Names only.
+- `muxa.bot`: the Bot a talk Task talks with (ADR 0083).
 
 Every agent gets all of its Workspace's connections as environment variables (ADR 0075). Their secrets come from the host's Keychain and never cross the wire back. A missing or locked secret fails the start before any place is made.
 
@@ -229,13 +232,13 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ### Routines
 
-`Routine`: `{"workspace","name","enabled","at"?,"timezone"?,"schedule"?,"next_due"?,"running_since"?,"last"?,"bot"?}`. `bot` names the Bot that owns it (ADR 0082). `at` is `HH:MM` in `timezone`, the earliest time of the day; `schedule` the five cron fields (absent: every day). Minute and hour may be lists, ranges and steps (`*/30 9-18 * * 1-5`), with times at least 15 minutes apart (ADR 0082). A Routine without `at` runs only on `run-routine`. `off` lists the Workspaces whose `.muxa/routines.toml` has Routines while `[workspace.routines] enabled` is not true: none of them run or appear in `routines`. `count` is the number of `[[routine]]` tables. A client turns them on with the `routines-gate` op of `settings-update`. `last`: `{"at","ok","reason"?,"published"?}`, the newer of the last success and failure. Times are Unix seconds.
+`Routine`: `{"workspace","name","enabled","at"?,"timezone"?,"schedule"?,"next_due"?,"running_since"?,"last"?,"bot"?,"on"?}`. `bot` names the Bot that owns it (ADR 0082). `on: "review"` runs it each time a Task of its Workspace asks for review (ADR 0084). `at` is `HH:MM` in `timezone`, the earliest time of the day; `schedule` the five cron fields (absent: every day). Minute and hour may be lists, ranges and steps (`*/30 9-18 * * 1-5`), with times at least 15 minutes apart (ADR 0082). A Routine without `at` runs only on `run-routine`. `off` lists the Workspaces whose `.muxa/routines.toml` has Routines while `[workspace.routines] enabled` is not true: none of them run or appear in `routines`. `count` is the number of `[[routine]]` tables. A client turns them on with the `routines-gate` op of `settings-update`. `last`: `{"at","ok","reason"?,"published"?}`, the newer of the last success and failure. Times are Unix seconds.
 
 ### Inbox
 
 ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"workspace","bot","done","deleted"}]}`. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
 
-`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?}`. ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot adds at most its `daily_items` a day; the rest go into one Read item titled `N more from <bot>`, whose note lists their titles.
+`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?,"settings_proposal"?,"suggestion"?}`. `settings_proposal` is on a Decide item of a talk with a Bot (ADR 0083); `suggestion` is the Capture assistant's (ADR 0084). ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot adds at most its `daily_items` a day; the rest go into one Read item titled `N more from <bot>`, whose note lists their titles.
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
 - `due`: `YYYY-MM-DD`. `created` and `later_until`: Unix seconds.
 - An item with `later_until` in the future stays in `items` and the client hides it. At that time the server puts it back on top, clears `later_until` and sends `inbox`.
@@ -261,6 +264,24 @@ ADR 0076. `migrate-v1` reads the open Task records of protocol v1 (status `open`
 - `missing`: its place is gone; `no-workspace`: its Workspace is gone; `outside`: its place is no longer in its Workspace. None of these adds an item.
 
 `added` counts the items this run added; with `dry_run` it is 0.
+
+### Talking to a Bot
+
+ADR 0083. `start-task` with `bot` starts a talk: a folder Task in `workspace` whose agent starts from the Bot's `soul.md` and `memory.md`, with the Bot's settings and its Routines in `.muxa/TASK.md`. `places` must be empty or one folder. `bot` names a Bot of the Workspace, or a valid name with no Bot yet: then the talk may propose adding it. The agent gets `muxa.bot`, the Workspace's connections and MCP servers like any Task, and Claude Code may not edit the Workspace's `.muxa/` folder. The talk is a Task: Chat, the Terminal and Close work as for any Task.
+
+Each time the agent reports `done`, the host reads `.muxa/bot.json` in the Task's folder, when it changed:
+- `memory`: the Bot's new memory, at most 16 KiB. It replaces `memory.md`, and the earlier one is kept, as after a run.
+- `proposal`: `{"summary","ops":[Op...]}`, 1 to 20 settings ops. Only `bot-add` and `bot-update` of this Bot, and `routine-add`, `routine-update` and `routine-remove` of this Bot's Routines in this Workspace, are allowed; a Routine it adds is added turned off. `members` of a `bot-update` may name only Bots of the Workspace. Anything else refuses the whole proposal, and the reason goes to `.muxa/CHECK.md` for the agent.
+
+An accepted proposal becomes one Decide item: `title` is `<bot> proposes: <summary>`, `note` lists the ops one per line, and `settings_proposal` is `{"revision","ops"}`, with the settings' revision when the item was made. `bot`, `workspace` and `terminal` are set. `inbox-apply` sends the ops as `settings-update` with that revision and marks the item Done. When the settings changed since, it is `conflict` and nothing changes; the user asks the Bot again. Dismiss is `inbox-done` or `inbox-delete`.
+
+### Capture assistant
+
+ADR 0084. When `[assistant] enabled = true` in `workspaces.toml`, each item added by `inbox-add` gets one short run of the assistant: Claude Code in `<state dir>/assistant/runs/<item>/`, with no Workspace, no connections and no MCP servers. It reads the item, the Workspace names, each Workspace's Bots with their descriptions, its own `soul.md` and `memory.md`, and its last 30 decisions. Its suggestion becomes the item's `suggestion`:
+
+`{"kind"?,"workspace"?,"due"?,"note"?,"split"?:[title...],"task_goal"?,"bot"?}`. `kind` is `todo`, `read`, `decide` or `reply`; `workspace` an existing Workspace; `due` `YYYY-MM-DD`; `split` 2 to 5 titles; `task_goal` a goal for Start Task; `bot` a Bot of the suggested Workspace, or of the item's. A run that suggests nothing leaves the item as it is.
+
+`inbox-suggestion` with `accept: true` applies `kind`, `workspace`, `due` and `note` (after the item's own note); with `split`, the parts become new items in its place and the item becomes Done. `task_goal` and `bot` change nothing on the server: the client offers Start Task with the goal, and Ask `<bot>`, a talk (`start-task` with `bot`) whose goal is the item. Accept or dismiss clears `suggestion`, and the assistant keeps the decision to learn from.
 
 ### Task actions
 
@@ -302,7 +323,8 @@ A Review item with no `terminal`, or another kind, is `bad-request`. A terminal 
 
 ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace's `.muxa/routines.toml` and the Routines' instruction files. The files stay the source of truth, and a person can still edit them by hand. The daemon edits them in place, so comments and order stay, and reads them again on its next use.
 
-`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...]}`.
+`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...],"assistant"?}`.
+- `assistant`: `{"enabled","worker"?,"soul_text","memory_text"}`, the Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`, and `assistant/soul.md` and `memory.md` beside it. Absent from an older server.
 - `revision`: a hash of the files' bytes. It changes when any of them changes, by hand too.
 - `read_only`: the daemon runs with `--settings-read-only`; `settings-update` is refused.
 - `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
@@ -323,11 +345,11 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 
 `SettingsRoutine`: a `RoutineSpec` plus `"instructions_text"`, the instruction file's content, or `null` when it cannot be read.
 
-`RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?,"bot"?,"read_only"?}`, as `[[routine]]` with `[routine.output]` flattened. `bot` names a `[[bot]]` of the same file; `read_only` denies Claude Code's edit tools to the run (ADR 0082). Editing a connection, an MCP server or a Routine removes the ignored `default`, `connections` and `mcp` keys from the file. `instructions` is the file's path relative to `.muxa/`.
+`RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?,"bot"?,"read_only"?,"on"?}`, as `[[routine]]` with `[routine.output]` flattened. `bot` names a `[[bot]]` of the same file; `read_only` denies Claude Code's edit tools to the run (ADR 0082). `on` is `review` or absent (ADR 0084); a Routine with `on` has no `at` or `schedule`. Editing a connection, an MCP server or a Routine removes the ignored `default`, `connections` and `mcp` keys from the file. `instructions` is the file's path relative to `.muxa/`.
 
 `SettingsBot`: a `BotSpec` plus `"soul_text"` (`.muxa/bots/<name>/soul.md`, empty when there is none), `"memory_text"` (`memory.md`, which the Bot's runs write) and `"memory_versions"`, how many earlier memories `bot-memory-restore` can bring back. A text is `null` when it cannot be read. The Soul counts in `revision`; the Memory does not, so a run does not make a client's edit stale.
 
-`BotSpec`: `{"name","description"?,"worker"?,"daily_items"?,"enabled"}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. `daily_items` is 1 to 50, absent 3. A turned-off Bot turns off its Routines.
+`BotSpec`: `{"name","description"?,"worker"?,"daily_items"?,"enabled","members"?,"handoffs_per_day"?}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. `daily_items` is 1 to 50, absent 3. A turned-off Bot turns off its Routines. `members` makes the Bot a team lead (ADR 0085): up to 6 other Bots of the same file, none of which leads a team. `handoffs_per_day` is 1 to 50, absent 10.
 
 `SettingsWorker`, also `WorkerSpec` in ops: `{"name","description"?,"agent","args":[...],"instructions"?,"workspaces"?,"loop"?:{"check","max_attempts"?,"timeout"?}}`, as `[[worker]]`. `agent` is `claude-code` or `codex`.
 
@@ -352,6 +374,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `bot-add`, `bot-update` | `workspace`, `bot`: BotSpec, `soul_text`? | Adds a Bot, or changes the one named `bot.name`. `soul_text` replaces its `soul.md` |
 | `bot-remove` | `workspace`, `name` | Removes the Bot. Its Routines must go first; its folder stays |
 | `bot-memory-restore` | `workspace`, `name`, `version` | Brings back kept memory `version`, 1 the newest of 5; the current one is kept in its place |
+| `assistant-update` | `enabled`, `worker`?, `soul_text`? | Sets `[assistant]`; `soul_text` replaces `assistant/soul.md` beside `workspaces.toml` |
 | `worker-add`, `worker-update` | `worker`: WorkerSpec | Adds a worker, or replaces the one named `worker.name` |
 | `worker-remove` | `name` | |
 
