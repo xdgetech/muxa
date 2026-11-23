@@ -46,6 +46,10 @@ impl From<StateError> for StartError {
 /// Whether the Routine would start Codex: a Codex worker, or a default
 /// command whose program is `codex`.
 pub fn runs_codex(workspaces: &Workspaces, routine: &Routine, fallback: &str) -> bool {
+    // A Bot's Routine always runs Claude Code (ADR 0087).
+    if routine.bot.is_some() {
+        return false;
+    }
     match &routine.worker {
         Some(name) => workspaces
             .worker(name)

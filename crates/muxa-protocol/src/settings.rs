@@ -84,6 +84,9 @@ pub struct SettingsWorkspace {
     /// servers (ADR 0087).
     #[serde(default)]
     pub claude_connectors: bool,
+    /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
+    #[serde(default, skip_serializing_if = "BotRules::is_empty")]
+    pub bot_rules: BotRules,
     #[serde(default)]
     pub connections: Vec<SettingsConnection>,
     #[serde(default)]
@@ -251,6 +254,21 @@ pub struct SettingsBot {
     pub memory_history: Vec<MemoryVersion>,
 }
 
+/// `[workspace.bots]`: Claude Code permission rules, as in its settings file.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BotRules {
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
+}
+
+impl BotRules {
+    pub fn is_empty(&self) -> bool {
+        self.allow.is_empty() && self.deny.is_empty()
+    }
+}
+
 /// One earlier memory `bot-memory-restore` can bring back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryVersion {
@@ -332,6 +350,8 @@ pub enum SettingsOp {
         park_after: Option<Option<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         claude_connectors: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bot_rules: Option<BotRules>,
     },
     WorkspaceRemove {
         workspace: String,

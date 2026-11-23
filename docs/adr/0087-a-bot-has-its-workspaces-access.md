@@ -10,14 +10,15 @@ A Bot could name a worker, and a worker carries its own MCP config and permissio
 
 ## Decision
 
-1. **A Bot runs with its Workspace's access.** Its Routine runs, its talks and its team members run as the Workspace's agent, with the Workspace's connections and MCP servers. A `worker` on a `[[bot]]` or on a Bot's `[[routine]]` is read and ignored; clients stop offering it. Routines without a Bot and Tasks keep workers.
-2. **The Workspace is the only boundary.** To give a Bot a tool, add it to the Workspace. To keep data from a Bot, put it in another Workspace.
-3. **A Workspace may let claude.ai connectors in.** With `claude_connectors = true`, agents of a Workspace with MCP servers get `--mcp-config` without `--strict-mcp-config`, so the user's claude.ai connectors (Calendar, Sheets) load beside the Workspace's servers. Off by default. The Capture assistant stays strict.
-4. **A Bot is told its access.** The muxa Bot section (ADR 0086) lists the Workspace's connections and MCP servers and says whether claude.ai connectors load.
+1. **A Bot runs with its Workspace's access.** Its Routine runs, its talks and its team members run Claude Code with the Workspace's env, connections and MCP servers. The command is the Workspace's agent when that is Claude Code (its flags and model stay), else `claude`, so a Workspace whose Tasks run Codex can still have Bots. A `worker` on a `[[bot]]` or on a Bot's `[[routine]]` is read and ignored; clients stop offering it. Routines without a Bot and Tasks keep workers.
+2. **One set of rules for a Workspace's Bots.** `[workspace.bots]` holds `allow` and `deny` lists of Claude Code permission rules. Claude Code enforces them on every Bot of the Workspace, beside muxa's own deny rules (`.muxa/`, read-only repos). Tasks never get them, so a Workspace can deny Bots the shell while its coding Tasks keep it. Each Bot is told its rules.
+3. **The Workspace is the only boundary.** To give a Bot a tool, add it to the Workspace. To keep data from a Bot, put it in another Workspace.
+4. **A Workspace may let claude.ai connectors in.** With `claude_connectors = true`, agents of a Workspace with MCP servers get `--mcp-config` without `--strict-mcp-config`, so the user's claude.ai connectors (Calendar, Sheets) load beside the Workspace's servers. Off by default. The Capture assistant stays strict.
+5. **A Bot is told its access.** The muxa Bot section (ADR 0086) lists the Workspace's connections and MCP servers and says whether claude.ai connectors load.
 
 ## Consequences
 
-- One thing to configure per Workspace instead of one per Bot.
+- One thing to configure per Workspace instead of one per Bot: its tools, and its Bots' rules.
 - A Workspace's Bots all see the same data. A role that needs a private source (the team assessment) goes in its own Workspace.
 - A user whose tools sit in a worker's `--mcp-config` moves them to the Workspace's MCP servers, and its secrets to connections in the Keychain.
 - Alternatives not taken:

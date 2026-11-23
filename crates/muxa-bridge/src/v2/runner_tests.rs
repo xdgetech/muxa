@@ -480,3 +480,24 @@ async fn a_run_for_a_review_may_read_the_tasks_places() {
     let brief = std::fs::read_to_string(dir.join(".muxa/TASK.md")).unwrap();
     assert!(brief.contains("## The Task to review"));
 }
+
+#[tokio::test]
+async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
+    // The Workspace's agent is Codex, which runs no Routine; a Bot's run is Claude Code anyway.
+    let h = Host::with_workspace(
+        "bot-rules",
+        "bot = \"b\"\n[[bot]]\nname = \"b\"\nenabled = true\n",
+        "[workspace.agent]\ncommand = \"codex\"\n[workspace.bots]\nallow = [\"WebSearch\"]\ndeny = [\"Bash\"]\n",
+    );
+    let backend = FakeBackend::new();
+    let t = h.started(&backend).await;
+    let line = &backend.launches()[0].argv[2];
+    assert!(line.starts_with("claude --settings "), "{line}");
+    let dir = PathBuf::from(&t.labels["muxa.dir"]);
+    let settings = std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&settings).unwrap();
+    assert_eq!(v["permissions"]["allow"], json!(["WebSearch"]));
+    let deny = v["permissions"]["deny"].as_array().unwrap();
+    assert!(deny.contains(&json!("Bash")), "{deny:?}");
+    assert!(deny.len() > 1, "muxa's own deny rule stays: {deny:?}");
+}

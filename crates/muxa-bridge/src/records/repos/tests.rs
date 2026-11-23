@@ -30,6 +30,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         connections: Vec::new(),
         mcp: Vec::new(),
         claude_connectors: false,
+        bot_rules: Default::default(),
     }
 }
 

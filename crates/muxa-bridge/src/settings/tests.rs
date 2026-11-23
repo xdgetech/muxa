@@ -215,6 +215,51 @@ fn found_repos_show_and_a_hidden_one_is_saved() {
 }
 
 #[test]
+fn a_workspaces_bot_rules_and_claude_connectors_are_set_and_cleared() {
+    let h = host("botrules");
+    let rev = h.store.view().unwrap().revision;
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![op(
+                json!({"op": "workspace-update", "workspace": "Home", "claude_connectors": true,
+                "bot_rules": {"allow": ["WebSearch"], "deny": ["Bash"]}}),
+            )],
+        )
+        .unwrap();
+    let home = &s.workspaces[1];
+    assert!(home.claude_connectors);
+    assert_eq!(
+        (
+            home.bot_rules.allow.as_slice(),
+            home.bot_rules.deny.as_slice()
+        ),
+        (&["WebSearch".to_owned()][..], &["Bash".to_owned()][..])
+    );
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    let ws = loaded.all().iter().find(|w| w.name == "Home").unwrap();
+    assert!(ws.claude_connectors && ws.bot_rules.deny == ["Bash"]);
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "workspace-update", "workspace": "Home", "claude_connectors": false,
+                "bot_rules": {"allow": [], "deny": []}}),
+            )],
+        )
+        .unwrap();
+    assert!(!s.workspaces[1].claude_connectors && s.workspaces[1].bot_rules.is_empty());
+    assert!(
+        !fs::read_to_string(&h.file)
+            .unwrap()
+            .contains("[workspace.bots]"),
+        "an empty table goes"
+    );
+}
+
+#[test]
 fn a_connection_lands_in_its_own_workspace_and_its_secret_in_the_keychain() {
     let h = host("conn");
     let rev = h.store.view().unwrap().revision;

@@ -60,10 +60,23 @@ pub fn apply(
             agent_command,
             park_after,
             claude_connectors,
+            bot_rules,
         } => {
             let t = find_ws(workspaces, &workspace)?;
             if let Some(on) = claude_connectors {
                 set_bool(t, "claude_connectors", on, false);
+            }
+            if let Some(rules) = bot_rules {
+                let bots = sub_table(t, "bots")?;
+                set_list(bots, "allow", &rules.allow);
+                set_list(bots, "deny", &rules.deny);
+                if rules.allow.is_empty() {
+                    bots.remove("allow");
+                }
+                if rules.deny.is_empty() {
+                    bots.remove("deny");
+                }
+                drop_empty(t, "bots");
             }
             if let Some(hidden) = hidden_repos {
                 set_list(t, "hidden_repos", &hidden);

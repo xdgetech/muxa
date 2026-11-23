@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
-    BotSpec, ConnectionSpec, EnvKey, McpSpec, MemoryVersion, RoutineSpec, SettingsAgent,
+    BotRules, BotSpec, ConnectionSpec, EnvKey, McpSpec, MemoryVersion, RoutineSpec, SettingsAgent,
     SettingsAssistant, SettingsBot, SettingsConnection, SettingsLoop, SettingsRoutine,
     SettingsWorkspace, WorkerSpec,
 };
@@ -47,6 +47,8 @@ pub struct FileWorkspace {
     mcp: Vec<McpSpec>,
     #[serde(default)]
     claude_connectors: bool,
+    #[serde(default)]
+    bots: BotRules,
 }
 
 #[derive(Deserialize)]
@@ -328,6 +330,7 @@ pub fn workspace(
         routines_enabled: gate.enabled,
         direct_writes: gate.direct_writes,
         claude_connectors: w.claude_connectors,
+        bot_rules: w.bots,
         connections,
         mcp: w.mcp,
         routines: list,

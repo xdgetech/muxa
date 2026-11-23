@@ -77,6 +77,8 @@ pub struct Workspace {
     pub mcp: Vec<McpServer>,
     /// The user's claude.ai connectors load beside `mcp` (ADR 0087).
     pub claude_connectors: bool,
+    /// Permission rules for this Workspace's Bots only (ADR 0087).
+    pub bot_rules: super::bots::BotRules,
 }
 
 /// The configured workspaces, in file order.
@@ -137,6 +139,7 @@ struct RawWorkspace {
     mcp: Vec<RawMcp>,
     #[serde(default)]
     claude_connectors: bool,
+    bots: Option<super::bots::RawBotRules>,
     /// `[workspace.assistant]` and `memory` of the removed assistant layer
     /// (ADR 0066): read so an older file still loads, not used.
     assistant: Option<toml::Value>,
@@ -263,6 +266,11 @@ impl Workspaces {
             if w.assistant.is_some() || w.memory.is_some() {
                 tracing::warn!(workspace = %w.name, "[workspace.assistant] and memory are no longer used; remove them");
             }
+            let bot_rules = w
+                .bots
+                .unwrap_or_default()
+                .check()
+                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
             list.push(Workspace {
                 name: w.name,
                 root,
@@ -276,6 +284,7 @@ impl Workspaces {
                 connections,
                 mcp,
                 claude_connectors: w.claude_connectors,
+                bot_rules,
             });
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);

@@ -143,6 +143,7 @@ mod tests {
                 connections: vec!["github".into()],
             }],
             claude_connectors: false,
+            bot_rules: Default::default(),
         }
     }
 

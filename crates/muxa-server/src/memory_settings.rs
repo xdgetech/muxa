@@ -102,6 +102,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 routines_enabled: false,
                 direct_writes: false,
                 claude_connectors: false,
+                bot_rules: Default::default(),
                 connections: Vec::new(),
                 mcp: Vec::new(),
                 routines: Vec::new(),
@@ -118,10 +119,14 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             agent_command,
             park_after,
             claude_connectors,
+            bot_rules,
         } => {
             let w = workspace(s, &name)?;
             if let Some(on) = claude_connectors {
                 w.claude_connectors = on;
+            }
+            if let Some(rules) = bot_rules {
+                w.bot_rules = rules;
             }
             if let Some(hidden) = hidden_repos {
                 w.hidden_repos = hidden;

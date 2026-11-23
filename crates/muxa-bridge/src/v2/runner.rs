@@ -454,7 +454,14 @@ fn made(
     crate::routines::prepare_at(config, &routine.workspace, &routine.name, &dir)?;
     let mut rules = bot_run::deny_rules(ws, &routine, &dir);
     rules.extend(extra.read_dirs.iter().map(|d| bot_run::deny(d)));
-    let agent = agent_in(ws, resolved.command, &dir, &rules, &extra.read_dirs)?;
+    // A Bot's run is Claude Code with its Workspace's Bot rules (ADR 0087).
+    let (command, rules, allow) = if routine.bot.is_some() {
+        let (rules, allow) = bot_run::bot_rules(ws, rules);
+        (bot_run::as_bot(resolved.command), rules, allow)
+    } else {
+        (resolved.command, rules, Vec::new())
+    };
+    let agent = agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?;
     crate::connections::merge(&mut resolved.environment.env, agent.env);
     let (connections, mcp) = crate::usage::given(ws);
     Ok(Ready {
@@ -484,6 +491,7 @@ pub(crate) fn agent_in(
     command: LaunchCommand,
     dir: &Path,
     rules: &[String],
+    allow: &[String],
     read_dirs: &[PathBuf],
 ) -> Result<Agent, String> {
     let servers = mcp::chosen(ws);
@@ -497,7 +505,7 @@ pub(crate) fn agent_in(
         command
     };
     let command = if crate::launch::is_claude_code(&command) {
-        bot_run::with_settings(command, dir, rules, read_dirs)?
+        bot_run::with_permissions(command, dir, rules, allow, read_dirs)?
     } else {
         command
     };

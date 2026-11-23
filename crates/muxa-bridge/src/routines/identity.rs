@@ -12,6 +12,9 @@ pub struct Reach {
     pub mcp: Vec<String>,
     /// The user's claude.ai connectors load too (ADR 0087).
     pub claude_connectors: bool,
+    /// The Workspace's Bot permission rules, which Claude Code enforces.
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
 }
 
 /// Where the Bot is started.
@@ -59,6 +62,13 @@ pub fn section(name: &str, reach: &Reach, place: Place<'_>) -> String {
     } else {
         "- Only those MCP servers load; the user's claude.ai connectors do not.\n"
     });
+    if !reach.allow.is_empty() || !reach.deny.is_empty() {
+        out.push_str(&format!(
+            "- Claude Code enforces this Workspace's rules for Bots. Allowed: {}. Denied: {}.\n",
+            list(&reach.allow),
+            list(&reach.deny)
+        ));
+    }
     out.push_str(
         "- Try a source before you say you cannot reach it. For one you cannot reach, ask the user to add \
          a connection or an MCP server in Settings.\n",
@@ -110,6 +120,8 @@ mod tests {
             connections: vec!["linear ($LINEAR_API_KEY)".into()],
             mcp: vec![],
             claude_connectors: true,
+            allow: vec!["WebSearch".into()],
+            deny: vec!["Bash".into()],
         }
     }
 
@@ -123,6 +135,7 @@ mod tests {
                 "linear ($LINEAR_API_KEY)",
                 "MCP servers: none",
                 "claude.ai connectors (such as Calendar or Sheets) load too",
+                "Allowed: WebSearch. Denied: Bash.",
                 "Try a source before you say you cannot reach it",
                 "never edit the Workspace's `.muxa/`",
             ] {

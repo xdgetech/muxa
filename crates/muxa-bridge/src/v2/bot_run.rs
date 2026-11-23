@@ -28,6 +28,8 @@ pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, Strin
                 .collect(),
             mcp: ws.mcp.iter().map(|m| m.name.clone()).collect(),
             claude_connectors: ws.claude_connectors,
+            allow: ws.bot_rules.allow.clone(),
+            deny: ws.bot_rules.deny.clone(),
         },
         name: bot.name.clone(),
         soul: bot.read_soul().map_err(|e| e.to_string())?,
@@ -37,6 +39,26 @@ pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, Strin
             .map(|m| (m.name.clone(), m.description.clone()))
             .collect(),
     })
+}
+
+/// Claude Code, as a Bot always runs (ADR 0087).
+pub const CLAUDE: &str = "claude";
+
+/// Pure. A Bot runs Claude Code: the Workspace's agent when it is Claude Code
+/// (its flags and model stay), else plain `claude`.
+pub fn as_bot(command: LaunchCommand) -> LaunchCommand {
+    if crate::launch::is_claude_code(&command) {
+        command
+    } else {
+        LaunchCommand::Shell(CLAUDE.to_owned())
+    }
+}
+
+/// Pure. muxa's deny `rules` with the Workspace's Bot rules (ADR 0087): its
+/// deny rules join muxa's, and its allow rules come back for the settings.
+pub fn bot_rules(ws: &Workspace, mut rules: Vec<String>) -> (Vec<String>, Vec<String>) {
+    rules.extend(ws.bot_rules.deny.iter().cloned());
+    (rules, ws.bot_rules.allow.clone())
 }
 
 /// Pure. Paths start with `//` to be absolute; `Edit(…)` covers every
@@ -95,14 +117,25 @@ pub fn with_settings(
     rules: &[String],
     dirs: &[std::path::PathBuf],
 ) -> Result<LaunchCommand, String> {
-    if rules.is_empty() && dirs.is_empty() {
+    with_permissions(command, dir, rules, &[], dirs)
+}
+
+/// As [`with_settings`], with `allow` rules too: a Bot's Workspace rules.
+pub fn with_permissions(
+    command: LaunchCommand,
+    dir: &Path,
+    rules: &[String],
+    allow: &[String],
+    dirs: &[std::path::PathBuf],
+) -> Result<LaunchCommand, String> {
+    if rules.is_empty() && allow.is_empty() && dirs.is_empty() {
         return Ok(command);
     }
     let dirs: Vec<String> = dirs
         .iter()
         .map(|d| d.to_string_lossy().into_owned())
         .collect();
-    let value = serde_json::json!({"permissions": {"deny": rules, "additionalDirectories": dirs}});
+    let value = serde_json::json!({"permissions": {"allow": allow, "deny": rules, "additionalDirectories": dirs}});
     let mut text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     text.push('\n');
     let path = git::write_file(dir, SETTINGS_FILE, &text)?;
@@ -156,6 +189,7 @@ mod tests {
             connections: Vec::new(),
             mcp: Vec::new(),
             claude_connectors: false,
+            bot_rules: Default::default(),
         }
     }
 

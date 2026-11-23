@@ -268,6 +268,8 @@ fn reach(ws: &SettingsWorkspace, bot: Option<&SettingsBot>) -> Reach {
             .collect(),
         mcp: ws.mcp.iter().map(|m| m.name.clone()).collect(),
         claude_connectors: ws.claude_connectors,
+        allow: ws.bot_rules.allow.clone(),
+        deny: ws.bot_rules.deny.clone(),
     }
 }
 

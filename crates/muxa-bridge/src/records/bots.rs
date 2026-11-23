@@ -388,3 +388,43 @@ mod tests {
         assert_eq!(b.read_memory().unwrap(), "v7");
     }
 }
+
+/// `[workspace.bots]`: Claude Code permission rules every Bot of the
+/// Workspace gets, and nothing else does (ADR 0087).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BotRules {
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+}
+
+/// Rules per list, and bytes per rule.
+const MAX_RULES: usize = 200;
+const MAX_RULE: usize = 500;
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawBotRules {
+    #[serde(default)]
+    allow: Vec<String>,
+    #[serde(default)]
+    deny: Vec<String>,
+}
+
+impl RawBotRules {
+    pub(super) fn check(self) -> Result<BotRules, String> {
+        for (list, rules) in [("allow", &self.allow), ("deny", &self.deny)] {
+            if rules.len() > MAX_RULES {
+                return Err(format!("bots.{list} has at most {MAX_RULES} rules"));
+            }
+            if let Some(bad) = rules.iter().find(|r| {
+                r.trim().is_empty() || r.len() > MAX_RULE || r.chars().any(char::is_control)
+            }) {
+                return Err(format!("bots.{list}: {bad:?} is not a permission rule"));
+            }
+        }
+        Ok(BotRules {
+            allow: self.allow,
+            deny: self.deny,
+        })
+    }
+}

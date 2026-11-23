@@ -135,8 +135,17 @@ impl BridgeHost {
         ws: &Workspace,
         made: places::Made,
         servers: Option<Vec<McpServer>>,
+        talk: bool,
     ) -> Result<(places::Made, String), TaskError> {
-        let command = self.agent_command(ws);
+        let command = if talk {
+            // A talk is its Bot: Claude Code, whatever the Workspace's agent (ADR 0087).
+            match super::bot_run::as_bot(LaunchCommand::Shell(self.agent_command(ws))) {
+                LaunchCommand::Shell(line) => line,
+                LaunchCommand::Native { .. } => super::bot_run::CLAUDE.to_owned(),
+            }
+        } else {
+            self.agent_command(ws)
+        };
         let claude = crate::launch::is_claude_code(&LaunchCommand::Shell(command.clone()));
         let (managed, known) = (mcp::managed(ws), ws.connections.clone());
         let strict = !ws.claude_connectors;
@@ -210,8 +219,8 @@ async fn talk_line(ws: &Workspace, dir: &Path, line: String) -> Result<String, T
     blocking(move || {
         let muxa = crate::records::routines::routines_dir(&ws)?
             .unwrap_or_else(|| ws.root.join(crate::records::routines::WORKSPACE_DIR));
-        let rules = [super::bot_run::deny(&muxa)];
-        match super::bot_run::with_settings(launch, &dir, &rules, &[])? {
+        let (rules, allow) = super::bot_run::bot_rules(&ws, vec![super::bot_run::deny(&muxa)]);
+        match super::bot_run::with_permissions(launch, &dir, &rules, &allow, &[])? {
             LaunchCommand::Shell(line) => Ok(line),
             LaunchCommand::Native { .. } => Ok(line),
         }
@@ -382,7 +391,7 @@ impl Host for BridgeHost {
         }
         let servers = mcp::chosen(&ws);
         let launch = LaunchCommand::Shell(self.agent_command(&ws));
-        if !crate::launch::is_claude_code(&launch) {
+        if spec.bot.is_none() && !crate::launch::is_claude_code(&launch) {
             mcp::only_claude(crate::launch::program(&launch), &servers)
                 .map_err(TaskError::Invalid)?;
         }
@@ -403,7 +412,9 @@ impl Host for BridgeHost {
             Ok(made)
         })
         .await?;
-        let (made, mut line) = self.agent_line(&ws, made, Some(servers)).await?;
+        let (made, mut line) = self
+            .agent_line(&ws, made, Some(servers), talk.is_some())
+            .await?;
         if talk.is_some() {
             line = talk_line(&ws, made.working(), line).await?;
         }
@@ -434,8 +445,11 @@ impl Host for BridgeHost {
         let made = made_of(ended, &label(DIR)?)?;
         // The Workspace's connections and servers as they are now.
         let given = given(&ws).await?;
-        let (made, mut line) = self.agent_line(&ws, made, Some(mcp::chosen(&ws))).await?;
-        if ended.labels.contains_key(BOT) {
+        let is_talk = ended.labels.contains_key(BOT);
+        let (made, mut line) = self
+            .agent_line(&ws, made, Some(mcp::chosen(&ws)), is_talk)
+            .await?;
+        if is_talk {
             line = talk_line(&ws, made.working(), line).await?;
         }
         let title = ended
