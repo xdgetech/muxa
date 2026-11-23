@@ -245,5 +245,8 @@ fn an_item_with_only_a_title_is_refused() {
         10,
     )
     .unwrap_err();
-    assert!(refused.iter().any(|r| r.contains("body is empty")), "{refused:?}");
+    assert!(
+        refused.iter().any(|r| r.contains("body is empty")),
+        "{refused:?}"
+    );
 }
