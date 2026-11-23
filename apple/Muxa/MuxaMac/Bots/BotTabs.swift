@@ -93,6 +93,13 @@ struct BotFilesTab: View {
     @State private var error: String?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            files
+            BotAccessPanel(workspace: entry.workspace)
+        }
+    }
+
+    private var files: some View {
         HStack(alignment: .top, spacing: 12) {
             panel(title: "Soul · who it is · yours to write", file: "soul.md") {
                 text(entry.bot.soulText, empty: "No soul yet.", id: "bot.files.soul")
@@ -166,5 +173,50 @@ struct BotFilesTab: View {
             .padding(10)
             .background(Palette.terminal, in: RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier(id)
+    }
+}
+
+/// What a Bot may use: its Workspace's connections and MCP servers, and
+/// whether claude.ai connectors load (ADR 0087). They are set per Workspace.
+struct BotAccessPanel: View {
+    @Environment(\.openSettings) private var openSettings
+    let workspace: SettingsWorkspace
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                SectionLabel(title: "Access · \(workspace.name)'s").layoutPriority(1)
+                Spacer(minLength: 8)
+                Button("Workspace settings") {
+                    MacSettingsView.firstPlace = .workspace(workspace.name)
+                    MacWorkspacePane.firstTab = .mcp
+                    openSettings()
+                }
+                .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
+                .accessibilityIdentifier("bot.access.settings")
+            }
+            line("Connections", workspace.connections.map(\.name))
+            line("MCP servers", workspace.mcp.map(\.name))
+            line("claude.ai connectors", [workspace.claudeConnectors ? "on" : "off"])
+            Text("A Bot has its Workspace's access and nothing else. To give it a tool, add the tool to the Workspace.")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .raisedCard()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("bot.access")
+    }
+
+    private func line(_ label: String, _ names: [String]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).foregroundStyle(Palette.textSecondary).frame(width: 150, alignment: .leading)
+            Text(names.isEmpty ? "none" : names.joined(separator: ", "))
+                .font(.system(size: 12.5, design: .monospaced))
+                .foregroundStyle(names.isEmpty ? Palette.textTertiary : Palette.text)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

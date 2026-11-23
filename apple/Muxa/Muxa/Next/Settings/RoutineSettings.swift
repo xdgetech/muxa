@@ -153,11 +153,17 @@ struct RoutineEditor: View {
             }
             schedule
             Section {
-                Picker("Worker", selection: $draft.worker) {
-                    Text("The Workspace's agent").tag("")
-                    ForEach(model.settings.settings?.workers ?? []) { Text($0.name).tag($0.name) }
+                // A Bot's Routine runs with its Workspace's access; its worker is ignored (ADR 0087).
+                if draft.bot.isEmpty {
+                    Picker("Worker", selection: $draft.worker) {
+                        Text("The Workspace's agent").tag("")
+                        ForEach(model.settings.settings?.workers ?? []) { Text($0.name).tag($0.name) }
+                    }
+                    .accessibilityIdentifier("routine.worker")
+                } else {
+                    LabeledContent("Runs with", value: "\(workspace)'s access")
+                        .accessibilityIdentifier("routine.access")
                 }
-                .accessibilityIdentifier("routine.worker")
                 TextField("Items per run, 1 to 50 (default 10)", text: $draft.items)
                     .numberEntry()
                     .accessibilityIdentifier("routine.items")

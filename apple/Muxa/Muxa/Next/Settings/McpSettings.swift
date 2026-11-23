@@ -11,6 +11,11 @@ struct WorkspaceMcpForm: View {
         SettingsPage {
             Section { EveryAgentNote() }
             list
+            Section {
+                ClaudeConnectorsToggle(workspace: workspace)
+            } footer: {
+                Text(ClaudeConnectorsToggle.note)
+            }
         }
         .sheet(item: $editing) { McpEditor(workspace: workspace, draft: $0) }
     }

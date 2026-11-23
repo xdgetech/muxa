@@ -51,6 +51,7 @@ struct BotDraft: Identifiable {
     var existing: SettingsBot?
     var name = ""
     var description = ""
+    /// Kept as the file says it; the host ignores a Bot's worker (ADR 0087).
     var worker = ""
     var dailyItems = ""
     var enabled = true
@@ -148,16 +149,11 @@ struct BotEditor: View {
             }
             if let bot = draft.existing { talk(bot) }
             Section {
-                Picker("Worker", selection: $draft.worker) {
-                    Text("The Workspace's agent").tag("")
-                    ForEach(model.settings.settings?.workers ?? []) { Text($0.name).tag($0.name) }
-                }
-                .accessibilityIdentifier("bot.worker")
                 TextField("Items a day, 1 to 50 (default 3)", text: $draft.dailyItems)
                     .numberEntry()
                     .accessibilityIdentifier("bot.daily")
             } footer: {
-                Text("Past its daily items, the rest go into one \"N more\" item.")
+                Text("Past its daily items, the rest go into one \"N more\" item. It runs with \(workspace.name)'s access: its connections and MCP servers.")
             }
             team
             soul

@@ -134,3 +134,18 @@ extension MacNextTests {
         field.typeText(text)
     }
 }
+
+/// A Workspace lets the user's claude.ai connectors in (ADR 0087).
+extension MacNextTests {
+    @MainActor
+    func testClaudeConnectorsAreAllowedInTheMcpTab() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.mcp")
+        let toggle = app.descendants(matching: .any)["ws.claudeconnectors"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        let control = app.checkBoxes["ws.claudeconnectors"].exists
+            ? app.checkBoxes["ws.claudeconnectors"] : app.switches["ws.claudeconnectors"]
+        control.click()
+        XCTAssertTrue(waitFor(control, valueContaining: "1"))
+    }
+}

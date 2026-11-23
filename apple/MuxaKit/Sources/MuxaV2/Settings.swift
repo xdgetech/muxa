@@ -92,6 +92,8 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var loop: WorkspaceLoop?
     public var routinesEnabled: Bool
     public var directWrites: Bool
+    /// The user's claude.ai connectors load beside the MCP servers (ADR 0087).
+    public var claudeConnectors: Bool
     public var connections: [SettingsConnection]
     public var mcp: [McpSpec]
     /// Also while `routinesEnabled` is false.
@@ -107,8 +109,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
                 loop: WorkspaceLoop? = nil, routinesEnabled: Bool = false, directWrites: Bool = false,
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
                 routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = [],
-                bots: [SettingsBot] = []) {
+                bots: [SettingsBot] = [], claudeConnectors: Bool = false) {
         self.bots = bots
+        self.claudeConnectors = claudeConnectors
         self.name = name
         self.root = root
         self.repos = repos
@@ -130,6 +133,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         case parkAfter = "park_after"
         case routinesEnabled = "routines_enabled"
         case directWrites = "direct_writes"
+        case claudeConnectors = "claude_connectors"
         case routinesProblem = "routines_problem"
         case foundRepos = "found_repos"
         case hiddenRepos = "hidden_repos"
@@ -147,6 +151,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         loop = try c.decodeIfPresent(WorkspaceLoop.self, forKey: .loop)
         routinesEnabled = try c.decode(.routinesEnabled, or: false)
         directWrites = try c.decode(.directWrites, or: false)
+        claudeConnectors = try c.decode(.claudeConnectors, or: false)
         connections = try c.decode(.connections, or: [])
         mcp = try c.decode(.mcp, or: [])
         routines = try c.decode(.routines, or: [])

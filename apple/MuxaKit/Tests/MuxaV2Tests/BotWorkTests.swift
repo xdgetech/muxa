@@ -87,3 +87,28 @@ struct BotCountTests {
         #expect(old.addedToday("2026-11-23") == nil, "an older server sends no count")
     }
 }
+
+/// A Workspace may let the user's claude.ai connectors in (ADR 0087).
+struct ClaudeConnectorsTests {
+    @Test func theSettingDecodesAndTheOpSendsIt() throws {
+        let on = try Coding.plainDecoder.decode(
+            SettingsWorkspace.self, from: Data(#"{"name":"w","root":"/w","claude_connectors":true}"#.utf8))
+        #expect(on.claudeConnectors)
+        let old = try Coding.plainDecoder.decode(SettingsWorkspace.self, from: Data(#"{"name":"w","root":"/w"}"#.utf8))
+        #expect(!old.claudeConnectors)
+        let op = SettingsOp.workspaceUpdate(workspace: "w", claudeConnectors: true)
+        let json = String(decoding: try Coding.plainEncoder.encode(op), as: UTF8.self)
+        #expect(json == #"{"claude_connectors":true,"op":"workspace-update","workspace":"w"}"#)
+        #expect(try Coding.plainDecoder.decode(SettingsOp.self, from: Data(json.utf8)) == op)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func theDemoTurnsThemOn() async throws {
+        let c = try await V2Client.open(DemoChannel(), name: "test")
+        let s = try await c.settings()
+        #expect(s.workspaces[0].claudeConnectors == false)
+        let after = try await c.settingsUpdate(revision: s.revision,
+                                               ops: [.workspaceUpdate(workspace: "app", claudeConnectors: true)])
+        #expect(after.workspaces[0].claudeConnectors)
+    }
+}

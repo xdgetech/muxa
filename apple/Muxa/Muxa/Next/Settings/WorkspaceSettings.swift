@@ -73,7 +73,7 @@ struct EveryAgentNote: View {
     var body: some View {
         Label {
             Text("Every agent of this Workspace gets all its connections and MCP servers: each Task, restart and Routine run. "
-                + "Listing any MCP server makes MCP strict: Claude Code then loads only these servers.")
+                + "Listing any MCP server makes MCP strict: Claude Code then loads only these servers, unless claude.ai connectors are allowed.")
         } icon: {
             Image(systemName: "lock")
         }

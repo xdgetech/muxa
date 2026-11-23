@@ -12,12 +12,22 @@ struct MacMcpCards: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Every agent in this Workspace gets these MCP servers. muxa writes them into the agent's config "
                 + "(Claude Code and Codex) when it starts. Listing any MCP server makes MCP strict: "
-                + "Claude Code then loads only these servers.")
+                + "Claude Code then loads only these servers, unless claude.ai connectors are allowed below.")
                 .foregroundStyle(Palette.textSecondary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
             ForEach(workspace.mcp) { card($0) }
             MacAddButton(title: "+ Add MCP server", id: "mcp.add") { editing = McpDraft() }
+            VStack(alignment: .leading, spacing: 6) {
+                ClaudeConnectorsToggle(workspace: workspace).toggleStyle(.switch)
+                Text(ClaudeConnectorsToggle.note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .raisedCard()
+            .padding(.top, 6)
         }
         .sheet(item: $editing) { McpEditor(workspace: workspace, draft: $0) }
     }

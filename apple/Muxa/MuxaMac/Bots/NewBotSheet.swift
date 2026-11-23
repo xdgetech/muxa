@@ -1,9 +1,9 @@
 import MuxaV2
 import SwiftUI
 
-/// New Bot (ADR 0086 decision 3): a name, one sentence, the Workspace and
-/// its worker. Create adds the Bot, starts its first chat and opens it in
-/// Focus; its Routines come from that chat as proposals.
+/// New Bot (ADR 0086 decision 3): a name, one sentence and the Workspace,
+/// whose access it runs with (ADR 0087). Create adds the Bot and opens its
+/// first chat on its page; its Routines come from that chat as proposals.
 struct NewBotSheet: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -12,7 +12,6 @@ struct NewBotSheet: View {
     @State private var name = ""
     @State private var sentence = ""
     @State private var workspace = ""
-    @State private var worker = ""
     @State private var error: String?
     @State private var creating = false
 
@@ -40,7 +39,7 @@ struct NewBotSheet: View {
                             .font(.system(size: 14))
                             .accessibilityIdentifier("newbot.description")
                     }
-                    FieldRow(label: "Workspace") {
+                    FieldRow(label: "Workspace", divider: false) {
                         Picker("Workspace", selection: $workspace) {
                             ForEach(workspaces, id: \.self) { Text($0).tag($0) }
                         }
@@ -48,18 +47,14 @@ struct NewBotSheet: View {
                         .fixedSize()
                         .accessibilityIdentifier("newbot.workspace")
                     }
-                    FieldRow(label: "Runs with", divider: false) {
-                        Picker("Runs with", selection: $worker) {
-                            Text("The Workspace's agent").tag("")
-                            ForEach(model.settings.settings?.workers ?? []) { Text($0.name).tag($0.name) }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                        .accessibilityIdentifier("newbot.worker")
-                    }
                 }
                 .raisedCard()
                 Text(nameHint).font(.system(size: 12)).foregroundStyle(nameTaken ? Palette.late : Palette.textTertiary)
+                if !workspace.isEmpty {
+                    Text("It runs with \(workspace)'s access: its connections and MCP servers.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.textTertiary)
+                }
                 SaveError(text: error, id: "newbot.error")
             }
         }
@@ -96,7 +91,7 @@ struct NewBotSheet: View {
     private func create() async {
         creating = true
         defer { creating = false }
-        let spec = BotSpec(name: trimmedName, description: Lines.optional(sentence), worker: Lines.optional(worker))
+        let spec = BotSpec(name: trimmedName, description: Lines.optional(sentence))
         if let failure = await model.settings.save([.botAdd(workspace: workspace, bot: spec)]) {
             error = failure
             return
