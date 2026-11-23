@@ -27,6 +27,21 @@ class BotsNavTest {
         assertEquals(listOf("backup", "held", "digest"), routinesWithoutBot(routines).map { it.name })
     }
 
+    // What RoutineGroupsTest covered for the old Routines tab: each Bot gets its own Routines, and the rest
+    // are "Routines without a Bot". A Bot's Routines show on its page (BotWork.planned and its Routines tab).
+    @Test
+    fun routinesGoToTheirBotAndTheRestAreWithoutABot() {
+        fun r(name: String, bot: String? = null) = Routine("app", name, enabled = true, nextDue = 10, bot = bot)
+        val routines = listOf(r("digest"), r("scan", "pr-watch"), r("triage", "issues"), r("backup", "pr-watch"))
+        val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("issues"), SettingsBot("pr-watch")))
+        val entries = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, emptyList(), routines, 0)
+        assertEquals(
+            mapOf("issues" to listOf("triage"), "pr-watch" to listOf("scan", "backup")),
+            entries.associate { e -> e.name to e.work.planned.map { it.name } },
+        )
+        assertEquals(listOf("digest"), routinesWithoutBot(routines).map { it.name })
+    }
+
     @Test
     fun aTerminalOpensOnItsOwnBotsPageOnItsChat() {
         val nav = BotNav()
