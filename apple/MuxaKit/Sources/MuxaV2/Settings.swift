@@ -448,6 +448,9 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     public var members: [String]
     /// A lead's handoffs a day, all members together. Nil: 10.
     public var handoffsPerDay: UInt32?
+    /// Shell commands only this Bot may run (ADR 0088): the inside of a
+    /// Claude Code `Bash(...)` rule, such as `/path/collect.sh delivery:*`.
+    public var commands: [String]
 
     public var id: String { name }
 
@@ -458,7 +461,8 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     }
 
     public init(name: String, description: String? = nil, worker: String? = nil, dailyItems: UInt32? = nil,
-                enabled: Bool = true, members: [String] = [], handoffsPerDay: UInt32? = nil) {
+                enabled: Bool = true, members: [String] = [], handoffsPerDay: UInt32? = nil, commands: [String] = []) {
+        self.commands = commands
         self.name = name
         self.description = description
         self.worker = worker
@@ -469,7 +473,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, description, worker, enabled, members
+        case name, description, worker, enabled, members, commands
         case dailyItems = "daily_items"
         case handoffsPerDay = "handoffs_per_day"
     }
@@ -484,6 +488,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         // As the host spells it: no `members` for a Bot that leads no team.
         if !members.isEmpty { try c.encode(members, forKey: .members) }
         try c.encodeIfPresent(handoffsPerDay, forKey: .handoffsPerDay)
+        if !commands.isEmpty { try c.encode(commands, forKey: .commands) }
     }
 
     public init(from decoder: any Decoder) throws {
@@ -495,6 +500,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         enabled = try c.decode(.enabled, or: true)
         members = try c.decode(.members, or: [])
         handoffsPerDay = try c.decodeIfPresent(UInt32.self, forKey: .handoffsPerDay)
+        commands = try c.decode(.commands, or: [])
     }
 }
 

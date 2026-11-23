@@ -170,3 +170,24 @@ struct BotRemovalTests {
         #expect(after.workspaces[0].routines.first { $0.name == "scan" }?.spec.bot == nil)
     }
 }
+
+/// A Bot's own shell commands (ADR 0088).
+struct BotCommandsTests {
+    @Test func commandsGoOnTheWireOnlyWhenThere() throws {
+        let b = BotSpec(name: "b", commands: ["/x/collect.sh delivery:*"])
+        let op = SettingsOp.botUpdate(workspace: "w", bot: b)
+        let json = String(decoding: try Coding.plainEncoder.encode(op), as: UTF8.self)
+        #expect(json == #"{"bot":{"commands":["\/x\/collect.sh delivery:*"],"enabled":true,"name":"b"},"op":"bot-update","workspace":"w"}"#)
+        #expect(try Coding.plainDecoder.decode(SettingsOp.self, from: Data(json.utf8)) == op)
+        #expect(!String(decoding: try Coding.plainEncoder.encode(BotSpec(name: "b")), as: UTF8.self).contains("commands"))
+        let old = try Coding.plainDecoder.decode(BotSpec.self, from: Data(#"{"name":"b","enabled":true}"#.utf8))
+        #expect(old.commands.isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func theDemosPrWatchHasACommand() async throws {
+        let c = try await V2Client.open(DemoChannel(), name: "test")
+        let bot = try #require(try await c.settings().workspaces[0].bots.first { $0.name == "pr-watch" })
+        #expect(bot.spec.commands == ["gh pr list:*"])
+    }
+}

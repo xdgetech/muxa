@@ -58,6 +58,8 @@ struct BotDraft: Identifiable {
     /// The Bots it leads (ADR 0085), in the Workspace's order.
     var members: [String] = []
     var handoffs = ""
+    /// Shell commands only this Bot may run (ADR 0088).
+    var commands: [EditableLine] = []
     var soul = ""
     /// The Soul as read; nil when it could not be read.
     var readSoul: String?
@@ -74,15 +76,27 @@ struct BotDraft: Identifiable {
         enabled = b.spec.enabled
         members = b.spec.members
         handoffs = b.spec.handoffsPerDay.map(String.init) ?? ""
+        commands = b.spec.commands.map(EditableLine.init)
         soul = b.soulText ?? ""
         readSoul = b.soulText
     }
 
     func spec() -> BotSpec? {
         guard let name = Lines.optional(name) else { return nil }
+        guard commands.allSatisfy({ Self.commandProblem($0.text) == nil }) else { return nil }
         return BotSpec(name: name, description: Lines.optional(description), worker: Lines.optional(worker),
                        dailyItems: UInt32(Lines.trimmed(dailyItems)), enabled: enabled, members: members,
-                       handoffsPerDay: members.isEmpty ? nil : UInt32(Lines.trimmed(handoffs)))
+                       handoffsPerDay: members.isEmpty ? nil : UInt32(Lines.trimmed(handoffs)),
+                       commands: commands.map { Lines.trimmed($0.text) })
+    }
+
+    /// Why a command cannot be saved: the host takes the inside of `Bash(…)`, 500 bytes at most.
+    static func commandProblem(_ text: String) -> String? {
+        let line = Lines.trimmed(text)
+        if line.isEmpty { return "Empty: write the command or remove the line." }
+        if line.utf8.count > 500 { return "At most 500 bytes." }
+        if line.contains("(") || line.contains(")") { return "No ( or ): write only what goes inside Bash(…)." }
+        return nil
     }
 
     /// The other Bots it may lead: those that lead no team themselves.
@@ -161,6 +175,7 @@ struct BotEditor: View {
                 Text("Past its daily items, the rest go into one \"N more\" item. It runs with \(workspace.name)'s access: its connections and MCP servers.")
             }
             team
+            commandsSection
             soul
             if let bot = draft.existing { memory(bot) }
             if let bot = draft.existing, !owned(bot).isEmpty { removal(bot) }
@@ -246,6 +261,19 @@ struct BotEditor: View {
             } footer: {
                 Text("Members are Bots that lead no team. The lead hands them work, up to its handoffs a day.")
             }
+        }
+    }
+
+    /// ADR 0088: granted here, or by applying a talk's proposal; a run cannot add one.
+    private var commandsSection: some View {
+        Section {
+            EditableLineList(lines: $draft.commands, placeholder: "/path/collect.sh delivery:*",
+                             addTitle: "Add a command", id: "bot.commands", problem: { BotDraft.commandProblem($0) })
+        } header: {
+            Text("Commands it may run")
+        } footer: {
+            Text("Shell commands only this Bot may run, such as /path/collect.sh delivery:*. "
+                + "In its Routines, any other command is refused; it tells you what it needed.")
         }
     }
 

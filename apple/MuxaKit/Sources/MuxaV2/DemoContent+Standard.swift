@@ -177,10 +177,11 @@ extension DemoContent {
     private static let proposal: InboxItem = {
         let sweep = RoutineSpec(name: "nightly-sweep", at: "02:30", timezone: "Europe/Berlin",
                                 instructions: "routines/nightly-sweep.md", enabled: false, bot: "pr-watch", readOnly: true)
-        let watch = BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me", dailyItems: 5)
+        let watch = BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me", dailyItems: 5,
+                            commands: ["gh pr list:*", "gh pr diff:*"])
         var i = InboxItem(
             id: "d12", kind: .decide, title: "pr-watch proposes: a nightly sweep of stale PRs",
-            note: "- routine-add nightly-sweep (off)\n- bot-update pr-watch\n", workspace: "app", due: nil, laterUntil: nil,
+            note: "- routine-add nightly-sweep (off)\n- Change Bot pr-watch, may run: gh pr list:*; gh pr diff:*\n", workspace: "app", due: nil, laterUntil: nil,
             created: 1_764_000_000, source: "task", terminal: "t7", routine: nil)
         i.bot = "pr-watch"
         i.settingsProposal = SettingsProposal(revision: "1", ops: [
@@ -230,7 +231,8 @@ extension DemoContent {
                 botRules: BotRules(allow: ["WebSearch", "WebFetch"], deny: ["Bash"]),
                 bots: [
                     SettingsBot(
-                        spec: BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me"),
+                        spec: BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me",
+                                      commands: ["gh pr list:*"]),
                         soulText: "I watch the PRs that wait for my review and the threads that ask me something.\n"
                             + "I never comment or merge by myself.\n",
                         memoryText: "Anna owns the release. The docs repo merges with squash.\n",

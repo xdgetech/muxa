@@ -149,7 +149,9 @@ extension SettingsOp {
             "\(name) \(r.name)" + (r.enabled ? "" : " (off)")
         case let .routineRemove(_, n), let .botRemove(_, n): "\(name) \(n)"
         case let .botAdd(_, b, _), let .botUpdate(_, b, _):
+            // Every command is named, so the user sees what the Bot may run before applying it.
             "\(name) \(b.name)" + (b.members.isEmpty ? "" : " leads \(b.members.joined(separator: ", "))")
+                + (b.commands.isEmpty ? "" : " · may run: \(b.commands.joined(separator: "; "))")
         default: name
         }
     }

@@ -95,7 +95,7 @@ struct BotFilesTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             files
-            BotAccessPanel(workspace: entry.workspace)
+            BotAccessPanel(workspace: entry.workspace, commands: entry.bot.spec.commands)
         }
     }
 
@@ -181,6 +181,8 @@ struct BotFilesTab: View {
 struct BotAccessPanel: View {
     @Environment(\.openSettings) private var openSettings
     let workspace: SettingsWorkspace
+    /// The Bot's own commands (ADR 0088).
+    let commands: [String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -200,6 +202,7 @@ struct BotAccessPanel: View {
             line("claude.ai connectors", [workspace.claudeConnectors ? "on" : "off"])
             line("Allowed", workspace.botRules.allow)
             line("Denied", workspace.botRules.deny)
+            line("Its commands", commands)
             Text("Claude Code enforces these for this Workspace's Bots only; Tasks don't get them.")
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.textTertiary)
