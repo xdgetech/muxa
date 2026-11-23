@@ -1,13 +1,13 @@
+import AppKit
 import SwiftUI
 
 /// The desktop mocks' top bar: one row on the surface tone with a hairline
 /// under it. It replaces the window toolbar on screens that use it.
 struct MacHeaderBar<Leading: View, Trailing: View>: View {
     var height: CGFloat = 52
-    /// The main window hides its title bar; this keeps clear of the window buttons.
-    var leadingInset: CGFloat = 78
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
+    @State private var leadingInset = WindowButtonsInset.edge
 
     var body: some View {
         HStack(spacing: 16) {
@@ -16,10 +16,77 @@ struct MacHeaderBar<Leading: View, Trailing: View>: View {
             trailing
         }
         .padding(.leading, leadingInset)
-        .padding(.trailing, 16)
+        .padding(.trailing, WindowButtonsInset.edge)
         .frame(height: height)
         .background(Palette.surface)
+        .background(WindowButtonsInset { leadingInset = $0 })
         .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1) }
+    }
+}
+
+/// How far a header starts: just right of the window buttons when they sit in
+/// its rows, else at the edge. A fixed 78 pt left that much empty in full
+/// screen, where the buttons leave the window, and under a visible title bar.
+private struct WindowButtonsInset: NSViewRepresentable {
+    static let edge: CGFloat = 16
+    /// Between the zoom button and the header's first item.
+    static let gap: CGFloat = 10
+    let changed: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> Probe {
+        let view = Probe()
+        view.changed = changed
+        return view
+    }
+
+    func updateNSView(_ view: Probe, context: Context) {
+        view.changed = changed
+    }
+
+    final class Probe: NSView {
+        var changed: (CGFloat) -> Void = { _ in }
+        private var observers: [NSObjectProtocol] = []
+        private var reported: CGFloat?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard let window else { return }
+            let names: [Notification.Name] = [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification]
+            observers = names.map { name in
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.report() }
+                }
+            }
+            reportLater()
+        }
+
+        override func layout() {
+            super.layout()
+            reportLater()
+        }
+
+        /// SwiftUI must not see its state change while it lays this view out.
+        private func reportLater() {
+            DispatchQueue.main.async { [weak self] in self?.report() }
+        }
+
+        private func report() {
+            let inset = Self.inset(of: self)
+            guard inset != reported else { return }
+            reported = inset
+            changed(inset)
+        }
+
+        static func inset(of header: NSView) -> CGFloat {
+            guard let window = header.window, !window.styleMask.contains(.fullScreen),
+                  let zoom = window.standardWindowButton(.zoomButton), !zoom.isHidden,
+                  let button = zoom.superview?.convert(zoom.frame, to: nil) else { return edge }
+            let rows = header.convert(header.bounds, to: nil)
+            guard rows.minY < button.maxY, button.minY < rows.maxY else { return edge }
+            return button.maxX + gap
+        }
     }
 }
 
