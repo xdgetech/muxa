@@ -107,5 +107,16 @@ struct FrameTests {
         let inbox: Inbox = try field("inbox", of: Data(wire.utf8))
         #expect(inbox.items[0].laterUntil == 200)
         #expect(inbox.items[0].isLater(now: 100))
+        #expect(inbox.items[0].links == nil && inbox.bots == nil)
+    }
+
+    @Test func aBotItemDecodesWithItsLinksAndProposal() throws {
+        let wire = #"{"inbox":{"revision":1,"items":[{"id":"i2","kind":"decide","title":"Comment on PR 7","created":5,"source":"routine","workspace":"w","bot":"pr-watch","links":[{"url":"https://github.com/o/r/pull/7","title":"PR 7"}],"proposal":{"action":"comment","target":"o/r#7","content":"LGTM"}}],"done":[],"bots":[{"workspace":"w","bot":"pr-watch","done":4,"deleted":1}]}}"#
+        let inbox: Inbox = try field("inbox", of: Data(wire.utf8))
+        let item = inbox.items[0]
+        #expect(item.bot == "pr-watch")
+        #expect(item.links == [ItemLink(url: "https://github.com/o/r/pull/7", title: "PR 7")])
+        #expect(item.proposal == ItemProposal(action: "comment", target: "o/r#7", content: "LGTM"))
+        #expect(inbox.bots == [BotCount(workspace: "w", bot: "pr-watch", done: 4, deleted: 1)])
     }
 }

@@ -62,5 +62,6 @@ fn item(task: &V1Task) -> NewItem {
             workspace: task.workspace.clone(),
             path: task.path.clone(),
         }),
+        extra: Default::default(),
     }
 }

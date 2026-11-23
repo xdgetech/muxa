@@ -1680,6 +1680,7 @@ async fn retry_runs_again_what_made_the_failed_item() {
             name: name.into(),
         }),
         place: None,
+        extra: Default::default(),
     };
     let add = |new| inbox.change(|b, now| b.add(new, now)).unwrap().unwrap();
     let busy = add(failed("digest failed", None, Some("digest")));
@@ -1775,6 +1776,7 @@ async fn retry_starts_a_live_agents_task_loop_over() {
         terminal: Some(terminal.to_owned()),
         routine: None,
         place: None,
+        extra: Default::default(),
     };
     let failed = inbox
         .change(|b, now| b.add(item(&agent), now))

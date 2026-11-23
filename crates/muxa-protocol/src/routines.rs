@@ -127,6 +127,12 @@ pub struct InboxEntry {
     /// After `approve`: the Task that performs the proposal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
+    /// `YYYY-MM-DD`, for a Reply or To do item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+    /// The Bot that owns the Routine (ADR 0082).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +140,9 @@ pub struct InboxEntry {
 pub enum InboxEntryKind {
     Briefing,
     Proposal,
+    /// Something to answer (ADR 0082).
+    Reply,
+    Todo,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
     Unknown,

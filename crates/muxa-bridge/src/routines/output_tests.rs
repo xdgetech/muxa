@@ -106,6 +106,7 @@ fn publish_stores_new_keys_commits_state_and_closes_the_run() {
         "t-000001",
         "2026-11-03T09:00",
         out.clone(),
+        Some("pr-watch"),
         50,
         ids(),
     )
@@ -122,7 +123,8 @@ fn publish_stores_new_keys_commits_state_and_closes_the_run() {
     assert!(
         s.entries
             .iter()
-            .all(|e| e.entry.disposition == Disposition::Open)
+            .all(|e| e.entry.disposition == Disposition::Open
+                && e.entry.bot.as_deref() == Some("pr-watch"))
     );
     // The same run again: nothing new, no error.
     let again = publish(
@@ -130,6 +132,7 @@ fn publish_stores_new_keys_commits_state_and_closes_the_run() {
         "t-000001",
         "2026-11-03T09:00",
         out.clone(),
+        Some("pr-watch"),
         60,
         ids(),
     )
@@ -146,13 +149,23 @@ fn publish_stores_new_keys_commits_state_and_closes_the_run() {
             .unwrap()
             .items,
         state: None,
+        memory: None,
     };
     let mut fresh = ids();
     for _ in 0..2 {
         fresh();
     }
     assert_eq!(
-        publish(&mut s, "t-000002", "2026-11-04T09:00", next, 70, fresh).unwrap(),
+        publish(
+            &mut s,
+            "t-000002",
+            "2026-11-04T09:00",
+            next,
+            None,
+            70,
+            fresh
+        )
+        .unwrap(),
         1
     );
     assert_eq!(s.entries.len(), 3);
@@ -164,7 +177,7 @@ fn only_the_open_run_publishes() {
     let mut s = state_with_run("t-000002");
     let out = validate(&stage(json!([briefing("a")])), 10).unwrap();
     assert_eq!(
-        publish(&mut s, "t-000001", "x", out, 1, ids()),
+        publish(&mut s, "t-000001", "x", out, None, 1, ids()),
         Err(PublishError::NotCurrent("t-000001".into()))
     );
     assert!(s.entries.is_empty() && s.state.is_none());
@@ -186,4 +199,36 @@ fn the_stage_must_be_a_regular_file_and_not_a_symlink() {
     std::fs::write(dir.join(OUTPUT), r#"{"version":1}"#).unwrap();
     assert!(read(&dir, 10).is_ok());
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn reply_and_todo_items_take_a_due_date_and_a_bot_its_memory() {
+    let out = validate(
+        &serde_json::to_vec(&json!({
+            "version": 1,
+            "items": [
+                {"kind": "reply", "key": "slack:1", "title": "Ana asks about the release", "due": "2026-11-24",
+                 "links": [{"url": "https://slack.example/archives/C1/p1"}]},
+                {"kind": "todo", "key": "ci:main", "title": "main is red"}
+            ],
+            "memory": "Ana owns the release."
+        }))
+        .unwrap(),
+        10,
+    )
+    .unwrap();
+    assert_eq!(out.items[0].kind, InboxEntryKind::Reply);
+    assert_eq!(out.items[0].due.as_deref(), Some("2026-11-24"));
+    assert_eq!(out.items[1].kind, InboxEntryKind::Todo);
+    assert_eq!(out.memory.as_deref(), Some("Ana owns the release."));
+    for bad in [
+        json!({"version": 1, "items": [{"kind": "todo", "key": "k", "title": "t", "due": "tomorrow"}]}),
+        json!({"version": 1, "items": [{"kind": "reply", "key": "k", "title": "t", "action": "a", "target": "t", "content": "c"}]}),
+        json!({"version": 1, "memory": "m".repeat(17 * 1024)}),
+    ] {
+        assert!(
+            validate(&serde_json::to_vec(&bad).unwrap(), 10).is_err(),
+            "{bad}"
+        );
+    }
 }

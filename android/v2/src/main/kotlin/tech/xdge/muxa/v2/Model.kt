@@ -48,9 +48,27 @@ data class InboxItem(
     val routine: RoutineRef? = null,
     /** Where a v1 Task worked: Resume Task adopts it as a [PlaceSpec.Existing] place. */
     val place: ItemPlace? = null,
+    /** Pages the item is about, e.g. a PR or a Slack thread (ADR 0082). */
+    val links: List<ItemLink> = emptyList(),
+    /** What a Decide item proposes; Start Task takes it as the goal. */
+    val proposal: ItemProposal? = null,
+    /** The Bot of [workspace] whose run made this item. */
+    val bot: String? = null,
 ) {
     fun isLater(now: Long) = (laterUntil ?: 0) > now
 }
+
+/** A page an item is about: `http` or `https`. */
+@Serializable
+data class ItemLink(val url: String, val title: String? = null)
+
+/** A change a Routine proposes. muxa never performs it by itself. */
+@Serializable
+data class ItemProposal(val action: String, val target: String, val content: String)
+
+/** How a Bot's items ended (ADR 0082). */
+@Serializable
+data class BotCount(val workspace: String, val bot: String, val done: Long, val deleted: Long)
 
 @Serializable
 data class RoutineRef(val workspace: String, val name: String)
@@ -69,7 +87,13 @@ enum class WorktreeChoice(val wire: String) {
 
 /** Open items in the user's order, then recent done ones. */
 @Serializable
-data class Inbox(val revision: Long, val items: List<InboxItem>, val done: List<InboxItem>) {
+data class Inbox(
+    val revision: Long,
+    val items: List<InboxItem>,
+    val done: List<InboxItem>,
+    /** Per Bot, its items that ended Done and those deleted while open. */
+    val bots: List<BotCount> = emptyList(),
+) {
     companion object {
         val EMPTY = Inbox(0, emptyList(), emptyList())
     }

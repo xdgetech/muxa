@@ -18,6 +18,9 @@ pub const MAX_DAILY_ITEMS: u32 = 50;
 /// Bytes. The Soul and the Memory both go into the run's `.muxa/TASK.md`.
 pub const MAX_SOUL: usize = 12 * 1024;
 pub const MAX_MEMORY: usize = 16 * 1024;
+/// Earlier memories kept for Restore, newest first: `history/memory-1.md` …
+pub const KEEP_MEMORIES: usize = 5;
+const HISTORY_DIR: &str = "history";
 const MAX_NAME: usize = 64;
 const MAX_DESCRIPTION: usize = 300;
 
@@ -133,6 +136,57 @@ impl Bot {
         self.read(MEMORY_FILE, MAX_MEMORY)
     }
 
+    /// Blocking. Replaces the memory with `text` atomically and keeps the
+    /// one before as `history/memory-1.md`, the older ones shifted down.
+    pub fn write_memory(&self, text: &str) -> Result<(), BotFileError> {
+        let folder = self.folder();
+        let io_err = |path: &Path| {
+            let path = path.to_owned();
+            move |source| BotFileError::Read { path, source }
+        };
+        let history = folder.join(HISTORY_DIR);
+        std::fs::create_dir_all(&history).map_err(io_err(&history))?;
+        let real = folder.canonicalize().map_err(io_err(&folder))?;
+        if !real.starts_with(&self.dir) {
+            return Err(BotFileError::Invalid {
+                path: folder,
+                reason: "leads outside .muxa/".into(),
+            });
+        }
+        if text.len() > MAX_MEMORY {
+            return Err(BotFileError::Invalid {
+                path: real.join(MEMORY_FILE),
+                reason: format!("is larger than {} KiB", MAX_MEMORY / 1024),
+            });
+        }
+        let current = real.join(MEMORY_FILE);
+        if current.exists() {
+            let history = real.join(HISTORY_DIR);
+            for n in (1..KEEP_MEMORIES).rev() {
+                let from = history.join(version_file(n));
+                if from.exists() {
+                    std::fs::rename(&from, history.join(version_file(n + 1)))
+                        .map_err(io_err(&from))?;
+                }
+            }
+            std::fs::rename(&current, history.join(version_file(1))).map_err(io_err(&current))?;
+        }
+        let tmp = real.join(format!(".{MEMORY_FILE}.tmp"));
+        std::fs::write(&tmp, text).map_err(io_err(&tmp))?;
+        std::fs::rename(&tmp, &current).map_err(io_err(&current))
+    }
+
+    /// The kept memory `n` (1 is the newest); empty when there is none.
+    pub fn read_memory_version(&self, n: usize) -> Result<String, BotFileError> {
+        if !(1..=KEEP_MEMORIES).contains(&n) {
+            return Err(BotFileError::Invalid {
+                path: self.folder(),
+                reason: format!("a kept memory is 1 to {KEEP_MEMORIES}"),
+            });
+        }
+        self.read(&format!("{HISTORY_DIR}/{}", version_file(n)), MAX_MEMORY)
+    }
+
     /// A symlink may not lead out of `.muxa/`.
     fn read(&self, file: &str, max: usize) -> Result<String, BotFileError> {
         let path = self.folder().join(file);
@@ -166,6 +220,10 @@ impl Bot {
         }
         String::from_utf8(bytes).map_err(|_| invalid("is not UTF-8".into()))
     }
+}
+
+fn version_file(n: usize) -> String {
+    format!("memory-{n}.md")
 }
 
 #[cfg(test)]
@@ -229,5 +287,20 @@ mod tests {
             e.contains("leads outside") && !e.contains("secret\""),
             "{e}"
         );
+    }
+
+    #[test]
+    fn a_new_memory_keeps_the_last_five() {
+        let tmp = temp("memory");
+        let b = bot(&tmp);
+        for n in 1..=7 {
+            b.write_memory(&format!("v{n}")).unwrap();
+        }
+        assert_eq!(b.read_memory().unwrap(), "v7");
+        assert_eq!(b.read_memory_version(1).unwrap(), "v6");
+        assert_eq!(b.read_memory_version(5).unwrap(), "v2");
+        assert!(b.read_memory_version(6).is_err());
+        assert!(b.write_memory(&"x".repeat(MAX_MEMORY + 1)).is_err());
+        assert_eq!(b.read_memory().unwrap(), "v7");
     }
 }

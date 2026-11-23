@@ -3,13 +3,21 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use muxa_protocol::v2::{self, InboxItem, ItemKind, ItemPlace, RoutineRef};
+use muxa_protocol::v2::{
+    self, BotCount, InboxItem, ItemKind, ItemLink, ItemPlace, ItemProposal, RoutineRef,
+};
 use serde::{Deserialize, Serialize};
+
+use crate::bots::{self, Ledger};
 
 pub const FORMAT_VERSION: u32 = 1;
 const MAX_TITLE: usize = 300;
 const MAX_NOTE: usize = 4096;
 const MAX_WORKSPACE: usize = 100;
+const MAX_LINKS: usize = 10;
+const MAX_URL: usize = 2048;
+const MAX_PROPOSAL: usize = 8192;
+const MAX_BOT: usize = 64;
 /// Done items kept for Reopen.
 pub const KEEP_DONE: usize = 100;
 /// Keys remembered for [`NewItem::once`].
@@ -46,6 +54,17 @@ pub struct NewItem {
     pub routine: Option<RoutineRef>,
     /// Where an older Task worked, for Resume Task.
     pub place: Option<ItemPlace>,
+    /// What a Bot's run adds (ADR 0082).
+    pub extra: Extra,
+}
+
+/// The parts of an item only Routine and Bot output carries.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Extra {
+    pub links: Vec<ItemLink>,
+    pub proposal: Option<ItemProposal>,
+    /// The Bot in the item's Workspace.
+    pub bot: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,6 +88,9 @@ pub struct Book {
     /// How far each source has been read, e.g. `routines` (Unix seconds).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     cursors: BTreeMap<String, i64>,
+    /// Per `<workspace>/<bot>`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    bots: BTreeMap<String, Ledger>,
 }
 
 impl Default for Book {
@@ -81,6 +103,7 @@ impl Default for Book {
             done: Vec::new(),
             seen: VecDeque::new(),
             cursors: BTreeMap::new(),
+            bots: BTreeMap::new(),
         }
     }
 }
@@ -100,6 +123,19 @@ impl Book {
             revision: self.revision,
             items: self.items.iter().map(|s| s.item.clone()).collect(),
             done: self.done.iter().map(|s| s.item.clone()).collect(),
+            bots: self
+                .bots
+                .iter()
+                .filter_map(|(key, l)| {
+                    let (workspace, bot) = key.split_once('/')?;
+                    Some(BotCount {
+                        workspace: workspace.to_owned(),
+                        bot: bot.to_owned(),
+                        done: l.done,
+                        deleted: l.deleted,
+                    })
+                })
+                .collect(),
         }
     }
 
@@ -136,10 +172,82 @@ impl Book {
             terminal: new.terminal,
             routine: new.routine,
             place: new.place,
+            links: new.extra.links,
+            proposal: new.extra.proposal,
+            bot: new.extra.bot,
         };
         self.items.insert(0, Stored { item, key: new.key });
         self.revision += 1;
         Ok(Some(id))
+    }
+
+    /// Adds a Bot's item while the Bot has room on `day` (the host's local
+    /// date). Past `limit` the item goes into one Read item, "N more from
+    /// <bot>", that lists the titles.
+    pub fn add_from_bot(
+        &mut self,
+        new: NewItem,
+        limit: u32,
+        day: &str,
+        now: i64,
+    ) -> Result<Option<String>, InboxError> {
+        let (Some(workspace), Some(bot)) = (new.workspace.clone(), new.extra.bot.clone()) else {
+            return self.add(new, now);
+        };
+        if new.key.as_ref().is_some_and(|k| self.knows(k)) {
+            return self.add(new, now);
+        }
+        let ledger = self.bots.entry(bots::key(&workspace, &bot)).or_default();
+        if ledger.take(day, limit) {
+            return self.add(new, now);
+        }
+        if let Some(key) = new.key.as_ref().filter(|_| new.once) {
+            self.seen.push_back(key.clone());
+            while self.seen.len() > KEEP_SEEN {
+                self.seen.pop_front();
+            }
+        }
+        let more = bots::more_key(&workspace, &bot, day);
+        if let Some(open) = self
+            .items
+            .iter_mut()
+            .find(|s| s.key.as_ref() == Some(&more))
+        {
+            let count = open
+                .item
+                .title
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse::<u32>().ok());
+            open.item.title = format!("{} more from {bot}", count.unwrap_or(1) + 1);
+            let note = open.item.note.get_or_insert_with(String::new);
+            let line = format!("- {}\n", new.title);
+            if note.len() + line.len() <= MAX_NOTE {
+                note.push_str(&line);
+            }
+            self.revision += 1;
+            return Ok(Some(open.item.id.clone()));
+        }
+        self.add(
+            NewItem {
+                kind: ItemKind::Read,
+                title: format!("1 more from {bot}"),
+                note: Some(format!("- {}\n", new.title)),
+                workspace: Some(workspace),
+                due: None,
+                source: new.source,
+                key: Some(more),
+                once: false,
+                terminal: None,
+                routine: new.routine,
+                place: None,
+                extra: Extra {
+                    bot: Some(bot),
+                    ..Extra::default()
+                },
+            },
+            now,
+        )
     }
 
     /// An item with `key` is open, or a `once` item had it.
@@ -192,6 +300,9 @@ impl Book {
         let at = self.open(id)?;
         let mut s = self.items.remove(at);
         s.item.later_until = None;
+        if let Some(l) = self.ledger(&s.item) {
+            l.done += 1;
+        }
         self.done.insert(0, s);
         self.done.truncate(KEEP_DONE);
         self.revision += 1;
@@ -206,12 +317,26 @@ impl Book {
             .position(|s| s.item.id == id)
             .ok_or_else(|| InboxError::NotFound(id.to_owned()))?;
         let s = self.done.remove(at);
+        if let Some(l) = self.ledger(&s.item) {
+            l.done = l.done.saturating_sub(1);
+        }
         self.items.insert(0, s);
         self.revision += 1;
         Ok(())
     }
 
     pub fn delete(&mut self, id: &str) -> Result<(), InboxError> {
+        // A done item was already counted as done.
+        if let Some(open) = self
+            .items
+            .iter()
+            .find(|s| s.item.id == id)
+            .map(|s| s.item.clone())
+        {
+            if let Some(l) = self.ledger(&open) {
+                l.deleted += 1;
+            }
+        }
         let before = self.items.len() + self.done.len();
         self.items.retain(|s| s.item.id != id);
         self.done.retain(|s| s.item.id != id);
@@ -250,6 +375,12 @@ impl Book {
         self.items.iter().filter_map(|s| s.item.later_until).min()
     }
 
+    /// The ledger of the Bot that made `item`, if one did.
+    fn ledger(&mut self, item: &InboxItem) -> Option<&mut Ledger> {
+        let key = bots::key(item.workspace.as_deref()?, item.bot.as_deref()?);
+        Some(self.bots.entry(key).or_default())
+    }
+
     fn open(&self, id: &str) -> Result<usize, InboxError> {
         self.items
             .iter()
@@ -285,7 +416,39 @@ fn checked(mut new: NewItem) -> Result<NewItem, InboxError> {
             "{due:?} is not a date (YYYY-MM-DD)"
         )));
     }
+    check_extra(&new.extra)?;
     Ok(new)
+}
+
+fn check_extra(extra: &Extra) -> Result<(), InboxError> {
+    let bad = |what: &str| Err(InboxError::Invalid(what.to_owned()));
+    if extra.links.len() > MAX_LINKS {
+        return bad("an item has at most 10 links");
+    }
+    for link in &extra.links {
+        let web = link.url.starts_with("https://") || link.url.starts_with("http://");
+        if !web || link.url.len() > MAX_URL || link.url.chars().any(char::is_whitespace) {
+            return bad("a link is an http or https URL without spaces");
+        }
+        if link
+            .title
+            .as_ref()
+            .is_some_and(|t| t.chars().count() > MAX_TITLE)
+        {
+            return bad("a link title is too long");
+        }
+    }
+    if let Some(p) = &extra.proposal {
+        if p.action.len() + p.target.len() + p.content.len() > MAX_PROPOSAL + 1024 {
+            return bad("a proposal is too long");
+        }
+    }
+    if let Some(bot) = &extra.bot {
+        if bot.is_empty() || bot.len() > MAX_BOT || bot.contains('/') {
+            return bad("a bot name is 1 to 64 bytes without /");
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -305,6 +468,7 @@ mod tests {
             terminal: None,
             routine: None,
             place: None,
+            extra: Default::default(),
         }
     }
 
@@ -414,5 +578,64 @@ mod tests {
         assert!(b.add(late, 1).is_err());
         add(&mut b, todo(" spaced   out "), 1);
         assert_eq!(titles(&b)[0], "spaced out");
+    }
+
+    fn from_bot(title: &str, key: &str) -> NewItem {
+        NewItem {
+            workspace: Some("w".into()),
+            key: Some(key.into()),
+            once: true,
+            extra: Extra {
+                bot: Some("news".into()),
+                links: vec![ItemLink {
+                    url: "https://example.com/a".into(),
+                    title: None,
+                }],
+                proposal: None,
+            },
+            ..todo(title)
+        }
+    }
+
+    #[test]
+    fn a_bot_counts_its_items_per_day_and_how_they_end() {
+        let mut b = Book::default();
+        let first = b
+            .add_from_bot(from_bot("a", "k1"), 1, "2026-11-23", 1)
+            .unwrap()
+            .unwrap();
+        let more = b
+            .add_from_bot(from_bot("b", "k2"), 1, "2026-11-23", 2)
+            .unwrap()
+            .unwrap();
+        // A key it already sent takes no room and makes no item.
+        assert_eq!(
+            b.add_from_bot(from_bot("b", "k2"), 1, "2026-11-23", 3),
+            Ok(None)
+        );
+        b.add_from_bot(from_bot("c", "k3"), 1, "2026-11-23", 4)
+            .unwrap();
+        assert_eq!(titles(&b), ["2 more from news", "a"]);
+        assert_eq!(b.item(&first).unwrap().links.len(), 1);
+        b.add_from_bot(from_bot("d", "k4"), 1, "2026-11-24", 5)
+            .unwrap();
+        assert_eq!(titles(&b)[0], "d");
+        b.done(&first).unwrap();
+        b.delete(&more).unwrap();
+        let counts = b.view().bots;
+        assert_eq!((counts[0].done, counts[0].deleted), (1, 1));
+        b.reopen(&first).unwrap();
+        assert_eq!(b.view().bots[0].done, 0);
+    }
+
+    #[test]
+    fn bad_links_and_bot_names_are_refused() {
+        let mut b = Book::default();
+        let mut item = from_bot("a", "k");
+        item.extra.links[0].url = "file:///etc/passwd".into();
+        assert!(b.add(item, 1).is_err());
+        let mut item = from_bot("a", "k");
+        item.extra.bot = Some("a/b".into());
+        assert!(b.add(item, 1).is_err());
     }
 }

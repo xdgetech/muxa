@@ -123,6 +123,7 @@ mod tests {
             terminal: None,
             routine: None,
             place: None,
+            extra: Default::default(),
         };
         b.add(new, 7).unwrap();
         save(&path, &b).unwrap();

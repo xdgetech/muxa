@@ -143,6 +143,7 @@ mod tests {
             terminal: None,
             routine: None,
             place: None,
+            extra: Default::default(),
         }
     }
 

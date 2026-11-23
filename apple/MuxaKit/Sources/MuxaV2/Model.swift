@@ -24,9 +24,55 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var routine: RoutineRef?
     /// Where a Task of muxa v1 worked; Resume Task starts its agent there.
     public var place: ItemPlace? = nil
+    /// Pages the item is about, e.g. a PR or a Slack thread (ADR 0082).
+    public var links: [ItemLink]? = nil
+    /// What a Decide item proposes; Start Task takes it as the goal.
+    public var proposal: ItemProposal? = nil
+    /// The Bot of `workspace` whose run made the item.
+    public var bot: String? = nil
 
     /// Hidden by Later at `now` (Unix seconds).
     public func isLater(now: Int64) -> Bool { (laterUntil ?? 0) > now }
+}
+
+/// A page an item is about: `http` or `https`.
+public struct ItemLink: Codable, Equatable, Sendable {
+    public var url: String
+    public var title: String?
+
+    public init(url: String, title: String? = nil) {
+        self.url = url
+        self.title = title
+    }
+}
+
+/// A change a Routine proposes. muxa never performs it by itself.
+public struct ItemProposal: Codable, Equatable, Sendable {
+    public var action: String
+    public var target: String
+    /// The exact text to write.
+    public var content: String
+
+    public init(action: String, target: String, content: String) {
+        self.action = action
+        self.target = target
+        self.content = content
+    }
+}
+
+/// How a Bot's items ended (ADR 0082).
+public struct BotCount: Codable, Equatable, Sendable {
+    public var workspace: String
+    public var bot: String
+    public var done: UInt32
+    public var deleted: UInt32
+
+    public init(workspace: String, bot: String, done: UInt32, deleted: UInt32) {
+        self.workspace = workspace
+        self.bot = bot
+        self.done = done
+        self.deleted = deleted
+    }
 }
 
 /// A Routine's id.
@@ -255,6 +301,8 @@ public struct Inbox: Codable, Equatable, Sendable {
     public var revision: UInt64
     public var items: [InboxItem]
     public var done: [InboxItem]
+    /// Per Bot, its items that ended Done and those deleted while open.
+    public var bots: [BotCount]? = nil
 
     public static let empty = Inbox(revision: 0, items: [], done: [])
 }

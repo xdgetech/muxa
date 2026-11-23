@@ -60,6 +60,21 @@ class FrameTest {
         val inbox = field<Inbox>("inbox", json.parseToJsonElement(wire) as JsonObject)
         assertEquals(200L, inbox.items[0].laterUntil)
         assertTrue(inbox.items[0].isLater(100))
+        assertTrue(inbox.items[0].links.isEmpty() && inbox.bots.isEmpty())
+    }
+
+    @Test
+    fun aBotItemDecodesWithItsLinksAndProposal() {
+        val wire = """{"inbox":{"revision":1,"items":[{"id":"i2","kind":"decide","title":"Comment on PR 7","created":5,""" +
+            """"source":"routine","workspace":"w","bot":"pr-watch","links":[{"url":"https://github.com/o/r/pull/7","title":"PR 7"}],""" +
+            """"proposal":{"action":"comment","target":"o/r#7","content":"LGTM"}}],"done":[],""" +
+            """"bots":[{"workspace":"w","bot":"pr-watch","done":4,"deleted":1}]}}"""
+        val inbox = field<Inbox>("inbox", json.parseToJsonElement(wire) as JsonObject)
+        val item = inbox.items[0]
+        assertEquals("pr-watch", item.bot)
+        assertEquals(listOf(ItemLink("https://github.com/o/r/pull/7", "PR 7")), item.links)
+        assertEquals(ItemProposal("comment", "o/r#7", "LGTM"), item.proposal)
+        assertEquals(listOf(BotCount("w", "pr-watch", 4, 1)), inbox.bots)
     }
 
     @Test

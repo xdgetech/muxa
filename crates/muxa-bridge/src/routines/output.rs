@@ -13,6 +13,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::store::{RoutineState, Stored};
+use crate::records::bots::MAX_MEMORY;
 
 /// The stage folder, relative to the run's directory.
 pub const STAGE_DIR: &str = ".muxa/routine";
@@ -38,6 +39,9 @@ struct RawOutput {
     items: Vec<RawItem>,
     #[serde(default)]
     state: Option<serde_json::Value>,
+    /// A Bot's whole new memory (ADR 0082).
+    #[serde(default)]
+    memory: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -53,6 +57,7 @@ struct RawItem {
     action: Option<String>,
     target: Option<String>,
     content: Option<String>,
+    due: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +76,7 @@ pub struct Item {
     pub body: String,
     pub links: Vec<SourceLink>,
     pub proposal: Option<Proposal>,
+    pub due: Option<String>,
 }
 
 /// A stage that passed every check.
@@ -79,6 +85,8 @@ pub struct Output {
     pub items: Vec<Item>,
     /// None keeps the committed state.
     pub state: Option<serde_json::Value>,
+    /// None keeps the Bot's memory.
+    pub memory: Option<String>,
 }
 
 /// Reads the stage in `dir`. The reasons are for the agent's check log.
@@ -162,10 +170,14 @@ pub fn validate(bytes: &[u8], limit: u32) -> Result<Output, Vec<String>> {
             reasons.push("state is larger than 16 KiB.".into());
         }
     }
+    if let Some(memory) = &raw.memory {
+        text("memory", memory, MAX_MEMORY, true, &mut reasons);
+    }
     if reasons.is_empty() {
         Ok(Output {
             items,
             state: raw.state,
+            memory: raw.memory,
         })
     } else {
         Err(reasons)
@@ -175,13 +187,20 @@ pub fn validate(bytes: &[u8], limit: u32) -> Result<Output, Vec<String>> {
 fn check_item(raw: RawItem) -> Result<Item, Vec<String>> {
     let mut reasons = Vec::new();
     let kind = match raw.kind.as_str() {
-        "briefing" => Some(InboxEntryKind::Briefing),
-        "proposal" => Some(InboxEntryKind::Proposal),
+        "briefing" | "read" => Some(InboxEntryKind::Briefing),
+        "proposal" | "decide" => Some(InboxEntryKind::Proposal),
+        "reply" => Some(InboxEntryKind::Reply),
+        "todo" => Some(InboxEntryKind::Todo),
         _ => {
-            reasons.push("kind must be briefing or proposal.".into());
+            reasons.push("kind must be briefing, proposal, reply or todo.".into());
             None
         }
     };
+    if let Some(due) = &raw.due {
+        if due.parse::<jiff::civil::Date>().is_err() {
+            reasons.push("due must be a date, YYYY-MM-DD.".into());
+        }
+    }
     bytes_line("key", &raw.key, MAX_KEY, &mut reasons);
     chars_line("title", &raw.title, MAX_TITLE, &mut reasons);
     text("body", &raw.body, MAX_BODY, true, &mut reasons);
@@ -205,10 +224,13 @@ fn check_item(raw: RawItem) -> Result<Item, Vec<String>> {
     }
     let fields = (raw.action, raw.target, raw.content);
     let proposal = match (kind, fields) {
-        (Some(InboxEntryKind::Briefing), (None, None, None))
+        (
+            Some(InboxEntryKind::Briefing | InboxEntryKind::Reply | InboxEntryKind::Todo),
+            (None, None, None),
+        )
         | (None | Some(InboxEntryKind::Unknown), _) => None,
-        (Some(InboxEntryKind::Briefing), _) => {
-            reasons.push("a briefing has no action, target or content.".into());
+        (Some(InboxEntryKind::Briefing | InboxEntryKind::Reply | InboxEntryKind::Todo), _) => {
+            reasons.push("only a proposal has action, target and content.".into());
             None
         }
         (Some(InboxEntryKind::Proposal), (Some(action), Some(target), Some(content))) => {
@@ -236,6 +258,7 @@ fn check_item(raw: RawItem) -> Result<Item, Vec<String>> {
             body: raw.body,
             links,
             proposal,
+            due: raw.due,
         }),
         _ => Err(reasons),
     }
@@ -301,11 +324,13 @@ pub enum PublishError {
 /// Stores the new entries, skips keys the Routine already stored, commits
 /// the state, and closes the run. A run that already published publishes
 /// nothing again. Returns how many entries were stored.
+/// `bot` is stamped on each entry: the host's, never the output's.
 pub fn publish(
     state: &mut RoutineState,
     run: &str,
     occurrence: &str,
     output: Output,
+    bot: Option<&str>,
     now: u64,
     mut new_id: impl FnMut() -> Option<String>,
 ) -> Result<u32, PublishError> {
@@ -346,6 +371,8 @@ pub fn publish(
                 protected_at: None,
                 proposal: item.proposal,
                 task: None,
+                due: item.due,
+                bot: bot.map(str::to_owned),
             },
             approving: None,
         });

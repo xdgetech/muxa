@@ -825,6 +825,41 @@ pub struct InboxItem {
     /// Where an older Task worked: Resume Task adopts it (`existing`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<ItemPlace>,
+    /// Pages the item is about, e.g. a PR or a Slack thread (ADR 0082).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<ItemLink>,
+    /// What a Decide item proposes. Start Task takes it as the goal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<ItemProposal>,
+    /// The Bot whose run made the item, in `workspace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
+}
+
+/// A page an item is about. `http` or `https` only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemLink {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+/// A change a Routine proposes; muxa never performs it by itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemProposal {
+    pub action: String,
+    pub target: String,
+    /// The exact text to write.
+    pub content: String,
+}
+
+/// How a Bot's items ended (ADR 0082): the apps show it beside the Bot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BotCount {
+    pub workspace: String,
+    pub bot: String,
+    pub done: u32,
+    pub deleted: u32,
 }
 
 /// An existing working place in a Workspace.
@@ -869,6 +904,8 @@ pub struct Inbox {
     pub revision: u64,
     pub items: Vec<InboxItem>,
     pub done: Vec<InboxItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bots: Vec<BotCount>,
 }
 
 /// A Routine as the host defines it, with its last run. `(workspace, name)`

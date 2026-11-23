@@ -586,6 +586,7 @@ async fn retry_runs_a_failed_routine_again() {
             name: "digest".into(),
         }),
         place: None,
+        extra: Default::default(),
     };
     let item = host
         .inbox

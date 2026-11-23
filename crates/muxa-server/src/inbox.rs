@@ -39,6 +39,7 @@ pub(crate) async fn handle<H: Host>(msg: ClientMsg, inbox: &Inbox, host: &H) -> 
                 terminal: None,
                 routine: None,
                 place: None,
+                extra: Default::default(),
             };
             (id, inbox.change(|b, now| b.add(new, now).map(drop)))
         }

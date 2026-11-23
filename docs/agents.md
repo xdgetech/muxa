@@ -39,7 +39,7 @@ A Routine (ADR 0026, 0036, `src/routines/`) is a `[[routine]]` in a workspace's 
 - **Where.** A new folder `<root>/routines/<name>-<id>`, as a terminal labelled `muxa.kind = routine`, `muxa.run`, `muxa.routine` and `muxa.occurrence`. Its `.muxa/TASK.md` holds the Routine's instructions and a fixed Output section. The folder stays until the Routine's next run publishes; a failed run keeps its folder.
 - **Output.** The agent writes `.muxa/routine/output.json` (below), then ends its turn. The state the last successful run committed is in `.muxa/routine/state.json`. The folder is the run's private stage; nothing outside the run reads it before the check.
 - **The check** runs in the daemon's process on each `done` (`routines/check.rs`). On a pass, one locked write of `<state dir>/routines/r-<hash>.json` stores the new entries, skips keys the Routine already stored, commits the state and closes the run; the runner ends the terminal. On a fail, the reasons go to `.muxa/checks/<attempt>.log`, and the runner types `The Routine output did not pass the check. The reasons are in .muxa/checks/<attempt>.log. Fix .muxa/routine/output.json, then end your turn.` After 3 fails, the run fails and the Routine shows the failure. A run fails too when its agent ends without a publish, is gone, or runs past 2 h.
-- **The Inbox.** `src/v2/feed.rs` copies new briefings as Read items, proposals as Decide items and failures as Failed items, every 15 s.
+- **The Inbox.** `src/v2/feed.rs` copies new briefings as Read items, proposals as Decide items, replies as Reply items, to-dos as To do items and failures as Failed items, every 15 s, with their links, proposal and due date. A Bot's items count against its `daily_items` (ADR 0082).
 - **Codex.** A Routine whose worker or default command is Codex is refused before it starts. A run acts on `done`, which only OSC 7501 reports, and whether Codex sends it by itself is unchecked (`docs/findings/session-backends.md`).
 - **Logs.** Ids, counts and outcomes only. Never instructions, titles, bodies, links or state.
 
@@ -56,7 +56,8 @@ A Routine (ADR 0026, 0036, `src/routines/`) is a `[[routine]]` in a workspace's 
      "body": "No activity for 30 days.", "action": "Close the issue", "target": "linear:ENG-12",
      "content": "Closing: no activity for 30 days."}
   ],
-  "state": {"cursor": "1762150000"}
+  "state": {"cursor": "1762150000"},
+  "memory": "Ana owns the release. The team ships on Thursdays."
 }
 ```
 
@@ -64,7 +65,9 @@ A Routine (ADR 0026, 0036, `src/routines/`) is a `[[routine]]` in a workspace's 
 - `key`: 1 to 200 bytes, no control character, unique in the file. A key the Routine already stored is skipped, so a retry stores nothing twice.
 - `title`: 1 to 200 characters, one line. `body`: at most 4096 bytes; line breaks and tabs are the only control characters.
 - `links`: at most 10. `url` is `https` or `http`, at most 2048 bytes, without spaces; `title` at most 200 characters.
-- A proposal also has `action` (1 to 200 characters, one line), `target` (1 to 500 bytes, one line) and `content` (at most 8192 bytes). A briefing has none of them.
+- `kind` is `briefing` (or `read`), `proposal` (or `decide`), `reply` or `todo` (ADR 0082). Any item may have `due`, a date `YYYY-MM-DD`.
+- A proposal also has `action` (1 to 200 characters, one line), `target` (1 to 500 bytes, one line) and `content` (at most 8192 bytes). Other kinds have none of them.
+- `memory` is only for a Bot's Routine: the Bot's whole new `memory.md`, at most 16 KiB. The daemon writes it after the publish and keeps the five before it in `.muxa/bots/<name>/history/`. Absent keeps the memory.
 - `state` is any JSON value, at most 16 KiB encoded. Absent keeps the previous state; it advances only with a successful publish.
 - The whole file is at most 256 KiB, a regular file, not a symlink. Unknown fields are refused, so a typo is not lost silently.
 

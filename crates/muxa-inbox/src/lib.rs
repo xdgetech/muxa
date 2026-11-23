@@ -2,11 +2,12 @@
 //! Capture, Tasks and Routines add items; nothing reorders them but the user.
 
 mod book;
+mod bots;
 mod capture;
 mod service;
 mod store;
 
-pub use book::{Book, InboxError, NewItem};
+pub use book::{Book, Extra, InboxError, NewItem};
 pub use capture::parse;
 pub use service::Inbox;
 pub use store::StoreError;

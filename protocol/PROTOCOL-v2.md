@@ -233,9 +233,9 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ### Inbox
 
-ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...]}`. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
+ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"workspace","bot","done","deleted"}]}`. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
 
-`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?}`.
+`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?}`. ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot adds at most its `daily_items` a day; the rest go into one Read item titled `N more from <bot>`, whose note lists their titles.
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
 - `due`: `YYYY-MM-DD`. `created` and `later_until`: Unix seconds.
 - An item with `later_until` in the future stays in `items` and the client hides it. At that time the server puts it back on top, clears `later_until` and sends `inbox`.

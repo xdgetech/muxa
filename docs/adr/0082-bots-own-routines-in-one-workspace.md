@@ -27,7 +27,7 @@ Routines already run an agent on a schedule, check its output and publish it wit
    - `memory.md` (at most 16 KiB): what the Bot learned. It belongs to the Bot. A run returns a full replacement as `memory` in `output.json`. The host checks it and writes it atomically, and keeps the last 5 versions beside it.
    - Every run of the Bot's Routines gets both in `.muxa/TASK.md`, so each run starts as the same Bot.
 3. **A Bot's runs put full items in the Inbox, within a daily limit.**
-   - The output may make Read, Decide, Reply and To do items, with `due` and up to 5 links.
+   - The output may make Read, Decide, Reply and To do items, with `due` and up to 10 links.
    - A Decide item keeps its proposal (action, target, content). Its actions are Start Task, with the goal taken from the proposal, and Delete. muxa itself never writes outside the host.
    - The host stamps the Workspace and the Bot. It never takes them from the output.
    - At most `daily_items` items per Bot and local day. The items past the limit become one Read item, "N more from <bot>".

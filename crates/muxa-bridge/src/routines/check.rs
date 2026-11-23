@@ -54,14 +54,39 @@ fn publish(config: &Config, run: &RunAt) -> Result<u32, Vec<String>> {
     let routine = workspaces
         .routine(&run.workspace, &run.name)
         .ok_or_else(|| one("The Routine is no longer in workspaces.toml.".into()))?;
-    let out = output::read(&run.dir, routine.items)?;
+    let mut out = output::read(&run.dir, routine.items)?;
+    let bot = routine
+        .bot
+        .as_deref()
+        .and_then(|b| workspaces.bot(&run.workspace, b));
+    if bot.is_none() && out.memory.is_some() {
+        return Err(one("memory is only for a Bot's Routine; remove it.".into()));
+    }
+    let memory = out.memory.take();
     let state_dir = runs::dir(config).map_err(|e| one(e.to_string()))?;
     let store = RoutineStore::open(&state_dir).map_err(|e| one(e.to_string()))?;
     let at = now();
+    let bot_name = bot.map(|b| b.name.as_str());
     let stored = store.update::<_, Failure>(&run.workspace, &run.name, |s| {
-        output::publish(s, &run.id, &run.occurrence, out, at, output::entry_id)
-            .map_err(Failure::Publish)
+        output::publish(
+            s,
+            &run.id,
+            &run.occurrence,
+            out,
+            bot_name,
+            at,
+            output::entry_id,
+        )
+        .map_err(Failure::Publish)
     });
+    if let (Ok(_), Some(bot), Some(memory)) = (&stored, bot, memory) {
+        // The output is already published; a memory that cannot be written
+        // is lost for this run only.
+        match bot.write_memory(&memory) {
+            Ok(()) => tracing::info!(bot = %bot.name, bytes = memory.len(), "bot memory written"),
+            Err(e) => tracing::warn!(bot = %bot.name, error = %e, "cannot write bot memory"),
+        }
+    }
     match stored {
         Ok(n) => Ok(n),
         Err(Failure::Publish(PublishError::NotCurrent(_))) => Err(one(
