@@ -379,6 +379,14 @@ pub enum ClientMsg {
         #[serde(default)]
         worktree: Option<WorktreeMode>,
     },
+    /// A file from the user's device into the Task's working place, under
+    /// `.muxa/uploads/` (ADR 0081). `data` is base64.
+    Upload {
+        id: u64,
+        terminal: String,
+        name: String,
+        data: String,
+    },
     /// Ends a Task's shell and removes its terminal. Only those.
     CloseTerminal {
         id: u64,
@@ -1090,6 +1098,10 @@ pub enum Reply {
     Migrated {
         tasks: Vec<V1Task>,
         added: u32,
+    },
+    /// Where an upload went, relative to the Task's working place.
+    Uploaded {
+        path: String,
     },
     Empty {},
 }

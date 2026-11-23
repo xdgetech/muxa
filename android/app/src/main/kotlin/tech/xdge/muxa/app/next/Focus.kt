@@ -1,6 +1,9 @@
 package tech.xdge.muxa.app.next
 
+import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +38,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -187,6 +191,23 @@ private fun Chip(title: String, on: Boolean, tag: String, onClick: () -> Unit) {
     }
 }
 
+/** Sends files from this device into the Task's working place (ADR 0081); each path is then typed into the agent. */
+@Composable
+private fun UploadButton(model: NextModel, terminal: Terminal) {
+    val context = LocalContext.current
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        for (uri in uris) {
+            val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "upload"
+            val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            if (bytes == null) model.requestError = "$name could not be read." else model.upload(bytes, name, terminal.id)
+        }
+    }
+    IconButton({ pick.launch(arrayOf("*/*")) }, Modifier.testTag("focus.upload"), enabled = terminal.isTaskAgent) {
+        Icon(Icons.upload, "Upload")
+    }
+}
+
 /** Covers the terminal, and keeps touches from reaching it. */
 private val Cover = Modifier.fillMaxSize().background(Palette.ground).pointerInput(Unit) {}
 
@@ -220,6 +241,7 @@ private fun Header(
         } else {
             IconButton(openLoop, Modifier.testTag("focus.loop"), enabled = terminal.isTaskAgent) { Icon(Icons.loop, "Loop") }
         }
+        UploadButton(model, terminal)
         IconButton(toggleInbox, Modifier.testTag("focus.inbox")) {
             Icon(Icons.inbox, if (inbox) "Close the Inbox" else "Inbox", tint = if (inbox) Palette.accent else Palette.textSecondary)
         }

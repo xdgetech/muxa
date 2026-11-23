@@ -83,6 +83,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"mcp"?,"plan"?,"loop"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal. `loop` (LoopSpec) also starts its Task Loop |
 | `{"type":"task-shell","terminal"}` | `{"terminal":Terminal,"existing":false}`: a new shell in the working place of the Task whose live agent is `terminal`. See Task shells |
 | `{"type":"close-terminal","terminal"}` | `{}`. Ends a Task's shell and removes its terminal; any other terminal is `bad-request` |
+| `{"type":"upload","terminal","name","data"}` | `{"path"}`: a file from the device into the Task's working place, at `path` relative to it. See Uploads |
 | `{"type":"close-task","terminal","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of the agent `terminal` as `inbox-approve` does, without an item, and marks the Task's open items Done. See Task actions |
 | `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
 | `{"type":"inbox"}` | `{"inbox":Inbox}` |
@@ -153,6 +154,16 @@ ADR 0079. A Task's shells are terminals beside its agent, in its working place, 
 - `close-terminal` ends a shell and removes its terminal. It refuses every other terminal, so muxa never ends what it did not start this way.
 - Closing a Task (`inbox-approve`, `close-task`) ends its shells with its agent.
 - Clients group a shell with the agent that has the same `muxa.dir`. They list it with the Task, never as a Task or among other terminals.
+
+### Uploads
+
+ADR 0081. A client copies an image or a log from its device into a Task's working place, so the Task's agent can read it.
+
+- `terminal` is the Task's agent or one of its shells; any other terminal is `bad-request`. `data` is the file's bytes in base64, at most 10 MB before encoding.
+- `name` is a file name only: no `/` or `\`, not starting with `.`, no control character, at most 255 bytes. Anything else is `bad-request`.
+- The host writes the file to `<working place>/.muxa/uploads/<name>`. It never replaces a file: a taken name becomes `name 2.ext`, `name 3.ext`. A `.muxa/uploads` that leads out of the working place (a symlink) is `bad-request`.
+- `path` is relative to the working place, e.g. `.muxa/uploads/build.log`. The apps type it into the terminal, without Enter.
+- The file's bytes never reach a log, and a malformed `upload` message is refused without quoting its values.
 
 ### Notifications
 

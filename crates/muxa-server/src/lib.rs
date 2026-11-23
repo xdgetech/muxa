@@ -14,6 +14,7 @@ mod shells;
 mod task_actions;
 mod task_items;
 pub mod tasks;
+mod uploads;
 mod usage;
 mod wire;
 

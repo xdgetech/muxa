@@ -21,6 +21,7 @@ use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
 use crate::shells;
 use crate::tasks::{self, Host, TaskError, TaskSpec};
+use crate::uploads;
 use crate::wire::{self, Incoming};
 use crate::{inbox, migrate, task_actions, task_items, usage};
 
@@ -432,6 +433,15 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     Err((code, message)) => self.error(Some(id), code, message),
                 }
             }
+            ClientMsg::Upload {
+                id,
+                terminal,
+                name,
+                data,
+            } => match uploads::upload(self.backend, self.host, &terminal, &name, &data).await {
+                Ok(path) => self.reply(id, Reply::Uploaded { path }),
+                Err((code, message)) => self.error(Some(id), code, message),
+            },
             ClientMsg::CloseTerminal { id, terminal } => {
                 match shells::close(self.backend, &terminal).await {
                     Ok(()) => self.reply(id, Reply::Empty {}),
@@ -997,18 +1007,22 @@ async fn next_revision(revisions: &mut Option<watch::Receiver<u64>>) {
 
 /// A settings update can carry secrets, and serde quotes a value of the
 /// wrong type: only errors that name a field or an op are passed on.
+/// serde's message can quote a value, so for a request that carries secrets or
+/// file bytes it only says which field, or that the request is wrong.
 fn bad_message(payload: &[u8], e: &serde_json::Error) -> String {
-    let settings = serde_json::from_slice::<serde_json::Value>(payload)
+    let kind = serde_json::from_slice::<serde_json::Value>(payload)
         .ok()
-        .is_some_and(|v| v["type"] == "settings-update");
+        .and_then(|v| v["type"].as_str().map(str::to_owned));
+    let guarded = matches!(kind.as_deref(), Some("settings-update" | "upload"));
     let text = e.to_string();
     let names_a_field = ["missing field", "unknown variant", "unknown field"]
         .iter()
         .any(|safe| text.starts_with(safe));
-    if settings && !names_a_field {
-        "bad message: settings-update does not match protocol/PROTOCOL-v2.md, Settings".into()
-    } else {
-        format!("bad message: {text}")
+    match kind.as_deref() {
+        Some(kind) if guarded && !names_a_field => {
+            format!("bad message: {kind} does not match protocol/PROTOCOL-v2.md")
+        }
+        _ => format!("bad message: {text}"),
     }
 }
 

@@ -34,6 +34,9 @@ struct TabletTaskView: View {
                 Text(terminal.title).font(.system(size: 19, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
             }
             Spacer(minLength: 8)
+            UploadButton(terminal: terminal.id)
+                .buttonStyle(BareIconStyle(color: Palette.textSecondary))
+                .disabled(!terminal.isTaskAgent)
             LoopButton(terminal: terminal) { showLoop = true }
             Button { showInbox = true } label: { Image(systemName: "tray") }
                 .buttonStyle(BareIconStyle(color: Palette.textSecondary))

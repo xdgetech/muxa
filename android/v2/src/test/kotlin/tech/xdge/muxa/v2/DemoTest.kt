@@ -220,6 +220,22 @@ class DemoTest {
     }
 
     @Test
+    fun anUploadGoesToTheTasksUploadsFolder() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            assertEquals(".muxa/uploads/build.log", c.upload("log".toByteArray(), "build.log", "t1"))
+            assertEquals(".muxa/uploads/build 2.log", c.upload("log".toByteArray(), "build.log", "t1"))
+            try {
+                c.upload(ByteArray(0), "../x", "t1")
+                fail("only a file name")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
     fun aTasksShellsStartAndCloseAndCloseTaskTakesThemAll() = runBlocking {
         withTimeout(10_000) {
             val c = open()

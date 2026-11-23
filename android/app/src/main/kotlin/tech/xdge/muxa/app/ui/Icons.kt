@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentCopy
@@ -81,6 +82,7 @@ object Icons {
     val send = Material.AutoMirrored.Filled.Send
     val back = Material.AutoMirrored.Filled.ArrowBack
     val close = Material.Filled.Close
+    val upload = Material.Filled.AttachFile
     val list = Material.Filled.Menu
     val tasks = Material.AutoMirrored.Filled.Assignment
     val chevron = Material.AutoMirrored.Filled.KeyboardArrowRight

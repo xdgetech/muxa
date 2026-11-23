@@ -14,6 +14,7 @@ mod routines;
 pub mod runner;
 pub mod task_loop;
 mod tasks;
+mod uploads;
 mod v1;
 mod workspaces;
 

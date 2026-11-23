@@ -146,6 +146,14 @@ public actor V2Client {
         try field("terminal", of: await request(.taskShell(terminal: terminal)))
     }
 
+    /// The largest file `upload` takes, as the server checks it.
+    public static let maxUpload = 10 * 1024 * 1024
+
+    /// Copies a file into the Task's working place; the path there, relative to it.
+    public func upload(_ data: Data, name: String, to terminal: String) async throws -> String {
+        try field("path", of: await request(.upload(terminal: terminal, name: name, data: data)))
+    }
+
     /// Ends a Task's shell and removes its terminal.
     public func closeTerminal(_ terminal: String) async throws {
         _ = try await request(.closeTerminal(terminal: terminal))

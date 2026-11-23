@@ -158,6 +158,10 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** A new shell beside the Task's agent [terminal]; refused with `conflict` when it has 3. */
     suspend fun taskShell(terminal: String): Terminal = field("terminal", request(V2Request.TaskShell(terminal)))
 
+    /** Copies a file into the Task's working place; the path there, relative to it. */
+    suspend fun upload(data: ByteArray, name: String, terminal: String): String =
+        field("path", request(V2Request.Upload(terminal, name, data)))
+
     /** Ends a Task's shell and removes its terminal. */
     suspend fun closeTerminal(terminal: String) {
         request(V2Request.CloseTerminal(terminal))
@@ -404,3 +408,6 @@ internal inline fun <reified T> field(key: String, msg: JsonObject): T {
         throw V2Error.BadMessage("$key: ${e.message}")
     }
 }
+
+/** The largest file `upload` takes, as the server checks it. */
+const val MAX_UPLOAD = 10 * 1024 * 1024

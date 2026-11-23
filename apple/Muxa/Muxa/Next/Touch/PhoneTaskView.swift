@@ -50,6 +50,9 @@ struct PhoneTaskView: View {
                 Text(terminal.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
             }
             Spacer(minLength: 4)
+            UploadButton(terminal: terminal.id)
+                .buttonStyle(BareIconStyle(color: Palette.textSecondary))
+                .disabled(!terminal.isTaskAgent)
             LoopButton(terminal: terminal) { showLoop = true }
             Button { showInbox = true } label: { Image(systemName: "tray") }
                 .buttonStyle(BareIconStyle(color: Palette.textSecondary))

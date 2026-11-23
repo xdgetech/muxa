@@ -564,6 +564,15 @@ impl Host for BridgeHost {
         super::reader::list(dir, kind, html).await
     }
 
+    async fn upload(
+        &self,
+        dir: &std::path::Path,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> Result<String, TaskError> {
+        super::uploads::write(dir, name, bytes).await
+    }
+
     async fn reader_read(
         &self,
         dir: &std::path::Path,

@@ -220,6 +220,15 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func anUploadGoesToTheTasksUploadsFolder() async throws {
+        let c = try await open()
+        #expect(try await c.upload(Data("log".utf8), name: "build.log", to: "t1") == ".muxa/uploads/build.log")
+        #expect(try await c.upload(Data("log".utf8), name: "build.log", to: "t1") == ".muxa/uploads/build 2.log")
+        await #expect(throws: V2Error.self) { try await c.upload(Data(), name: "../x", to: "t1") }
+        await #expect(throws: V2Error.self) { try await c.upload(Data(), name: "x", to: "t4") }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func approveAsksForForceWhenTheWorktreeHoldsWork() async throws {
         let c = try await open()
         do {

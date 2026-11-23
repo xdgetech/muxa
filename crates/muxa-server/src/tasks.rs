@@ -134,6 +134,18 @@ pub trait Host: Send + Sync {
     /// Checks the request and makes the places, or finds the existing ones.
     fn prepare(&self, spec: &TaskSpec) -> impl Future<Output = Result<Prepared, TaskError>> + Send;
 
+    /// Writes an uploaded file into `dir/.muxa/uploads/` (ADR 0081) and returns
+    /// its path relative to `dir`. `name` is already a checked file name; a
+    /// taken one gets a number.
+    fn upload(
+        &self,
+        _dir: &Path,
+        _name: &str,
+        _bytes: Vec<u8>,
+    ) -> impl Future<Output = Result<String, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host takes no uploads".into())) }
+    }
+
     /// The program of a Task's shell (ADR 0079), as argv.
     fn shell(&self) -> Vec<String> {
         vec!["/bin/sh".to_owned(), "-l".to_owned()]

@@ -72,6 +72,8 @@ actor DemoServer {
     private var buf: [UInt8] = []
     private var content: DemoContent
     private var inbox: Inbox
+    /// Uploads by folder and file name, so a second one with the same name gets a number.
+    private var uploads: Set<String> = []
     private var nextItem = 100
     private var channels: [UInt32: String] = [:]
     private var offsets: [UInt32: UInt64] = [:]
@@ -213,6 +215,8 @@ actor DemoServer {
             reply(id, [:])
         case "close-task":
             closeTask(id, m)
+        case "upload":
+            upload(id, m)
         case "inbox-request-changes":
             guard let review = reviewItem(id, item), let terminal = review.terminal else { return }
             let comment = m["comment"] as? String ?? ""
@@ -398,6 +402,28 @@ actor DemoServer {
         content.screens[t.id] = "\(dir) $ "
         reply(id, ["terminal": json(t), "existing": false])
         if watching { send(["type": "changed", "terminal": json(t)]) }
+    }
+
+    /// Keeps an upload's name, as the host would write it (ADR 0081); nothing is saved.
+    private func upload(_ id: UInt64, _ m: [String: Any]) {
+        func refuse(_ message: String) { send(["type": "error", "id": id, "code": "bad-request", "message": message]) }
+        guard let t = content.terminals.first(where: { $0.id == m["terminal"] as? String }),
+              t.labels["muxa.kind"] == "task" else { return refuse("files go to a Task") }
+        let name = (m["name"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, !name.hasPrefix("."), !name.contains("/") else { return refuse("send the file name only") }
+        guard let data = Data(base64Encoded: m["data"] as? String ?? "") else { return refuse("data is not base64") }
+        guard data.count <= V2Client.maxUpload else { return refuse("a file is at most 10 MB") }
+        let dir = t.taskDir ?? ""
+        var file = name
+        var n = 1
+        while uploads.contains("\(dir)/\(file)") {
+            n += 1
+            let ext = (name as NSString).pathExtension
+            let stem = (name as NSString).deletingPathExtension
+            file = ext.isEmpty ? "\(name) \(n)" : "\(stem) \(n).\(ext)"
+        }
+        uploads.insert("\(dir)/\(file)")
+        reply(id, ["path": ".muxa/uploads/\(file)"])
     }
 
     /// Closes a Task without its item, as Approve does, with its shells and open items.

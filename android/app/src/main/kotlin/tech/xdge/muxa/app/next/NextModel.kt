@@ -17,6 +17,7 @@ import tech.xdge.muxa.transport.HostKey
 import tech.xdge.muxa.transport.KeySetup
 import tech.xdge.muxa.transport.SshExec
 import tech.xdge.muxa.transport.TransportError
+import tech.xdge.muxa.v2.MAX_UPLOAD
 import tech.xdge.muxa.v2.Capture
 import tech.xdge.muxa.v2.ChatEntry
 import tech.xdge.muxa.v2.ChatPrompt
@@ -470,6 +471,20 @@ class NextModel(
      * Types [text] into the terminal through the channel Focus shows it on.
      * Attaching only for this would resize the agent's terminal.
      */
+    /**
+     * Copies a file into the Task's working place (ADR 0081), then types its
+     * path into [terminal], without Enter, for the user to send on.
+     */
+    fun upload(data: ByteArray, name: String, terminal: String) = scope.launch {
+        if (data.size > MAX_UPLOAD) {
+            requestError = "$name is larger than ${MAX_UPLOAD / 1024 / 1024} MB."
+            return@launch
+        }
+        var path: String? = null
+        request { path = it.upload(data, name, terminal) }
+        path?.let { send(typedPath(it) + " ", terminal) }
+    }
+
     fun send(text: String, terminal: String) {
         val ch = channelOf[terminal]
         if (ch == null) {
@@ -582,3 +597,7 @@ class NextModel(
         }
     }
 }
+
+/** A path a shell and an agent both read as one word. */
+internal fun typedPath(path: String): String =
+    if (path.all { it.isLetterOrDigit() || it in "._-/" }) path else "'" + path.replace("'", "'\\''") + "'"

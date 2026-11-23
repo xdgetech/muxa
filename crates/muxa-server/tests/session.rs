@@ -24,6 +24,19 @@ use tokio::task::JoinHandle;
 struct FakeTasks;
 
 impl Host for FakeTasks {
+    async fn upload(
+        &self,
+        dir: &std::path::Path,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> Result<String, TaskError> {
+        UPLOADS.with(|u| {
+            u.borrow_mut()
+                .push((dir.to_owned(), name.to_owned(), bytes))
+        });
+        Ok(format!(".muxa/uploads/{name}"))
+    }
+
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         if spec.branch().is_some_and(|(_, b)| b == "bad") {
             return Err(TaskError::Invalid("bad is not a branch".into()));
@@ -277,6 +290,9 @@ fn chat_update() -> ChatUpdate {
 thread_local! {
     /// Per test: each test's runtime, server included, runs on its own thread.
     static LOOP_CHANGES: tokio::sync::watch::Sender<u64> = tokio::sync::watch::channel(0).0;
+    /// What `upload` was asked to write.
+    static UPLOADS: std::cell::RefCell<Vec<(std::path::PathBuf, String, Vec<u8>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
     /// What `close_places` was asked to remove.
     static CLOSED: std::cell::RefCell<Vec<(Vec<Place>, WorktreeMode)>> =
         const { std::cell::RefCell::new(Vec::new()) };
@@ -1922,4 +1938,63 @@ async fn close_task_ends_a_task_without_its_item() {
     )
     .await;
     assert_eq!(wrong["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn an_upload_goes_to_the_tasks_folder_by_the_host() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let agent = task_agent(&backend, "/work/fix").await;
+    // "build log" in base64.
+    let ok = request(
+        &mut client,
+        json!({"type": "upload", "id": 1, "terminal": agent.as_str(), "name": "build.log", "data": "YnVpbGQgbG9n"}),
+    )
+    .await;
+    assert_eq!(ok["path"], ".muxa/uploads/build.log", "{ok}");
+    let written = UPLOADS.with(|u| u.borrow().clone());
+    assert_eq!(
+        written,
+        [(
+            "/work/fix".into(),
+            "build.log".to_owned(),
+            b"build log".to_vec()
+        )]
+    );
+
+    let refusals = [
+        json!({"name": "../x", "data": "eA=="}),
+        json!({"name": ".env", "data": "eA=="}),
+        json!({"name": "x", "data": "not base64!"}),
+    ];
+    for (n, fields) in refusals.into_iter().enumerate() {
+        let mut msg = json!({"type": "upload", "id": 10 + n, "terminal": agent.as_str()});
+        msg.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        let refused = request(&mut client, msg).await;
+        assert_eq!(refused["code"], "bad-request", "{refused}");
+    }
+    let plain = terminal(&backend).await;
+    let wrong = request(
+        &mut client,
+        json!({"type": "upload", "id": 20, "terminal": plain.as_str(), "name": "x", "data": "eA=="}),
+    )
+    .await;
+    assert_eq!(
+        wrong["code"], "bad-request",
+        "only a Task's terminal takes files"
+    );
+    let typo = request(
+        &mut client,
+        json!({"type": "upload", "id": 21, "terminal": 7, "name": "x", "data": "c2VjcmV0"}),
+    )
+    .await;
+    let message = typo["message"].as_str().unwrap_or_default();
+    assert!(
+        !message.contains("c2VjcmV0"),
+        "a bad upload never echoes its bytes: {message}"
+    );
+    assert_eq!(UPLOADS.with(|u| u.borrow().len()), 1);
 }

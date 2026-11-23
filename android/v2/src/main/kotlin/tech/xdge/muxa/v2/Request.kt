@@ -46,6 +46,9 @@ sealed interface V2Request {
     /** Ends a Task's shell; no other terminal. */
     data class CloseTerminal(val terminal: String) : V2Request
 
+    /** A file into the Task's working place, under `.muxa/uploads/` (ADR 0081). [data] is the file's bytes. */
+    class Upload(val terminal: String, val name: String, val data: ByteArray) : V2Request
+
     /** Closes the Task of the agent [terminal] as Approve does, and marks its open items Done. */
     data class CloseTask(val terminal: String, val worktree: WorktreeChoice? = null) : V2Request
 
@@ -111,6 +114,10 @@ sealed interface V2Request {
             is TaskReview -> { type("task-review"); put("terminal", r.terminal); opt("note", r.note) }
             is TaskShell -> { type("task-shell"); put("terminal", r.terminal) }
             is CloseTerminal -> { type("close-terminal"); put("terminal", r.terminal) }
+            is Upload -> {
+                type("upload"); put("terminal", r.terminal); put("name", r.name)
+                put("data", java.util.Base64.getEncoder().encodeToString(r.data))
+            }
             is CloseTask -> { type("close-task"); put("terminal", r.terminal); opt("worktree", r.worktree?.wire) }
             is InboxApprove -> { type("inbox-approve"); put("item", r.item); opt("worktree", r.worktree?.wire) }
             is InboxRequestChanges -> { type("inbox-request-changes"); put("item", r.item); put("comment", r.comment) }

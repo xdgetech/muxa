@@ -59,6 +59,7 @@ struct PaneSplit: View {
         }
         .frame(minWidth: 240)
         .background(Palette.ground)
+        .uploadsDropped(to: t.id, model: model)
         .overlay {
             if shown.count > 1, active {
                 Rectangle().strokeBorder(t.state.color, lineWidth: 1).allowsHitTesting(false)
@@ -87,6 +88,11 @@ struct PaneSplit: View {
             Spacer(minLength: 8)
             if active, chrome.windowPrefixPending, let prefix = KeyBindings.shared.vimPrefix {
                 KeyHint("\(prefix.display) …", color: Palette.accent)
+            }
+            if t.isTaskShell || t.isTaskAgent {
+                UploadButton(terminal: t.id)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(PaneActionStyle(on: false))
             }
             if t.isTaskShell {
                 Button("Close Shell", systemImage: "xmark") {

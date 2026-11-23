@@ -88,6 +88,9 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private var nextChat = 1
     private val settings = DemoSettings(content.settings)
     private var inbox = Inbox(1, content.inbox, emptyList())
+
+    /** Uploads by folder and file name, so a second one with the same name gets a number. */
+    private val uploads = mutableSetOf<String>()
     private var nextItem = 100
     private val channels = mutableMapOf<Int, String>()
     private val offsets = mutableMapOf<Int, Long>()
@@ -209,6 +212,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 reply(id)
             }
             "close-task" -> closeTask(id, m)
+            "upload" -> upload(id, m)
             "inbox-request-changes" -> requestChanges(id, item, m.str("comment") ?: "")
             "inbox-retry" -> retry(id, item)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
@@ -385,6 +389,25 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         screens[t.id] = "$dir $ "
         reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+    }
+
+    /** Keeps an upload's name, as the host would write it (ADR 0081); nothing is saved. */
+    private fun upload(id: Long, m: JsonObject) {
+        val t = terminals.firstOrNull { it.id == m.str("terminal") && it.labels["muxa.kind"] == "task" }
+            ?: return send(error(id, "bad-request", "files go to a Task"))
+        val name = m.str("name")?.trim().orEmpty()
+        if (name.isEmpty() || name.startsWith(".") || '/' in name) return send(error(id, "bad-request", "send the file name only"))
+        val data = runCatching { java.util.Base64.getDecoder().decode(m.str("data").orEmpty()) }.getOrNull()
+            ?: return send(error(id, "bad-request", "data is not base64"))
+        if (data.size > MAX_UPLOAD) return send(error(id, "bad-request", "a file is at most 10 MB"))
+        val dir = t.taskDir.orEmpty()
+        val stem = name.substringBeforeLast('.', name)
+        val ext = name.substringAfterLast('.', "")
+        val file = generateSequence(1) { it + 1 }
+            .map { n -> if (n == 1) name else if (ext.isEmpty()) "$name $n" else "$stem $n.$ext" }
+            .first { "$dir/$it" !in uploads }
+        uploads += "$dir/$file"
+        reply(id, "path" to JsonPrimitive(".muxa/uploads/$file"))
     }
 
     /** Closes a Task without its item, as Approve does, with its shells and open items. */

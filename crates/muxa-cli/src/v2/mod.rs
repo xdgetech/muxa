@@ -40,6 +40,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] close-task TERMINAL [--force]
        muxa-cli v2 [--bridge CMD] shell TERMINAL
        muxa-cli v2 [--bridge CMD] close-shell TERMINAL
+       muxa-cli v2 [--bridge CMD] upload TERMINAL FILE
        muxa-cli v2 [--bridge CMD] workspaces [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
@@ -70,6 +71,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                  its open items Done
   shell          starts a shell in the working place of the Task of an agent
                  terminal; every client lists it under the Task
+  upload         copies FILE (at most 10 MB) into the Task's working place under
+                 .muxa/uploads/ and prints its path there
   --existing     adopts a folder or worktree that is there already as the working
                  place; nothing is made, and Claude Code continues its conversation
   migrate-v1     one Inbox item \"Resume: <title>\" per open Task of the old muxa
@@ -154,6 +157,10 @@ enum Cmd {
     },
     LoopStop {
         terminal: String,
+    },
+    Upload {
+        terminal: String,
+        file: String,
     },
     /// `task-shell`, or with `close` `close-terminal`.
     Shell {
@@ -325,6 +332,10 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
         ["shell", t] => Cmd::Shell {
             terminal: (*t).to_owned(),
             close: false,
+        },
+        ["upload", t, f] => Cmd::Upload {
+            terminal: (*t).to_owned(),
+            file: (*f).to_owned(),
         },
         ["close-shell", t] => Cmd::Shell {
             terminal: (*t).to_owned(),
@@ -502,6 +513,13 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             println!("{}", loop_row(&reply["loop"]));
             Ok(())
         }
+        Cmd::Upload { terminal, file } => {
+            let request = upload_request(&terminal, &file)?;
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c.request(request).await?;
+            println!("{}", reply["path"].as_str().unwrap_or("?"));
+            Ok(())
+        }
         Cmd::Shell { terminal, close } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             if close {
@@ -668,6 +686,19 @@ fn routine_row(r: &Value) -> String {
 }
 
 /// `id  state  name  dir`, one line per terminal.
+/// The `upload` request for a local file: its name and its bytes in base64.
+fn upload_request(terminal: &str, file: &str) -> Result<Value, String> {
+    use base64::Engine;
+    let path = std::path::Path::new(file);
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("{file} has no file name"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {file}: {e}"))?;
+    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(json!({"type": "upload", "terminal": terminal, "name": name, "data": data}))
+}
+
 fn row(t: &Value) -> String {
     let state = match (&t["live"], t["status"]["state"].as_str()) {
         (Value::Bool(false), _) => "ended",

@@ -372,6 +372,26 @@ final class NextModel {
         return wouldLoseWork
     }
 
+    // MARK: Uploads
+
+    /// Copies a file into the Task's working place (ADR 0081), then types its
+    /// path into `terminal`, without Enter, for the user to send on.
+    func upload(_ data: Data, name: String, to terminal: String) async {
+        guard data.count <= V2Client.maxUpload else {
+            requestError = "\(name) is larger than \(V2Client.maxUpload / 1024 / 1024) MB."
+            return
+        }
+        var path: String?
+        await run { path = try await $0.upload(data, name: name, to: terminal) }
+        if let path { await send(Self.typed(path) + " ", to: terminal) }
+    }
+
+    /// A path a shell and an agent both read as one word.
+    static func typed(_ path: String) -> String {
+        let plain = path.allSatisfy { $0.isLetter || $0.isNumber || "._-/".contains($0) }
+        return plain ? path : "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
     // MARK: Task shells
 
     /// A new shell beside the Task's agent, kept at once so Focus shows it.

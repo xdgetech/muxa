@@ -33,6 +33,8 @@ public enum V2Request: Sendable {
     case taskShell(terminal: String)
     /// Ends a Task's shell; no other terminal.
     case closeTerminal(terminal: String)
+    /// A file into the Task's working place, under `.muxa/uploads/` (ADR 0081).
+    case upload(terminal: String, name: String, data: Data)
     /// Closes the Task of the agent `terminal` as Approve does, and its open items.
     case closeTask(terminal: String, worktree: WorktreeChoice? = nil)
     case routines
@@ -85,6 +87,8 @@ public enum V2Request: Sendable {
         case let .taskReview(terminal, note): set("task-review", ["terminal": terminal, "note": note])
         case let .taskShell(terminal): set("task-shell", ["terminal": terminal])
         case let .closeTerminal(terminal): set("close-terminal", ["terminal": terminal])
+        case let .upload(terminal, name, data):
+            set("upload", ["terminal": terminal, "name": name, "data": data.base64EncodedString()])
         case let .closeTask(terminal, worktree):
             set("close-task", ["terminal": terminal, "worktree": worktree?.rawValue])
         case .routines: set("routines", [:])
