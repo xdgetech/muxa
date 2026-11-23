@@ -27,6 +27,7 @@ struct InboxItemPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .card(radius: 12, border: true)
                 }
+                ItemSources(item: item)
                 actions
                 if position != nil { ItemTaskActions(item: item, onDone: onDone) }
                 if let error = model.requestError {
@@ -57,6 +58,7 @@ struct InboxItemPane: View {
         HStack(spacing: 10) {
             KindChip(kind: item.kind)
             if let position { Text("#\(position)") }
+            if let bot = item.bot { BotChip(bot: bot) }
             Text(item.origin).lineLimit(1)
             if let due = item.due { DueLabel(due: due) }
         }

@@ -7,7 +7,7 @@ struct WorkspaceSettings: View {
     let name: String
     @State private var tab = Tab.general
 
-    enum Tab: Hashable { case general, agent, connections, mcp, routines }
+    enum Tab: Hashable { case general, agent, connections, mcp, routines, bots }
 
     var body: some View {
         Group {
@@ -35,6 +35,7 @@ struct WorkspaceSettings: View {
             Segment(value: .connections, title: "Connections", id: "ws.tab.connections"),
             Segment(value: .mcp, title: "MCP", id: "ws.tab.mcp"),
             Segment(value: .routines, title: "Routines", id: "ws.tab.routines"),
+            Segment(value: .bots, title: "Bots", id: "ws.tab.bots"),
         ]
     }
 
@@ -46,6 +47,7 @@ struct WorkspaceSettings: View {
         case .connections: WorkspaceConnectionsForm(workspace: w)
         case .mcp: WorkspaceMcpForm(workspace: w)
         case .routines: WorkspaceRoutinesForm(workspace: w)
+        case .bots: WorkspaceBotsForm(workspace: w)
         }
     }
 }

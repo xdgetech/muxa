@@ -30,7 +30,9 @@ struct WorkspaceRoutinesForm: View {
                             Spacer()
                             if !r.spec.enabled { StateTag(text: "off") }
                         }
-                        Text(Self.when(r.spec)).font(.caption).foregroundStyle(Palette.textSecondary)
+                        Text(Self.when(r.spec) + (r.spec.bot.map { " · \($0)" } ?? ""))
+                            .font(.caption)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                     .padding(.vertical, 2)
                     .contentShape(Rectangle())
@@ -75,6 +77,9 @@ struct RoutineDraft: Identifiable {
     var readText: String?
     var enabled = true
     var items = ""
+    /// Empty: no Bot.
+    var bot = ""
+    var readOnly = false
     var id: String { existing?.name ?? "+" }
 
     init() {}
@@ -93,6 +98,8 @@ struct RoutineDraft: Identifiable {
         readText = r.instructionsText
         enabled = s.enabled
         items = s.items.map(String.init) ?? ""
+        bot = s.bot ?? ""
+        readOnly = s.readOnly
     }
 
     func spec() -> RoutineSpec? {
@@ -107,6 +114,8 @@ struct RoutineDraft: Identifiable {
         s.worker = Lines.optional(worker)
         s.enabled = enabled
         s.items = UInt32(Lines.trimmed(items))
+        s.bot = Lines.optional(bot)
+        s.readOnly = readOnly
         return s
     }
 }
@@ -148,6 +157,17 @@ struct RoutineEditor: View {
                 TextField("Items per run, 1 to 50 (default 10)", text: $draft.items)
                     .numberEntry()
                     .accessibilityIdentifier("routine.items")
+            }
+            Section {
+                Picker("Bot", selection: $draft.bot) {
+                    Text("None").tag("")
+                    ForEach(model.settings.workspace(workspace)?.bots ?? []) { Text($0.name).tag($0.name) }
+                }
+                .accessibilityIdentifier("routine.bot")
+                Toggle("Read only", isOn: $draft.readOnly)
+                    .accessibilityIdentifier("routine.readonly")
+            } footer: {
+                Text("A Bot's Routine starts from the Bot's soul and memory. Read only: Claude Code may not edit files in this Workspace's repos.")
             }
             instructions
         }

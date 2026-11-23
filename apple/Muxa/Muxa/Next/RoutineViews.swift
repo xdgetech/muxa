@@ -10,6 +10,11 @@ extension Routine {
         return schedule.map { "\(base) · \($0)" } ?? base
     }
 
+    /// `pr-watch · Personal`: its Bot, if any, and its Workspace.
+    var owner: String {
+        [bot, workspace].compactMap { $0 }.joined(separator: " · ")
+    }
+
     enum Health { case running, failed, ok, never }
 
     var health: Health {
@@ -48,7 +53,7 @@ struct RoutineRow: View {
             StateDot(color: health.color)
             VStack(alignment: .leading, spacing: 2) {
                 Text(routine.name).foregroundStyle(Palette.text)
-                Text("\(routine.workspace) · \(routine.when)")
+                Text("\(routine.owner) · \(routine.when)")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.textTertiary)
             }

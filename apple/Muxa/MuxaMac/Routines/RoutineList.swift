@@ -79,7 +79,7 @@ struct RoutineListRow: View {
         Button(action: pick) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(routine.name).font(.system(size: 13.5, weight: .medium)).foregroundStyle(Palette.text)
-                Text("\(routine.workspace) · \(routine.timing)")
+                Text("\(routine.owner) · \(routine.timing)")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.textTertiary)
             }

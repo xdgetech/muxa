@@ -46,10 +46,21 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func aBotsItemsCarryTheirLinksAndProposal() async throws {
+        let c = try await open()
+        let items = try await c.inbox().items.filter { $0.bot == "pr-watch" }
+        #expect(items.map(\.id) == ["d10", "d11"])
+        #expect(items[0].proposal?.target == "example/app#57")
+        #expect(items[1].links?.first?.url.hasPrefix("https://") == true)
+        let scan = try #require(try await c.routines().routines.first { $0.name == "scan" })
+        #expect(scan.bot == "pr-watch")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func aRunningRoutineIsAConflict() async throws {
         let c = try await open()
         let routines = try await c.routines().routines
-        #expect(routines.map(\.name) == ["dependency-digest", "nightly-backup", "release-notes"])
+        #expect(routines.map(\.name) == ["dependency-digest", "nightly-backup", "release-notes", "scan"])
         try await c.runRoutine(workspace: "app", name: "release-notes")
         await #expect(throws: V2Error.refused(code: "conflict", message: "release-notes already runs")) {
             try await c.runRoutine(workspace: "app", name: "release-notes")

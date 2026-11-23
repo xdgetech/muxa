@@ -932,6 +932,9 @@ pub struct Routine {
     pub running_since: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last: Option<RoutineLast>,
+    /// The Bot that owns it (ADR 0082).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
 }
 
 /// How the last run ended.

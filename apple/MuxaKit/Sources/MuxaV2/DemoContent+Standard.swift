@@ -3,7 +3,7 @@ import Foundation
 extension DemoContent {
     /// Two Tasks (one waits on the user, one has a shell beside its agent), a
     /// shell, a terminal muxa did not start, a Routine run, every Inbox kind,
-    /// and three Routines.
+    /// four Routines, and the Bot `pr-watch` with two items (ADR 0082).
     /// Approving `d8` needs force: its worktree holds work. `d9` came from muxa v1.
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
@@ -19,6 +19,15 @@ extension DemoContent {
             InboxItem(id: id, kind: kind, title: title, note: note, workspace: workspace, due: due,
                       laterUntil: nil, created: 1_764_000_000, source: source, terminal: terminal, routine: routine,
                       place: place)
+        }
+        func bot(_ id: String, _ kind: ItemKind, _ title: String, note: String? = nil, due: String? = nil,
+                 links: [ItemLink], proposal: ItemProposal? = nil) -> InboxItem {
+            var i = item(id, kind, title, note: note, due: due, source: "routine",
+                         routine: RoutineRef(workspace: "app", name: "scan"))
+            i.links = links
+            i.proposal = proposal
+            i.bot = "pr-watch"
+            return i
         }
         func routine(_ name: String, at: String?, running: Int64? = nil, last: RoutineLast?) -> Routine {
             Routine(workspace: "app", name: name, enabled: true, at: at, timezone: at.map { _ in "Europe/Berlin" },
@@ -70,12 +79,21 @@ extension DemoContent {
                 item("d9", .todo, "Resume: Tidy the release notes",
                      note: "From the old muxa. Resume Task starts the agent where it worked.", source: "v1",
                      place: ItemPlace(workspace: "app", path: "/demo/tasks/tidy-the-release-notes-t-1a2b3c")),
+                bot("d10", .decide, "Approve the docs PR #57?", note: "Two reviewers approved; CI is green.",
+                    links: [ItemLink(url: "https://github.com/example/app/pull/57", title: "PR #57: Fix README links")],
+                    proposal: ItemProposal(action: "Approve and merge", target: "example/app#57",
+                                           content: "Looks good to me. Merging with squash.")),
+                bot("d11", .reply, "Anna asks when the release ships", due: "2026-11-25",
+                    links: [ItemLink(url: "https://example.slack.com/archives/C01/p1764000000", title: "#release thread")]),
             ],
             routines: [
                 // t5 runs it.
                 routine("dependency-digest", at: "09:00", running: 1_764_000_000, last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 1)),
                 routine("nightly-backup", at: "02:00", last: RoutineLast(at: 1_764_000_000, ok: false, reason: "gh login expired.", published: nil)),
                 routine("release-notes", at: nil, last: nil),
+                Routine(workspace: "app", name: "scan", enabled: true, at: "09:00", timezone: "Europe/Berlin",
+                        schedule: "*/30 9-18 * * 1-5", nextDue: nil, runningSince: nil,
+                        last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 2), bot: "pr-watch"),
             ],
             workspaces: ["app", "Personal"],
             taskWorkspaces: [
@@ -151,8 +169,20 @@ extension DemoContent {
                         spec: RoutineSpec(name: "dependency-digest", at: "09:00", timezone: "Europe/Berlin",
                                           instructions: "routines/dependency-digest.md"),
                         instructionsText: "List the dependency updates of the week, security fixes first.\n"),
+                    SettingsRoutine(
+                        spec: RoutineSpec(name: "scan", schedule: "*/30 9-18 * * 1-5", timezone: "Europe/Berlin",
+                                          instructions: "routines/scan.md", bot: "pr-watch", readOnly: true),
+                        instructionsText: "List the PRs that wait for my review, and the threads that ask me something.\n"),
                 ],
-                foundRepos: ["app", "docs", "legacy"], hiddenRepos: ["legacy"]),
+                foundRepos: ["app", "docs", "legacy"], hiddenRepos: ["legacy"],
+                bots: [
+                    SettingsBot(
+                        spec: BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me"),
+                        soulText: "I watch the PRs that wait for my review and the threads that ask me something.\n"
+                            + "I never comment or merge by myself.\n",
+                        memoryText: "Anna owns the release. The docs repo merges with squash.\n",
+                        memoryVersions: 1),
+                ]),
             SettingsWorkspace(
                 name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude"),
                 routines: [

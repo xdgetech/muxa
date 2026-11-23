@@ -36,9 +36,9 @@ extension InboxItem {
     /// Something to read the user may turn into work (docs/next.md, Make it a Task).
     var canMakeTask: Bool { kind == .read }
 
-    /// Where the item came from: `Routine · nightly-backup`, `Personal · captured`.
+    /// Where the item came from: `pr-watch · Routine · scan`, `Personal · captured`.
     var origin: String {
-        if let routine { return "Routine · \(routine.name)" }
+        if let routine { return [bot, "Routine · \(routine.name)"].compactMap { $0 }.joined(separator: " · ") }
         let from = switch source {
         case "task": "Task"
         case "routine": "Routine"

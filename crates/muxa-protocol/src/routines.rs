@@ -30,6 +30,9 @@ pub struct RoutineInfo {
     /// The open run. At most one runs at a time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub running: Option<RoutineRun>,
+    /// The Bot that owns it (ADR 0082).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
 }
 
 /// A local wall-clock time on the days of a schedule, in an IANA time zone.

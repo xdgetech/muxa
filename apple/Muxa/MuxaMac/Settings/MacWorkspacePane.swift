@@ -37,6 +37,7 @@ struct MacWorkspacePane: View {
             ("MCP servers", .mcp, "ws.tab.mcp"),
             ("Agents", .agent, "ws.tab.agent"),
             ("Routines", .routines, "ws.tab.routines"),
+            ("Bots", .bots, "ws.tab.bots"),
         ]
     }
 
@@ -54,6 +55,7 @@ struct MacWorkspacePane: View {
         case .connections: page { MacConnectionsTable(workspace: w) }
         case .mcp: page { MacMcpCards(workspace: w) }
         case .routines: page { MacRoutinesTable(workspace: w) }
+        case .bots: page { MacBotsTable(workspace: w) }
         }
     }
 

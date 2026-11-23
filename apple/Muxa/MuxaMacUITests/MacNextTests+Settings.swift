@@ -81,6 +81,38 @@ extension MacNextTests {
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d8"]))
     }
 
+    @MainActor
+    func testABotsDecideItemShowsItsLinkAndProposal() throws {
+        let app = launch()
+        let item = app.descendants(matching: .any)["item.d10"]
+        XCTAssertTrue(item.waitForExistence(timeout: 10))
+        item.click()
+        XCTAssertTrue(app.staticTexts["detail.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["item.bot"].exists)
+        XCTAssertTrue(app.buttons["detail.link.0"].exists)
+        let proposal = app.staticTexts["detail.proposal"]
+        XCTAssertTrue(proposal.waitForExistence(timeout: 5))
+        XCTAssertEqual(proposal.value as? String ?? proposal.label, "Looks good to me. Merging with squash.")
+    }
+
+    @MainActor
+    func testABotIsAddedWithItsSoul() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.bots")
+        XCTAssertTrue(app.descendants(matching: .any)["settings.bot.pr-watch"].waitForExistence(timeout: 5))
+        app.buttons["bot.add"].click()
+        type("triage", into: app.textFields["bot.name"])
+        let soul = app.textViews["bot.soul"]
+        XCTAssertTrue(soul.waitForExistence(timeout: 5))
+        soul.click()
+        soul.typeText("I sort what came in overnight.")
+        app.buttons["editor.save"].click()
+        let row = app.descendants(matching: .any)["settings.bot.triage"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+        XCTAssertTrue(waitFor(soul, valueContaining: "I sort what came in overnight."))
+    }
+
     func openSettings(_ app: XCUIApplication) {
         app.typeKey(",", modifierFlags: .command)
     }

@@ -335,6 +335,8 @@ public struct Routine: Codable, Equatable, Sendable, Identifiable {
     public var nextDue: Int64?
     public var runningSince: Int64?
     public var last: RoutineLast?
+    /// The Bot that owns it (ADR 0082).
+    public var bot: String? = nil
 
     public var id: String { "\(workspace)/\(name)" }
 }

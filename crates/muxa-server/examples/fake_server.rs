@@ -115,6 +115,7 @@ impl Host for FakeHost {
             next_due: None,
             running_since: None,
             last: None,
+            bot: None,
         };
         Ok(RoutineList {
             routines: vec![routine("digest", Some("09:00")), routine("audit", None)],

@@ -123,6 +123,7 @@ pub fn info(r: &Routine, state: &RoutineState, at: u64) -> RoutineInfo {
         last_success: state.last_success.clone(),
         last_failure: state.last_failure.clone(),
         running: state.running.clone(),
+        bot: r.bot.clone(),
     }
 }
 

@@ -33,6 +33,7 @@ pub fn to_v2(r: RoutineInfo) -> v2::Routine {
         next_due: r.next_due.map(at),
         running_since: r.running.map(|run| at(run.started_at)),
         last,
+        bot: r.bot,
     }
 }
 

@@ -113,6 +113,60 @@ extension NextTests {
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d8"]))
     }
 
+    @MainActor
+    func testABotsDecideItemShowsItsLinkAndProposal() throws {
+        let app = launch()
+        let item = app.descendants(matching: .any)["item.d10"]
+        scrollTo(item, in: app)
+        XCTAssertTrue(item.label.contains("pr-watch"), item.label)
+        item.tap()
+        XCTAssertTrue(app.staticTexts["detail.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["item.bot"].exists)
+        let link = app.buttons["detail.link.0"]
+        scrollTo(link, in: app)
+        XCTAssertTrue(link.label.contains("PR #57"))
+        let proposal = app.staticTexts["detail.proposal"]
+        scrollTo(proposal, in: app)
+        XCTAssertEqual(proposal.label, "Looks good to me. Merging with squash.")
+    }
+
+    @MainActor
+    func testABotIsAddedWithItsSoul() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.bots")
+        XCTAssertTrue(app.descendants(matching: .any)["settings.bot.pr-watch"].waitForExistence(timeout: 5))
+        app.buttons["bot.add"].tap()
+        type("triage", into: app.textFields["bot.name"])
+        let soul = app.textViews["bot.soul"]
+        scrollTo(soul, in: app)
+        soul.tap()
+        soul.typeText("I sort what came in overnight.")
+        app.buttons["editor.save"].tap()
+        let row = app.descendants(matching: .any)["settings.bot.triage"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        scrollTo(soul, in: app)
+        XCTAssertTrue(waitFor(soul, valueContaining: "I sort what came in overnight."))
+    }
+
+    @MainActor
+    func testARoutineJoinsABotAndRunsReadOnly() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.routines")
+        let row = app.descendants(matching: .any)["settings.routine.dependency-digest"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let bot = app.buttons["routine.bot"]
+        scrollTo(bot, in: app)
+        bot.tap()
+        app.buttons["pr-watch"].firstMatch.tap()
+        let readOnly = app.switches["routine.readonly"]
+        scrollTo(readOnly, in: app)
+        readOnly.switches.firstMatch.tap()
+        app.buttons["editor.save"].tap()
+        XCTAssertTrue(waitFor(row, labelContaining: "pr-watch"))
+    }
+
     /// Settings: the phone's tab, or the gear at the foot of the tablet's sidebar.
     func showSettings(_ app: XCUIApplication) {
         show(app, tab: "Settings", segment: "home.settings")

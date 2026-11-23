@@ -59,7 +59,7 @@ struct ItemTaskActions: View {
 
     /// The Start Task sheet, prefilled from the item.
     private var seed: TaskSeed {
-        TaskSeed(title: item.title, goal: item.note, workspace: item.workspace)
+        TaskSeed(title: item.title, goal: item.taskGoal, workspace: item.workspace)
     }
 
     private var liveTerminal: MuxaV2.Terminal? {
