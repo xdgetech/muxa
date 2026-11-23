@@ -11,7 +11,9 @@ struct ClaudeConnectorsToggle: View {
     static let note = "Agents here also get your claude.ai connectors, such as Calendar or Sheets, beside the MCP servers above."
 
     var body: some View {
-        Toggle("Allow claude.ai connectors", isOn: Binding(get: { workspace.claudeConnectors }, set: save))
+        // A closure, not `set: save`: Swift 6.3.3 crashes in IRGen on that method
+        // reference's isolated conversion thunk.
+        Toggle("Allow claude.ai connectors", isOn: Binding(get: { workspace.claudeConnectors }, set: { save($0) }))
             .disabled(model.settings.readOnly || model.settings.saving)
             .accessibilityIdentifier("ws.claudeconnectors")
         SaveError(text: error, id: "ws.claudeconnectors.error")
