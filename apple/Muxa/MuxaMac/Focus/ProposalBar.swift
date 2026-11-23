@@ -1,9 +1,9 @@
 import MuxaV2
 import SwiftUI
 
-/// Above a talk's panes: the settings its Bot proposes (ADR 0086 decision 4),
-/// the same item as in the Inbox. Apply sends `inbox-apply`, which closes
-/// both; Not now hides the bar until the talk opens again.
+/// Above a talk on its Bot's page: the settings the Bot proposes (ADR 0086
+/// decision 4), the same item as in the Inbox. Apply sends `inbox-apply`,
+/// which closes both; Not now hides the bar until the talk opens again.
 struct ProposalBar: View {
     @Environment(NextModel.self) private var model
     let item: InboxItem

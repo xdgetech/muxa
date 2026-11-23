@@ -34,6 +34,10 @@ struct MuxaMacApp: App {
                 .toolbar(.hidden, for: .windowToolbar)
                 .ignoresSafeArea(.container, edges: .top)
                 .modifier(OnWindowStart { openWindow in
+                    nav.openElsewhere = { [weak chrome, weak nav] t in
+                        guard let chrome, let nav else { return false }
+                        return chrome.showOnBotPage(t, nav: nav)
+                    }
                     let capture = quickCapture ?? QuickCapture(model: model, nav: nav)
                     capture.register()
                     capture.openMain = { openWindow(id: "main") }

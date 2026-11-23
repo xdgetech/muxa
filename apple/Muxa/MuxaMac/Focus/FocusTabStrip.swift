@@ -11,8 +11,8 @@ struct FocusTabStrip: View {
     @State private var hovered: String?
 
     private var tasks: [MuxaV2.Terminal] {
-        guard let workspace = active?.workspace else { return model.liveTasks }
-        return model.liveTasks.filter { $0.workspace == workspace }
+        guard let workspace = active?.workspace else { return model.focusTasks }
+        return model.focusTasks.filter { $0.workspace == workspace }
     }
 
     var body: some View {

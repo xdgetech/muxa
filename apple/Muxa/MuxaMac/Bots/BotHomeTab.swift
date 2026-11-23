@@ -138,7 +138,7 @@ struct BotHomeTab: View {
             } subtitle: {
                 t.botRole(of: entry.name)
             } trailing: {
-                Text("Open in Focus")
+                Text(t.isTaskAgent ? "Open chat" : "Answer it")
             }
         }
         .buttonStyle(.plain)

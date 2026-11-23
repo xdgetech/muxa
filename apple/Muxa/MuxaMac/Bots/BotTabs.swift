@@ -1,54 +1,6 @@
 import MuxaV2
 import SwiftUI
 
-/// A Bot's live chats: talk Tasks with its `muxa.bot` (ADR 0083). A closed
-/// chat leaves no record, so only open ones show.
-struct BotChatsTab: View {
-    @Environment(NextModel.self) private var model
-    @Environment(NextNavigation.self) private var nav
-    let entry: BotEntry
-    let newChat: () -> Void
-
-    var body: some View {
-        let talks = model.talks(of: entry)
-        VStack(alignment: .leading, spacing: 8) {
-            if talks.isEmpty {
-                Text("No open chats.").foregroundStyle(Palette.textSecondary)
-            }
-            ForEach(talks) { t in
-                Button { nav.open(t) } label: {
-                    BotRow {
-                        StateDot(color: t.state.color, size: 8)
-                    } title: {
-                        Text(t.title)
-                    } subtitle: {
-                        proposal(for: t) ? "Proposal waiting · \(t.botRole(of: entry.name))" : t.botRole(of: entry.name)
-                    } trailing: {
-                        Text("Continue in Focus")
-                    }
-                    .selectableRow(false)
-                    .raisedCard(radius: 8)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("bot.chat.\(t.id)")
-            }
-            Button("New chat", action: newChat)
-                .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
-                .disabled(!model.isConnected)
-                .accessibilityIdentifier("bot.chats.new")
-            Text("Each chat is a Task with the Bot's soul and memory. Close it when the job is done; the next chat starts from what the Bot remembers.")
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 640, alignment: .leading)
-        }
-    }
-
-    private func proposal(for t: MuxaV2.Terminal) -> Bool {
-        model.inbox.items.contains { $0.terminal == t.id && $0.settingsProposal != nil }
-    }
-}
-
 /// A Bot's Routines with their last run, on/off and Run now. Edit opens
 /// Settings at the Routine.
 struct BotRoutinesTab: View {
@@ -124,14 +76,14 @@ struct BotFilesTab: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            panel(title: "Soul · yours", file: "soul.md") {
+            panel(title: "Soul · who it is · yours to write", file: "soul.md") {
                 text(entry.bot.soulText, empty: "No soul yet.", id: "bot.files.soul")
                 Button("Edit") { editing = BotDraft(entry.bot) }
                     .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
                     .disabled(model.settings.readOnly)
                     .accessibilityIdentifier("bot.files.editsoul")
             }
-            panel(title: "Memory · the Bot's", file: entry.bot.memoryHistory.first.map { "updated \(routineStamp($0.at))" } ?? "memory.md") {
+            panel(title: "Memory · what it learned", file: entry.bot.memoryHistory.first.map { "updated \(routineStamp($0.at))" } ?? "memory.md") {
                 text(entry.bot.memoryText, empty: "Nothing yet.", id: "bot.files.memory")
                 if !entry.bot.memoryHistory.isEmpty {
                     SectionLabel(title: "Earlier versions").padding(.top, 6)
@@ -175,9 +127,10 @@ struct BotFilesTab: View {
     private func panel(title: String, file: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                SectionLabel(title: title)
-                Spacer()
+                SectionLabel(title: title).layoutPriority(1)
+                Spacer(minLength: 8)
                 Text(file).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Palette.textTertiary)
+                    .lineLimit(1)
             }
             content()
         }

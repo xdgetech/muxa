@@ -62,3 +62,16 @@ struct BotWorkTests {
         #expect(t.lead == "weekly" && t.bot == "writer")
     }
 }
+
+/// Which terminals are a Bot's, and so stay off Focus (ADR 0086).
+struct BotTerminalTests {
+    @Test func aTalkARunAndAMemberBelongToABotAndAPlainTaskDoesNot() {
+        func t(_ labels: [String: String]) -> Terminal {
+            Terminal(id: "t", name: nil, live: true, status: nil, labels: labels, cols: 80, rows: 24)
+        }
+        #expect(t(["muxa.kind": "task", "muxa.role": "agent", "muxa.bot": "pr-watch"]).belongsToBot)
+        #expect(t(["muxa.kind": "routine", "muxa.role": "agent", "muxa.bot": "pr-watch"]).belongsToBot)
+        #expect(t(["muxa.kind": "handoff", "muxa.role": "agent", "muxa.lead": "weekly"]).belongsToBot)
+        #expect(!t(["muxa.kind": "task", "muxa.role": "agent"]).belongsToBot)
+    }
+}

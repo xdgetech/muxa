@@ -12,7 +12,7 @@ struct FocusSidebar: View {
 
     /// Needs-you Tasks are listed once, on top, not again in their Workspace.
     private var grouped: (groups: [WorkspaceGroup], unplaced: [MuxaV2.Terminal]) {
-        WorkspaceGroup.make(model.workspaceList, tasks: model.liveTasks, hidden: Set(model.needsYou.map(\.id)))
+        WorkspaceGroup.make(model.workspaceList, tasks: model.focusTasks, hidden: Set(model.focusNeedsYou.map(\.id)))
     }
 
     var body: some View {
@@ -20,13 +20,13 @@ struct FocusSidebar: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    if !model.needsYou.isEmpty { needsYou }
+                    if !model.focusNeedsYou.isEmpty { needsYou }
                     FocusWorkspaces(groups: grouped.groups, selected: $selected)
                     if !grouped.unplaced.isEmpty {
                         header { SectionLabel(title: "Tasks") }
                         ForEach(grouped.unplaced) { row($0, style: .task) }
                     }
-                    if !model.otherTerminals.isEmpty { others }
+                    if !model.focusOthers.isEmpty { others }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 10)
@@ -42,13 +42,13 @@ struct FocusSidebar: View {
 
     @ViewBuilder private var needsYou: some View {
         HStack {
-            SectionLabel(title: "Needs you · \(model.needsYou.count)", color: TaskState.needsYou.color)
+            SectionLabel(title: "Needs you · \(model.focusNeedsYou.count)", color: TaskState.needsYou.color)
             Spacer()
             KeyHint("\(Shortcut.nextNeedsYou.display) next")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        ForEach(model.needsYou) { row($0, style: .needsYou) }
+        ForEach(model.focusNeedsYou) { row($0, style: .needsYou) }
     }
 
     @ViewBuilder private var others: some View {
@@ -60,7 +60,7 @@ struct FocusSidebar: View {
                         .rotationEffect(.degrees(showOthers ? 90 : 0))
                     SectionLabel(title: OtherTerminals.title)
                     Spacer()
-                    Text(OtherTerminals.count(model.otherTerminals.count))
+                    Text(OtherTerminals.count(model.focusOthers.count))
                         .font(.system(size: 11))
                 }
                 .foregroundStyle(Palette.textTertiary)
@@ -70,7 +70,7 @@ struct FocusSidebar: View {
             .otherTerminalsToggle(open: showOthers)
         }
         if showOthers {
-            ForEach(model.otherTerminals) { row($0, style: .other) }
+            ForEach(model.focusOthers) { row($0, style: .other) }
         }
     }
 

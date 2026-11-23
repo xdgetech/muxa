@@ -36,15 +36,18 @@ extension MacNextTests {
     }
 
     @MainActor
-    func testAProposalIsAppliedFromItsTalkInFocus() throws {
+    func testAProposalIsAppliedFromItsChatOnTheBotPage() throws {
         let app = launch()
         app.typeKey("b", modifierFlags: [.command, .shift])
         let talk = app.descendants(matching: .any)["bot.terminal.t7"]
         XCTAssertTrue(talk.waitForExistence(timeout: 10))
         talk.click()
+        // The talk opens on the Bot page, on Chat, not in Focus (ADR 0086).
+        XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["bot.chat.t7"].exists)
         let bar = app.descendants(matching: .any)["proposal.bar"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
-        app.buttons["proposal.apply"].click()
+        app.typeKey(.return, modifierFlags: .command)
         XCTAssertTrue(waitForGone(bar))
         app.typeKey("h", modifierFlags: [.command, .shift])
         XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
@@ -52,7 +55,17 @@ extension MacNextTests {
     }
 
     @MainActor
-    func testNewBotStartsItsFirstChat() throws {
+    func testATalkIsNotInFocus() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["terminal.t1"].exists, "a plain Task is in Focus")
+        XCTAssertFalse(app.descendants(matching: .any)["terminal.t7"].exists, "pr-watch's talk is not")
+        XCTAssertFalse(app.descendants(matching: .any)["tab.t7"].exists)
+    }
+
+    @MainActor
+    func testNewBotStartsItsFirstChatOnItsPage() throws {
         let app = launch()
         app.typeKey("b", modifierFlags: [.command, .shift])
         let new = app.buttons["bots.new"]
@@ -61,8 +74,8 @@ extension MacNextTests {
         type("deps", into: app.textFields["newbot.name"])
         type("Keeps the dependencies up to date", into: app.textFields["newbot.description"])
         app.buttons["newbot.create"].click()
-        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
-        app.typeKey("b", modifierFlags: [.command, .shift])
-        XCTAssertTrue(app.descendants(matching: .any)["bot.app.deps"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["bot.app.deps"].exists)
+        XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
     }
 }

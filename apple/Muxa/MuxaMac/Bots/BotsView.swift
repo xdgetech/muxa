@@ -27,17 +27,19 @@ struct BotsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Palette.pane)
             }
+            // Chats has no Run now; its own split fills the pane.
             KeyLegend(items: [
                 (Shortcut.newChat.display, "new chat"),
-                (Shortcut.runBot.display, "run now"),
+                (chrome.botTab == .chats ? "" : Shortcut.runBot.display, "run now"),
                 (Shortcut.botTabs.display, "tabs"),
                 (Shortcut.bots.display, "Bots"),
-            ])
+            ].filter { !$0.0.isEmpty })
         }
         .font(.system(size: 13))
         .foregroundStyle(Palette.text)
         .background(Palette.ground)
         .sheet(isPresented: Bindable(chrome).showNewBot) { NewBotSheet() }
+        .modifier(CloseTaskConfirm())
         .task {
             await model.refreshRoutines()
             await model.settings.load()

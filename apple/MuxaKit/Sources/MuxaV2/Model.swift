@@ -497,6 +497,8 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     public var bot: String? { labels["muxa.bot"] }
     /// The team lead a member's run works for (ADR 0086).
     public var lead: String? { labels["muxa.lead"] }
+    /// A Bot's talk, run or member (ADR 0086): it shows on its Bot's page, not in Focus.
+    public var belongsToBot: Bool { bot != nil || lead != nil }
     /// A Task's places, the working place first; empty for other terminals.
     public var places: [Place] {
         guard let text = labels["muxa.places"], let data = text.data(using: .utf8) else { return [] }

@@ -78,7 +78,12 @@ final class NextNavigation {
     /// The terminal of the pane that has the keyboard.
     var activePane: String? { panes.indices.contains(active) ? panes[active] : nil }
 
+    /// Where a terminal opens instead of Focus; true when it took it. The
+    /// Mac shows a Bot's terminals on the Bot's page (ADR 0086).
+    @ObservationIgnored var openElsewhere: (@MainActor (MuxaV2.Terminal) -> Bool)?
+
     func open(_ t: MuxaV2.Terminal) {
+        if openElsewhere?(t) == true { return }
         terminal = t.id
         focus = true
     }

@@ -144,7 +144,7 @@ private struct PaneActions: View {
 }
 
 /// A small icon-and-text button in a pane header; filled while its panel is open.
-private struct PaneActionStyle: ButtonStyle {
+struct PaneActionStyle: ButtonStyle {
     let on: Bool
     @Environment(\.isEnabled) private var enabled
 

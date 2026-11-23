@@ -21,8 +21,32 @@ final class MacChrome {
     var botPick: BotPick?
     var botTab = BotTab.home
     var showNewBot = false
+    /// The talk, run or member open on the Chats tab, and how it shows.
+    var botTerminal: String?
+    var botView = BotView.chat
     /// Settings opens on this Routine's editor; Settings clears it.
     var editRoutine: RoutineRef?
+}
+
+extension MacChrome {
+    /// Opens a Bot's terminal on its Bot's page (ADR 0086): a talk on Chat, a
+    /// run or a member on Terminal, where the user answers its menu. False
+    /// for a terminal of no Bot, which opens in Focus.
+    func showOnBotPage(_ t: MuxaV2.Terminal, nav: NextNavigation) -> Bool {
+        guard t.belongsToBot, let workspace = t.labels["muxa.workspace"], let bot = t.bot ?? t.lead else { return false }
+        nav.focus = false
+        nav.tab = .bots
+        botPick = .bot(workspace: workspace, name: bot)
+        botTab = .chats
+        botTerminal = t.id
+        botView = t.isTaskAgent ? .chat : .terminal
+        return true
+    }
+}
+
+/// How the Chats tab shows its open terminal. Chat serves Task agents only.
+enum BotView: Hashable {
+    case chat, terminal, reader
 }
 
 /// What the Bots list picked: a Bot of a Workspace, or a Routine without a Bot.

@@ -16,14 +16,6 @@ struct FocusView: View {
         model.terminals.first { $0.id == selected }
     }
 
-    /// An open settings proposal of the talk Focus shows (ADR 0086 decision 4).
-    private var proposal: (InboxItem, SettingsProposal)? {
-        guard let id = active?.id, active?.isTaskAgent == true,
-              let item = model.inbox.items.first(where: { $0.terminal == id && $0.settingsProposal != nil }),
-              let p = item.settingsProposal else { return nil }
-        return (item, p)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             FocusHeader(active: active)
@@ -32,9 +24,6 @@ struct FocusView: View {
                     FocusSidebar(selected: $selected)
                 }
                 VStack(spacing: 0) {
-                    if let (item, proposal) = proposal {
-                        ProposalBar(item: item, proposal: proposal).id(item.id)
-                    }
                     if active != nil {
                         PaneSplit { loopFor = $0 }
                     } else {
@@ -64,7 +53,7 @@ struct FocusView: View {
     /// Focus always shows a Task when there is one: the first that needs the
     /// user, else the first live one.
     private func openFirstTask() {
-        guard selected == nil, let first = (model.needsYou + model.liveTasks).first else { return }
+        guard selected == nil, let first = (model.focusNeedsYou + model.focusTasks).first else { return }
         selected = first.id
     }
 

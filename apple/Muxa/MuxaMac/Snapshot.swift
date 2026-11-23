@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant|focus-talk|bots[-chats|-routines|-files|-new]` in the environment, the app
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant|focus-talk|bots[-chats|-routines|-files|-new]|bots[-chat|-run` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
@@ -18,12 +18,12 @@ enum Snapshot {
         case let screen? where screen.hasPrefix("bots"):
             nav.tab = .bots
             chrome.botPick = .bot(workspace: "app", name: "pr-watch")
-            let tabs: [String: BotTab] = ["bots-chats": .chats, "bots-routines": .routines, "bots-files": .files]
+            let tabs: [String: BotTab] = ["bots-chat": .chats, "bots-run": .chats, "bots-routines": .routines,
+                                          "bots-files": .files]
             chrome.botTab = tabs[screen] ?? .home
+            chrome.botTerminal = screen == "bots-run" ? "t8" : "t7"
+            chrome.botView = screen == "bots-run" ? .terminal : .chat
             chrome.showNewBot = screen == "bots-new"
-        case "focus-talk":
-            nav.terminal = "t7"
-            nav.focus = true
         case "shortcuts": chrome.showShortcuts = true
         case "palette":
             nav.focus = true

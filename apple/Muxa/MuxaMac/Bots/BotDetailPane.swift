@@ -2,7 +2,8 @@ import MuxaV2
 import SwiftUI
 
 /// The picked Bot: its status, who it is, the Home/Chats/Routines/Files tabs
-/// and New chat, Run now and Pause at the foot (ADR 0086).
+/// and New chat, Run now and Pause at the foot (ADR 0086). Chats fills the
+/// pane with its own split instead.
 struct BotDetailPane: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -13,21 +14,26 @@ struct BotDetailPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             heading
-            ScrollView {
-                Group {
-                    switch chrome.botTab {
-                    case .home: BotHomeTab(entry: entry, newChat: newChat)
-                    case .chats: BotChatsTab(entry: entry, newChat: { Task { await startChat() } })
-                    case .routines: BotRoutinesTab(entry: entry)
-                    case .files: BotFilesTab(entry: entry)
+            if chrome.botTab == .chats {
+                BotChatsTab(entry: entry, newChat: { Task { await startChat() } })
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+            } else {
+                ScrollView {
+                    Group {
+                        switch chrome.botTab {
+                        case .home, .chats: BotHomeTab(entry: entry, newChat: newChat)
+                        case .routines: BotRoutinesTab(entry: entry)
+                        case .files: BotFilesTab(entry: entry)
+                        }
                     }
+                    .frame(maxWidth: 900, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 18)
                 }
-                .frame(maxWidth: 900, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 18)
+                actions
             }
-            actions
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Palette.pane)

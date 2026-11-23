@@ -60,7 +60,7 @@ struct HomeActions: View {
             .accessibilityIdentifier("detail.retry")
         }
         if let terminal {
-            Button { nav.open(terminal) } label: { ActionLabel(title: "Open in Focus", key: "⏎") }
+            Button { nav.open(terminal) } label: { ActionLabel(title: terminal.belongsToBot ? "Open in Bots" : "Open in Focus", key: "⏎") }
                 .buttonStyle(ActionButtonStyle())
                 .accessibilityIdentifier("detail.open")
         }
