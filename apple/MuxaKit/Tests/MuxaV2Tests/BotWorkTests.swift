@@ -137,3 +137,36 @@ struct BotRulesTests {
         #expect(after.workspaces[0].botRules == BotRules(deny: ["Bash", "Write"]))
     }
 }
+
+/// Removing a Bot moves its Routines in the same settings-update.
+struct BotRemovalTests {
+    @Test func itsRoutinesMoveThenTheBotGoes() throws {
+        let scan = RoutineSpec(name: "scan", schedule: "*/30 9-18 * * 1-5", instructions: "routines/scan.md",
+                               bot: "pr-watch", readOnly: true)
+        let digest = RoutineSpec(name: "digest", at: "09:00", instructions: "routines/digest.md")
+        let w = SettingsWorkspace(name: "app", root: "/demo", routines: [
+            SettingsRoutine(spec: scan), SettingsRoutine(spec: digest),
+        ])
+        var moved = scan
+        moved.bot = "triage"
+        #expect(w.botRemoval("pr-watch", movingRoutinesTo: "triage") == [
+            .routineUpdate(workspace: "app", routine: moved), .botRemove(workspace: "app", name: "pr-watch"),
+        ])
+        moved.bot = nil
+        #expect(w.botRemoval("pr-watch", movingRoutinesTo: nil).first == .routineUpdate(workspace: "app", routine: moved))
+        #expect(w.botRemoval("triage", movingRoutinesTo: nil) == [.botRemove(workspace: "app", name: "triage")])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func theDemoAppliesItAllOrNone() async throws {
+        let c = try await V2Client.open(DemoChannel(), name: "test")
+        let s = try await c.settings()
+        await #expect(throws: V2Error.self) {
+            try await c.settingsUpdate(revision: s.revision, ops: [.botRemove(workspace: "app", name: "pr-watch")])
+        }
+        let after = try await c.settingsUpdate(
+            revision: s.revision, ops: s.workspaces[0].botRemoval("pr-watch", movingRoutinesTo: nil))
+        #expect(after.workspaces[0].bots.isEmpty)
+        #expect(after.workspaces[0].routines.first { $0.name == "scan" }?.spec.bot == nil)
+    }
+}

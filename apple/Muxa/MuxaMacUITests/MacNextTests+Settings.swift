@@ -149,3 +149,26 @@ extension MacNextTests {
         XCTAssertTrue(waitFor(control, valueContaining: "1"))
     }
 }
+
+/// Removing a Bot that owns Routines moves them first, in one save.
+extension MacNextTests {
+    @MainActor
+    func testABotWithRoutinesIsRemovedAndItsRoutinesMove() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.bots")
+        let bot = app.descendants(matching: .any)["settings.bot.pr-watch"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 5))
+        bot.click()
+        XCTAssertTrue(app.descendants(matching: .any)["bot.remove.routine.scan"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.popUpButtons["bot.remove.moveto"].exists)
+        app.buttons["editor.remove"].click()
+        let confirm = app.buttons["editor.confirmremove"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+        XCTAssertTrue(waitForGone(bot))
+        app.buttons["ws.tab.routines"].click()
+        let scan = app.descendants(matching: .any)["settings.routine.scan"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 5))
+        XCTAssertFalse(scan.label.contains("pr-watch"), scan.label)
+    }
+}

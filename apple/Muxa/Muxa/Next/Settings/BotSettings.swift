@@ -120,6 +120,10 @@ struct BotEditor: View {
     @State private var confirmRestore = false
     @State private var restoreError: String?
     @State private var talkError: String?
+    /// Remove with Routines: the Bot they move to; empty is no Bot.
+    @State private var moveTo = ""
+    @State private var confirmRemove = false
+    @State private var removeError: String?
 
     init(workspace: SettingsWorkspace, draft: BotDraft) {
         self.workspace = workspace
@@ -129,9 +133,10 @@ struct BotEditor: View {
     var body: some View {
         SettingsEditor(
             title: draft.existing?.name ?? "New Bot", ops: ops,
-            remove: draft.existing.map {
-                (.botRemove(workspace: workspace.name, name: $0.name),
-                 "Remove its Routines first. Its soul and memory stay in .muxa/bots/.")
+            remove: draft.existing.flatMap { bot in
+                // A Bot with Routines removes in its own section, which moves them first.
+                owned(bot).isEmpty
+                    ? (.botRemove(workspace: workspace.name, name: bot.name), keepsFiles(bot.name)) : nil
             }
         ) {
             Section {
@@ -158,6 +163,55 @@ struct BotEditor: View {
             team
             soul
             if let bot = draft.existing { memory(bot) }
+            if let bot = draft.existing, !owned(bot).isEmpty { removal(bot) }
+        }
+    }
+
+    /// Its Routines in the settings as they are now.
+    private func owned(_ bot: SettingsBot) -> [SettingsRoutine] {
+        (model.settings.workspace(workspace.name) ?? workspace).routines.filter { $0.spec.bot == bot.name }
+    }
+
+    private func keepsFiles(_ name: String) -> String {
+        "Its soul and memory stay in .muxa/bots/\(name)/."
+    }
+
+    /// Remove for a Bot with Routines: they move to another Bot or to none,
+    /// then the Bot goes, in one settings-update.
+    private func removal(_ bot: SettingsBot) -> some View {
+        let current = model.settings.workspace(workspace.name) ?? workspace
+        let others = current.bots.map(\.name).filter { $0 != bot.name }
+        return Section {
+            Picker("Its Routines move to", selection: $moveTo) {
+                Text("No Bot").tag("")
+                ForEach(others, id: \.self) { Text($0).tag($0) }
+            }
+            .accessibilityIdentifier("bot.remove.moveto")
+            ForEach(owned(bot)) { r in
+                Label(r.name, systemImage: "arrow.turn.down.right")
+                    .font(.system(.callout, design: .monospaced))
+                    .accessibilityIdentifier("bot.remove.routine.\(r.name)")
+            }
+            Button("Remove", role: .destructive) { confirmRemove = true }
+                .disabled(model.settings.readOnly || model.settings.saving)
+                .accessibilityIdentifier("editor.remove")
+            SaveError(text: removeError, id: "bot.remove.error")
+        } header: {
+            Text("Remove")
+        } footer: {
+            Text(keepsFiles(bot.name))
+        }
+        .confirmationDialog("Remove \(bot.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove \(bot.name)", role: .destructive) {
+                let ops = current.botRemoval(bot.name, movingRoutinesTo: moveTo.isEmpty ? nil : moveTo)
+                Task {
+                    removeError = await model.settings.save(ops)
+                    if removeError == nil { dismiss() }
+                }
+            }
+            .accessibilityIdentifier("editor.confirmremove")
+        } message: {
+            Text("Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(keepsFiles(bot.name))")
         }
     }
 

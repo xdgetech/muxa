@@ -56,3 +56,17 @@ extension Terminal {
     /// The rules' terminal label: the Workspace it runs in.
     fileprivate var workspace: String? { labels["muxa.workspace"] }
 }
+
+extension SettingsWorkspace {
+    /// Removing Bot `name`: each of its Routines moves to `target` (nil: no
+    /// Bot) by a full `routine-update`, then `bot-remove`. Sent as one
+    /// `settings-update`, so all of it applies or none.
+    public func botRemoval(_ name: String, movingRoutinesTo target: String?) -> [SettingsOp] {
+        let moves = routines.filter { $0.spec.bot == name }.map { r -> SettingsOp in
+            var spec = r.spec
+            spec.bot = target
+            return .routineUpdate(workspace: self.name, routine: spec)
+        }
+        return moves + [.botRemove(workspace: self.name, name: name)]
+    }
+}
