@@ -13,14 +13,23 @@ struct PaneSplit: View {
     /// Opens the loop sheet of a Task.
     let onLoop: (MuxaV2.Terminal) -> Void
 
+    /// The open Task's agent and its live shells, from the host's list. Drawn
+    /// from here rather than `nav.panes`, so a Task opens with all its panes in
+    /// one layout: laying out the agent alone first attached it at the full
+    /// width and resized it again a moment later.
+    private var shown: [MuxaV2.Terminal] {
+        guard let task = model.terminals.first(where: { $0.id == nav.terminal }) else { return [] }
+        return [task] + model.shells(of: task.id)
+    }
+
     var body: some View {
         HSplitView {
-            ForEach(Array(nav.panes.enumerated()), id: \.element) { index, id in
-                if let t = model.terminals.first(where: { $0.id == id }) {
-                    pane(t, index: index)
-                }
+            ForEach(Array(shown.enumerated()), id: \.element.id) { index, t in
+                pane(t, index: index)
             }
         }
+        // One split per Task: its dividers start even, every time it opens.
+        .id(nav.terminal)
         .onAppear(perform: sync)
         .onChange(of: model.terminals) { sync() }
         .onChange(of: nav.terminal) { sync() }
@@ -35,7 +44,7 @@ struct PaneSplit: View {
     }
 
     private func pane(_ t: MuxaV2.Terminal, index: Int) -> some View {
-        let active = index == nav.active
+        let active = t.id == nav.activePane || (index == 0 && nav.activePane == nil)
         let chat = index == 0 && nav.showChat && t.isTaskAgent
         return VStack(spacing: 0) {
             header(t, index: index, active: active)
@@ -51,7 +60,7 @@ struct PaneSplit: View {
         .frame(minWidth: 240)
         .background(Palette.ground)
         .overlay {
-            if nav.panes.count > 1, active {
+            if shown.count > 1, active {
                 Rectangle().strokeBorder(t.state.color, lineWidth: 1).allowsHitTesting(false)
             }
         }
