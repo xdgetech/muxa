@@ -273,6 +273,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             "settings-update" -> try {
                 val ops = (m["ops"] as? JsonArray).orEmpty().map { it as? JsonObject ?: JsonObject(emptyMap()) }
                 reply(id, "settings" to enc(settings.update(m.str("revision") ?: "", ops)))
+                ops.mapNotNull { SettingsOp.fromJson(it) as? SettingsOp.BotRename }.forEach(::renameBot)
             } catch (e: DemoSettings.Refusal) {
                 send(error(id, e.code, e.message ?: ""))
             }
@@ -490,6 +491,18 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             else -> return send(error(id, "bad-request", "$item has no Routine or Task to retry"))
         }
         resolve(id, failed)
+    }
+
+    /** As the server does after a `bot-rename`: the Bot's items, counts and Routines take the new name. */
+    private fun renameBot(op: SettingsOp.BotRename) {
+        fun moved(item: InboxItem) = if (item.workspace == op.workspace && item.bot == op.from) item.copy(bot = op.to) else item
+        val i = inbox
+        inbox = i.copy(
+            revision = i.revision + 1, items = i.items.map(::moved), done = i.done.map(::moved),
+            bots = i.bots.map { if (it.workspace == op.workspace && it.bot == op.from) it.copy(bot = op.to) else it },
+        )
+        routines.replaceAll { if (it.workspace == op.workspace && it.bot == op.from) it.copy(bot = op.to) else it }
+        if (watching) send(buildJsonObject { put("type", "inbox"); put("inbox", enc(inbox)) })
     }
 
     /** Sends the item's ops as `settings-update` with its revision, then marks it Done (ADR 0083). */

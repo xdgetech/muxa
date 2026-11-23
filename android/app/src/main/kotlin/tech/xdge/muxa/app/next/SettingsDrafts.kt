@@ -241,6 +241,13 @@ data class BotDraft(
 
         fun isValidName(name: String) = BOT_NAME.matches(name)
 
+        /** A name as typed for a rename: lowercase, with spaces as `-`. */
+        fun typedName(text: String): String = text.lowercase().replace(' ', '-')
+
+        /** Whether [from] can be renamed to [to] among the Workspace's [names]. */
+        fun canRename(from: String, to: String, names: List<String>): Boolean =
+            to != from && isValidName(to) && to !in names
+
         /** Why [line] cannot be one of a Bot's commands, or null. The host writes it as `Bash(<line>)`. */
         fun commandProblem(line: String): String? = when {
             line.isBlank() -> "Write a command."

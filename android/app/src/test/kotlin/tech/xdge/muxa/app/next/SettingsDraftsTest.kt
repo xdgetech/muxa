@@ -3,6 +3,7 @@ package tech.xdge.muxa.app.next
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import tech.xdge.muxa.v2.BotCount
 import tech.xdge.muxa.v2.BotSpec
@@ -174,5 +175,17 @@ class SettingsDraftsTest {
         val b = SettingsBot("collector", commands = listOf("gh pr list:*"))
         assertEquals(listOf("gh pr list:*"), BotDraft.of(b).spec().commands)
         assertEquals(BotDraft.commandProblem("a(b"), BotDraft.of(b).copy(commands = listOf("a(b")).problem)
+    }
+
+    @Test
+    fun aBotIsRenamedOnlyToAFreeValidName() {
+        assertEquals("pr-reviews", BotDraft.typedName("PR Reviews"))
+        val names = listOf("pr-watch", "triage")
+        assertTrue(BotDraft.canRename("pr-watch", "reviews", names))
+        assertFalse(BotDraft.canRename("pr-watch", "pr-watch", names))
+        assertFalse(BotDraft.canRename("pr-watch", "triage", names))
+        assertFalse(BotDraft.canRename("pr-watch", "", names))
+        assertFalse(BotDraft.canRename("pr-watch", "a".repeat(65), names))
+        assertFalse(BotDraft.canRename("pr-watch", "pr.watch", names))
     }
 }

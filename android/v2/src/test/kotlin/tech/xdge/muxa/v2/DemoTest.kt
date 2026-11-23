@@ -634,6 +634,29 @@ class DemoTest {
         }
     }
 
+    @Test
+    fun aRenamedBotKeepsItsRoutinesTeamAndItems() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            c.watch()
+            val lead = SettingsOp.BotAdd("app", BotSpec("lead", members = listOf("pr-watch")))
+            val s0 = c.settingsUpdate("1", listOf(lead))
+            val s = c.settingsUpdate(s0.revision, listOf(SettingsOp.BotRename("app", "pr-watch", "reviews")))
+            val app = s.workspaces.first { it.name == "app" }
+            assertEquals(listOf("reviews", "lead"), app.bots.map { it.name })
+            assertEquals(listOf("reviews"), app.bots.first { it.name == "lead" }.members)
+            assertEquals(listOf("gh pr list:*"), app.bots.first { it.name == "reviews" }.commands)
+            assertEquals("reviews", app.routines.first { it.name == "scan" }.bot)
+            val inbox = c.inbox()
+            assertEquals(listOf("reviews", "reviews"), inbox.items.filter { it.id in setOf("d10", "d11") }.map { it.bot })
+            assertEquals(listOf("reviews"), inbox.bots.map { it.bot })
+            assertEquals("reviews", c.routines().first.first { it.name == "scan" }.bot)
+            assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.BotRename("app", "reviews", "lead"))) }.code)
+            assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.BotRename("app", "reviews", "Re Views"))) }.code)
+            c.close()
+        }
+    }
+
     private suspend fun refusal(block: suspend () -> Unit): V2Error.Refused {
         try {
             block()

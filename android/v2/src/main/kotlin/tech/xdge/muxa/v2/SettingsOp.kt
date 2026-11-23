@@ -105,6 +105,9 @@ sealed class SettingsOp(val op: String) {
     data class BotAdd(val workspace: String, val bot: BotSpec, val soulText: String? = null) : SettingsOp("bot-add")
     data class BotUpdate(val workspace: String, val bot: BotSpec, val soulText: String? = null) : SettingsOp("bot-update")
 
+    /** Renames the Bot with its Routines, teams, folder and Inbox items (ADR 0089). */
+    data class BotRename(val workspace: String, val from: String, val to: String) : SettingsOp("bot-rename")
+
     /** Its Routines must go first; its folder stays. */
     data class BotRemove(val workspace: String, val name: String) : SettingsOp("bot-remove")
 
@@ -142,6 +145,7 @@ sealed class SettingsOp(val op: String) {
             is BotAdd -> workspace
             is BotUpdate -> workspace
             is BotRemove -> workspace
+            is BotRename -> workspace
             is BotMemoryRestore -> workspace
             is AssistantUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
         }
@@ -181,6 +185,7 @@ sealed class SettingsOp(val op: String) {
             is BotAdd -> bot(o.workspace, o.bot, o.soulText)
             is BotUpdate -> bot(o.workspace, o.bot, o.soulText)
             is BotRemove -> { put("workspace", o.workspace); put("name", o.name) }
+            is BotRename -> { put("workspace", o.workspace); put("from", o.from); put("to", o.to) }
             is BotMemoryRestore -> { put("workspace", o.workspace); put("name", o.name); put("version", o.version) }
             is AssistantUpdate -> {
                 put("enabled", o.enabled)
@@ -233,6 +238,7 @@ sealed class SettingsOp(val op: String) {
                 "bot-add" -> BotAdd(ws(), obj("bot") { opsJson.decodeFromJsonElement(it) }, s("soul_text"))
                 "bot-update" -> BotUpdate(ws(), obj("bot") { opsJson.decodeFromJsonElement(it) }, s("soul_text"))
                 "bot-remove" -> BotRemove(ws(), req("name"))
+                "bot-rename" -> BotRename(ws(), req("from"), req("to"))
                 "bot-memory-restore" -> BotMemoryRestore(
                     ws(), req("name"), (o["version"] as? JsonPrimitive)?.intOrNull ?: throw IllegalArgumentException("no version"),
                 )

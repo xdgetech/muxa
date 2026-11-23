@@ -41,6 +41,7 @@ class SettingsTest {
                 """{"op":"workspace-update","workspace":"w","bot_rules":{"allow":[],"deny":["Bash"]}}""",
             SettingsOp.BotAdd("w", BotSpec("collector", commands = listOf("/path/collect.sh delivery:*"))) to
                 """{"op":"bot-add","workspace":"w","bot":{"name":"collector","enabled":true,"commands":["/path/collect.sh delivery:*"]}}""",
+            SettingsOp.BotRename("w", "pr-watch", "reviews") to """{"op":"bot-rename","workspace":"w","from":"pr-watch","to":"reviews"}""",
             SettingsOp.AssistantUpdate(true) to """{"op":"assistant-update","enabled":true}""",
             SettingsOp.AssistantUpdate(false, "reviewer", "Be brief.") to
                 """{"op":"assistant-update","enabled":false,"worker":"reviewer","soul_text":"Be brief."}""",

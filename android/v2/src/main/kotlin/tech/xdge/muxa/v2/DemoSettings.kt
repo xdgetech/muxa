@@ -140,6 +140,16 @@ internal class DemoSettings(initial: Settings) {
                 .copy(memoryText = old.memoryText, memoryVersions = old.memoryVersions)
             w.copy(bots = w.bots.map { if (it.name == old.name) updated else it })
         }
+        is SettingsOp.BotRename -> {
+            require(w.bots.any { it.name == op.from }) { "no Bot ${op.from}" }
+            require(BOT_NAME.matches(op.to)) { "a Bot's name is 1 to 64 lowercase letters, digits, - and _" }
+            require(w.bots.none { it.name == op.to }) { "${op.to} exists" }
+            fun renamed(n: String) = if (n == op.from) op.to else n
+            w.copy(
+                bots = w.bots.map { b -> b.copy(name = renamed(b.name), members = b.members.map(::renamed)) },
+                routines = w.routines.map { r -> if (r.bot == op.from) r.copy(bot = op.to) else r },
+            )
+        }
         is SettingsOp.BotRemove -> {
             require(w.bots.any { it.name == op.name }) { "no Bot ${op.name}" }
             require(w.routines.none { it.bot == op.name }) { "${op.name} still owns Routines; remove them first" }
@@ -195,6 +205,7 @@ internal class DemoSettings(initial: Settings) {
         const val MAX_MEMBERS = 6
         const val MAX_HANDOFFS = 50
         const val MAX_COMMANDS = 50
+        val BOT_NAME = Regex("[a-z0-9_-]{1,64}")
         const val MAX_COMMAND_BYTES = 500
     }
 }

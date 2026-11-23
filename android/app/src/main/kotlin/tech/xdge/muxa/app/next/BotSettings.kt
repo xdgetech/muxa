@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,6 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -83,8 +87,11 @@ private fun BotDialog(
     // The host's copy, so a restored memory shows at once.
     val live = editor.settings?.workspaces?.firstOrNull { it.name == workspace }?.bots?.firstOrNull { it.name == d.name }
     FormDialog(if (d.isNew) "New Bot" else d.name, "settings.bot.form", d.problem == null, { editor.save(listOf(d.op(workspace))) }, close) {
-        Field(d.name, { d = d.copy(name = it) }, "Name", "bot.name", enabled = d.isNew, placeholder = "pr-watch",
-            help = if (d.isNew) "Lowercase letters, digits, - and _." else null)
+        if (d.isNew) {
+            Field(d.name, { d = d.copy(name = it) }, "Name", "bot.name", placeholder = "pr-watch", help = "Lowercase letters, digits, - and _.")
+        } else {
+            BotRename(editor, workspace, d.name, ws.bots.map { it.name }) { d = d.copy(name = it) }
+        }
         Field(d.description, { d = d.copy(description = it) }, "Description", "bot.description", placeholder = "Watches open PRs")
         Field(d.dailyItems, { d = d.copy(dailyItems = it) }, "Daily items", "bot.daily", number = true,
             placeholder = "$DEFAULT_DAILY_ITEMS", help = "At most this many Inbox items a day, from 1 to 50.")
@@ -131,6 +138,35 @@ private fun BotDialog(
             }
         }) { asking = null }
     }
+}
+
+/**
+ * A Bot's name with Rename (ADR 0089): one `bot-rename` moves its Routines, teams, folder and items.
+ * [renamed] gets the new name, so the editor goes on with it.
+ */
+@Composable
+private fun BotRename(editor: SettingsEditor, workspace: String, name: String, names: List<String>, renamed: (String) -> Unit) {
+    // A TextFieldValue keeps the cursor and the keyboard's composition while the text is rewritten;
+    // the rewrite keeps the length, so both stay valid.
+    var field by remember(name) { mutableStateOf(TextFieldValue(name)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val typed = field.text
+    OutlinedTextField(
+        field, { field = it.copy(text = BotDraft.typedName(it.text)) }, Modifier.fillMaxWidth().testTag("bot.name"),
+        label = { Text("Name") },
+        supportingText = { Text(BotDraft.NAME_RULE) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+    )
+    SecondaryButton("Rename", {
+        val to = typed
+        scope.launch {
+            error = editor.save(listOf(SettingsOp.BotRename(workspace, name, to)))
+            if (error == null) renamed(to)
+        }
+    }, Modifier.testTag("bot.rename"), enabled = !editor.readOnly && BotDraft.canRename(name, typed, names))
+    error?.let { Text(it, Modifier.testTag("bot.rename.error"), color = Theme.failure, fontSize = 13.sp) }
 }
 
 /**
