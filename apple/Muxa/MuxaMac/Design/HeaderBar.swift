@@ -23,17 +23,46 @@ struct MacHeaderBar<Leading: View, Trailing: View>: View {
     }
 }
 
-/// The square "m" mark the mocks put before the app's name.
+/// The app icon's mark before the app's name: the prompt glyph of
+/// `apple/Muxa/Art/app-icon.swift` on its gradient, at any size.
 struct LogoTile: View {
     var size: CGFloat = 22
 
     var body: some View {
-        Text("m")
-            .font(.system(size: size * 0.6, weight: .bold))
-            .foregroundStyle(Palette.ground)
+        PromptGlyph()
+            .fill(.white)
             .frame(width: size, height: size)
-            .background(Palette.text, in: RoundedRectangle(cornerRadius: size * 0.27))
+            .background(
+                LinearGradient(colors: [Color(hex: 0x8683FF), Color(hex: 0x5E5CE6), Color(hex: 0x3F37C2)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
             .accessibilityHidden(true)
+    }
+}
+
+/// The icon's chevron and cursor bar on its 1024 canvas, scaled to the rect.
+/// The numbers are app-icon.swift's; keep the two alike.
+private struct PromptGlyph: Shape {
+    private static let canvas = 1024.0
+    private static let stroke = 82.0
+
+    func path(in rect: CGRect) -> Path {
+        let line = CGMutablePath()
+        line.addLines(between: [CGPoint(x: 0, y: 0), CGPoint(x: 190, y: 150), CGPoint(x: 0, y: 300)])
+        let chevron = line.copy(strokingWithWidth: Self.stroke, lineCap: .round, lineJoin: .round, miterLimit: 10)
+        // y runs down here: the bar sits under the chevron's lower end.
+        let bar = CGRect(x: 262, y: 300 - Self.stroke / 2, width: 210, height: Self.stroke)
+        let cursor = CGPath(roundedRect: bar, cornerWidth: Self.stroke / 2, cornerHeight: Self.stroke / 2, transform: nil)
+        let bounds = chevron.boundingBox.union(bar)
+        // As the icon: centred, a little right of true centre for the chevron's point.
+        let scale = min(rect.width, rect.height) / Self.canvas
+        let move = CGAffineTransform(translationX: (Self.canvas - bounds.width) / 2 - bounds.minX + 8,
+                                     y: (Self.canvas - bounds.height) / 2 - bounds.minY)
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+            .concatenating(CGAffineTransform(translationX: rect.minX, y: rect.minY))
+        var path = Path(chevron)
+        path.addPath(Path(cursor))
+        return path.applying(move)
     }
 }
 
