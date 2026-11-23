@@ -14,18 +14,21 @@ public struct Settings: Codable, Equatable, Sendable {
     public var problem: String?
     public var workspaces: [SettingsWorkspace]
     public var workers: [WorkerSpec]
+    /// The Capture assistant (ADR 0084); nil from an older server.
+    public var assistant: SettingsAssistant?
 
     public init(revision: String, readOnly: Bool = false, problem: String? = nil, workspaces: [SettingsWorkspace] = [],
-                workers: [WorkerSpec] = []) {
+                workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil) {
         self.revision = revision
         self.readOnly = readOnly
         self.problem = problem
         self.workspaces = workspaces
         self.workers = workers
+        self.assistant = assistant
     }
 
     enum CodingKeys: String, CodingKey {
-        case revision, problem, workspaces, workers
+        case revision, problem, workspaces, workers, assistant
         case readOnly = "read_only"
     }
 
@@ -36,6 +39,40 @@ public struct Settings: Codable, Equatable, Sendable {
         problem = try c.decodeIfPresent(String.self, forKey: .problem)
         workspaces = try c.decode(.workspaces, or: [])
         workers = try c.decode(.workers, or: [])
+        assistant = try c.decodeIfPresent(SettingsAssistant.self, forKey: .assistant)
+    }
+}
+
+/// `[assistant]` in `workspaces.toml`: the Capture assistant, with no
+/// Workspace and no connections (ADR 0084).
+public struct SettingsAssistant: Codable, Equatable, Sendable {
+    public var enabled: Bool
+    /// Nil: the default agent.
+    public var worker: String?
+    /// `assistant/soul.md`; nil when it cannot be read, empty when there is none.
+    public var soulText: String?
+    /// `assistant/memory.md`, which the assistant writes.
+    public var memoryText: String?
+
+    public init(enabled: Bool = false, worker: String? = nil, soulText: String? = "", memoryText: String? = "") {
+        self.enabled = enabled
+        self.worker = worker
+        self.soulText = soulText
+        self.memoryText = memoryText
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, worker
+        case soulText = "soul_text"
+        case memoryText = "memory_text"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decode(.enabled, or: false)
+        worker = try c.decodeIfPresent(String.self, forKey: .worker)
+        soulText = try c.decodeIfPresent(String.self, forKey: .soulText)
+        memoryText = try c.decodeIfPresent(String.self, forKey: .memoryText)
     }
 }
 
@@ -317,14 +354,17 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
     public var bot: String?
     /// Claude Code's edit tools are denied to the run.
     public var readOnly: Bool
+    /// The event that runs it instead of a time: only `review` (ADR 0084).
+    public var on: String?
 
     public var id: String { name }
 
     public init(name: String, at: String? = nil, schedule: String? = nil, timezone: String? = nil, worker: String? = nil,
                 instructions: String, project: String? = nil, enabled: Bool = true, items: UInt32? = nil,
-                directWrites: Bool = false, bot: String? = nil, readOnly: Bool = false) {
+                directWrites: Bool = false, bot: String? = nil, readOnly: Bool = false, on: String? = nil) {
         self.bot = bot
         self.readOnly = readOnly
+        self.on = on
         self.name = name
         self.at = at
         self.schedule = schedule
@@ -338,7 +378,7 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, at, schedule, timezone, worker, instructions, project, enabled, items, bot
+        case name, at, schedule, timezone, worker, instructions, project, enabled, items, bot, on
         case directWrites = "direct_writes"
         case readOnly = "read_only"
     }
@@ -358,6 +398,7 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
         directWrites = try c.decode(.directWrites, or: false)
         bot = try c.decodeIfPresent(String.self, forKey: .bot)
         readOnly = try c.decode(.readOnly, or: false)
+        on = try c.decodeIfPresent(String.self, forKey: .on)
     }
 }
 
@@ -370,21 +411,47 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     /// Nil: 3.
     public var dailyItems: UInt32?
     public var enabled: Bool
+    /// A team lead's members (ADR 0085): Bots of the same Workspace that lead
+    /// no team themselves.
+    public var members: [String]
+    /// A lead's handoffs a day, all members together. Nil: 10.
+    public var handoffsPerDay: UInt32?
 
     public var id: String { name }
 
+    /// 1 to 64 lowercase letters, digits, `-` or `_`, as the host checks a name.
+    public static func isValidName(_ name: String) -> Bool {
+        (1...64).contains(name.count)
+            && name.allSatisfy { ($0.isASCII && ($0.isLowercase || $0.isNumber)) || $0 == "-" || $0 == "_" }
+    }
+
     public init(name: String, description: String? = nil, worker: String? = nil, dailyItems: UInt32? = nil,
-                enabled: Bool = true) {
+                enabled: Bool = true, members: [String] = [], handoffsPerDay: UInt32? = nil) {
         self.name = name
         self.description = description
         self.worker = worker
         self.dailyItems = dailyItems
         self.enabled = enabled
+        self.members = members
+        self.handoffsPerDay = handoffsPerDay
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, description, worker, enabled
+        case name, description, worker, enabled, members
         case dailyItems = "daily_items"
+        case handoffsPerDay = "handoffs_per_day"
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(worker, forKey: .worker)
+        try c.encodeIfPresent(dailyItems, forKey: .dailyItems)
+        try c.encode(enabled, forKey: .enabled)
+        // As the host spells it: no `members` for a Bot that leads no team.
+        if !members.isEmpty { try c.encode(members, forKey: .members) }
+        try c.encodeIfPresent(handoffsPerDay, forKey: .handoffsPerDay)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -394,6 +461,8 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
         dailyItems = try c.decodeIfPresent(UInt32.self, forKey: .dailyItems)
         enabled = try c.decode(.enabled, or: true)
+        members = try c.decode(.members, or: [])
+        handoffsPerDay = try c.decodeIfPresent(UInt32.self, forKey: .handoffsPerDay)
     }
 }
 

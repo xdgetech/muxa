@@ -54,9 +54,11 @@ struct ItemSources: View {
     }
 }
 
-/// "from pr-watch": the Bot that made an item.
+/// "from pr-watch": the Bot that made an item, or the one a talk Task talks with.
 struct BotChip: View {
     let bot: String
+    var label = "from"
+    var id = "item.bot"
 
     var body: some View {
         Label(bot, systemImage: "sparkles")
@@ -65,8 +67,8 @@ struct BotChip: View {
             .padding(.vertical, 2)
             .background(Palette.accent.opacity(0.14), in: Capsule())
             .foregroundStyle(Palette.accent)
-            .accessibilityLabel("from \(bot)")
-            .accessibilityIdentifier("item.bot")
+            .accessibilityLabel("\(label) \(bot)")
+            .accessibilityIdentifier(id)
     }
 }
 

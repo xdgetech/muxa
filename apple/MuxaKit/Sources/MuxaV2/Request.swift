@@ -7,10 +7,11 @@ public enum V2Request: Sendable {
     case detach(channel: UInt32)
     /// No places: one folder (ADR 0068).
     /// `connections` and `mcp` are deprecated and ignored: every agent gets all the
-    /// Workspace's connections and MCP servers (ADR 0075).
+    /// Workspace's connections and MCP servers (ADR 0075). `bot` makes it a talk
+    /// with that Bot of the Workspace, or one to set up (ADR 0083).
     case startTask(
         workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], connections: [String] = [],
-        mcp: [String] = [], plan: Bool = false, loop: LoopSpec? = nil)
+        mcp: [String] = [], plan: Bool = false, loop: LoopSpec? = nil, bot: String? = nil)
     case watch
     case inbox
     /// `today` is the device's local date, `YYYY-MM-DD`.
@@ -28,6 +29,10 @@ public enum V2Request: Sendable {
     case inboxRequestChanges(item: String, comment: String)
     /// Runs again what made a Failed item and resolves it.
     case inboxRetry(item: String)
+    /// Applies the item's settings proposal with its revision and marks it Done (ADR 0083).
+    case inboxApply(item: String)
+    /// Accepts or dismisses the item's suggestion (ADR 0084).
+    case inboxSuggestion(item: String, accept: Bool)
     case taskReview(terminal: String, note: String? = nil)
     /// A shell beside the Task's agent `terminal`, in its working place (ADR 0079).
     case taskShell(terminal: String)
@@ -64,10 +69,10 @@ public enum V2Request: Sendable {
         case let .attach(terminal, cols, rows, history):
             set("attach", ["terminal": terminal, "cols": cols, "rows": rows, "history": history])
         case let .detach(channel): set("detach", ["channel": channel])
-        case let .startTask(workspace, title, goal, places, connections, mcp, plan, loop):
+        case let .startTask(workspace, title, goal, places, connections, mcp, plan, loop, bot):
             set("start-task", ["workspace": workspace, "title": title, "goal": goal,
                                "places": places.map(\.json), "connections": connections, "mcp": mcp,
-                               "plan": plan, "loop": loop?.json])
+                               "plan": plan, "loop": loop?.json, "bot": bot])
         case .watch: set("watch", [:])
         case .inbox: set("inbox", [:])
         case let .parseCapture(text, today): set("parse-capture", ["text": text, "today": today])
@@ -84,6 +89,8 @@ public enum V2Request: Sendable {
         case let .inboxRequestChanges(item, comment):
             set("inbox-request-changes", ["item": item, "comment": comment])
         case let .inboxRetry(item): set("inbox-retry", ["item": item])
+        case let .inboxApply(item): set("inbox-apply", ["item": item])
+        case let .inboxSuggestion(item, accept): set("inbox-suggestion", ["item": item, "accept": accept])
         case let .taskReview(terminal, note): set("task-review", ["terminal": terminal, "note": note])
         case let .taskShell(terminal): set("task-shell", ["terminal": terminal])
         case let .closeTerminal(terminal): set("close-terminal", ["terminal": terminal])

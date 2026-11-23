@@ -7,6 +7,7 @@ struct MacBotsTable: View {
     @Environment(NextModel.self) private var model
     let workspace: SettingsWorkspace
     @State private var editing: BotDraft?
+    @State private var talking = false
 
     private enum Width {
         static let name: CGFloat = 200
@@ -23,9 +24,13 @@ struct MacBotsTable: View {
                 MacTableHeader(columns: [("Bot", Width.name), ("Routines and items", nil), ("", Width.edit)])
                 ForEach(workspace.bots) { row($0) }
             }
-            MacAddButton(title: "+ Add Bot", id: "bot.add") { editing = BotDraft() }
+            HStack(spacing: 16) {
+                MacAddButton(title: "+ Add Bot", id: "bot.add") { editing = BotDraft() }
+                MacAddButton(title: "Set up a Bot by talking", id: "bot.talknew") { talking = true }
+            }
         }
         .sheet(item: $editing) { BotEditor(workspace: workspace, draft: $0) }
+        .newBotTalk(workspace: workspace.name, isPresented: $talking)
     }
 
     private func row(_ b: SettingsBot) -> some View {

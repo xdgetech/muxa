@@ -30,9 +30,71 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var proposal: ItemProposal? = nil
     /// The Bot of `workspace` whose run made the item.
     public var bot: String? = nil
+    /// Settings a Bot proposes in a talk (ADR 0083); `inboxApply` applies them.
+    /// Not in `CodingKeys`: see `Inbox.field(of:)`.
+    public var settingsProposal: SettingsProposal? = nil
+    /// What the Capture assistant suggests (ADR 0084).
+    public var suggestion: ItemSuggestion? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, title, note, workspace, due, laterUntil, created, source, terminal, routine, place, links
+        case proposal, bot, suggestion
+    }
 
     /// Hidden by Later at `now` (Unix seconds).
     public func isLater(now: Int64) -> Bool { (laterUntil ?? 0) > now }
+}
+
+/// Settings changes a Bot proposed, against the settings at `revision`.
+public struct SettingsProposal: Codable, Equatable, Sendable {
+    public var revision: String
+    public var ops: [SettingsOp]
+
+    public init(revision: String, ops: [SettingsOp]) {
+        self.revision = revision
+        self.ops = ops
+    }
+}
+
+/// The Capture assistant's suggestion for an item. Each part is optional.
+public struct ItemSuggestion: Codable, Equatable, Sendable {
+    public var kind: ItemKind?
+    public var workspace: String?
+    /// `YYYY-MM-DD`.
+    public var due: String?
+    public var note: String?
+    /// Titles of the items to make instead of this one.
+    public var split: [String]
+    /// A goal for Start Task.
+    public var taskGoal: String?
+    /// A Bot of the suggested (or the item's) Workspace to ask.
+    public var bot: String?
+
+    public init(kind: ItemKind? = nil, workspace: String? = nil, due: String? = nil, note: String? = nil,
+                split: [String] = [], taskGoal: String? = nil, bot: String? = nil) {
+        self.kind = kind
+        self.workspace = workspace
+        self.due = due
+        self.note = note
+        self.split = split
+        self.taskGoal = taskGoal
+        self.bot = bot
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, workspace, due, note, split, taskGoal, bot
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decodeIfPresent(ItemKind.self, forKey: .kind)
+        workspace = try c.decodeIfPresent(String.self, forKey: .workspace)
+        due = try c.decodeIfPresent(String.self, forKey: .due)
+        note = try c.decodeIfPresent(String.self, forKey: .note)
+        split = try c.decode(.split, or: [])
+        taskGoal = try c.decodeIfPresent(String.self, forKey: .taskGoal)
+        bot = try c.decodeIfPresent(String.self, forKey: .bot)
+    }
 }
 
 /// A page an item is about: `http` or `https`.
@@ -337,6 +399,8 @@ public struct Routine: Codable, Equatable, Sendable, Identifiable {
     public var last: RoutineLast?
     /// The Bot that owns it (ADR 0082).
     public var bot: String? = nil
+    /// The event that runs it: `review` (ADR 0084).
+    public var on: String? = nil
 
     public var id: String { "\(workspace)/\(name)" }
 }
@@ -429,6 +493,8 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     public var isTaskAgent: Bool { labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent" }
     /// A shell beside a Task's agent (ADR 0079); it shares the agent's `taskDir`.
     public var isTaskShell: Bool { labels["muxa.kind"] == "task" && labels["muxa.role"] == "shell" }
+    /// The Bot a talk Task talks with (ADR 0083).
+    public var bot: String? { labels["muxa.bot"] }
     /// A Task's places, the working place first; empty for other terminals.
     public var places: [Place] {
         guard let text = labels["muxa.places"], let data = text.data(using: .utf8) else { return [] }

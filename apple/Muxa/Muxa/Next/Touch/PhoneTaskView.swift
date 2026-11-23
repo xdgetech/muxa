@@ -47,7 +47,10 @@ struct PhoneTaskView: View {
                 .accessibilityIdentifier("mode.home")
             VStack(alignment: .leading, spacing: 1) {
                 Text(terminal.pathText).font(.system(size: 12)).foregroundStyle(Palette.textSecondary).lineLimit(1)
-                Text(terminal.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(terminal.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                    if let bot = terminal.bot { BotChip(bot: bot, label: "talks with", id: "task.bot").font(.caption) }
+                }
             }
             Spacer(minLength: 4)
             UploadButton(terminal: terminal.id)

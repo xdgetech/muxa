@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader` in the environment, the app
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|settings[-tab]|settings-terminal|palette|reader|settings-assistant` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
@@ -39,15 +39,17 @@ enum Snapshot {
         exit(0)
     }
 
-    /// `settings` or `settings-<tab>` (connections, mcp, agent, routines):
+    /// `settings` or `settings-<tab>` (connections, mcp, agent, routines, bots):
     /// opens the Settings window at the mocks' size and returns it.
     private static func openSettings(_ screen: String?) async -> NSWindow? {
         guard let screen, screen.hasPrefix("settings") else { return nil }
         let tabs: [String: WorkspaceSettings.Tab] = [
             "settings-connections": .connections, "settings-mcp": .mcp, "settings-agent": .agent, "settings-routines": .routines,
+            "settings-bots": .bots,
         ]
         MacWorkspacePane.firstTab = tabs[screen] ?? .general
         if screen == "settings-terminal" { MacSettingsView.firstPlace = .terminal }
+        if screen == "settings-assistant" { MacSettingsView.firstPlace = .assistant }
         let before = Set(NSApp.windows.map(ObjectIdentifier.init))
         // The app menu's Settings… item: a nil-targeted action finds no
         // responder while the app is in the background.

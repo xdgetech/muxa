@@ -5,6 +5,8 @@ import SwiftUI
 enum SettingsPlace: Hashable {
     case workspace(String)
     case workers
+    /// The Capture assistant (ADR 0084).
+    case assistant
     /// How terminals look on this device.
     case terminal
 }
@@ -72,6 +74,9 @@ struct SettingsIndex: View {
             row(.workers, id: "settings.workers") {
                 LabeledContent("Workers", value: "\(s.settings?.workers.count ?? 0)")
             }
+            row(.assistant, id: "settings.assistant") {
+                LabeledContent("Capture assistant", value: s.settings?.assistant?.enabled == true ? "on" : "off")
+            }
         }
         .listRowBackground(Palette.card)
     }
@@ -107,6 +112,7 @@ struct SettingsDetail: View {
         switch place {
         case .workspace(let name): WorkspaceSettings(name: name)
         case .workers: WorkersSettings()
+        case .assistant: AssistantSettings()
         case .terminal: TerminalSettingsForm().navigationTitle("Terminal")
         }
     }

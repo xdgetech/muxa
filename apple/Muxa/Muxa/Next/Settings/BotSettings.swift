@@ -6,10 +6,12 @@ struct WorkspaceBotsForm: View {
     @Environment(NextModel.self) private var model
     let workspace: SettingsWorkspace
     @State private var editing: BotDraft?
+    @State private var talking = false
 
     var body: some View {
         SettingsPage { section }
             .sheet(item: $editing) { BotEditor(workspace: workspace, draft: $0) }
+            .newBotTalk(workspace: workspace.name, isPresented: $talking)
     }
 
     private var section: some View {
@@ -35,6 +37,8 @@ struct WorkspaceBotsForm: View {
             }
             Button("Add Bot", systemImage: "plus") { editing = BotDraft() }
                 .accessibilityIdentifier("bot.add")
+            Button("Set up a Bot by Talking", systemImage: "bubble.left.and.bubble.right") { talking = true }
+                .accessibilityIdentifier("bot.talknew")
         } header: {
             Text("Bots")
         } footer: {
@@ -50,6 +54,9 @@ struct BotDraft: Identifiable {
     var worker = ""
     var dailyItems = ""
     var enabled = true
+    /// The Bots it leads (ADR 0085), in the Workspace's order.
+    var members: [String] = []
+    var handoffs = ""
     var soul = ""
     /// The Soul as read; nil when it could not be read.
     var readSoul: String?
@@ -64,6 +71,8 @@ struct BotDraft: Identifiable {
         worker = b.spec.worker ?? ""
         dailyItems = b.spec.dailyItems.map(String.init) ?? ""
         enabled = b.spec.enabled
+        members = b.spec.members
+        handoffs = b.spec.handoffsPerDay.map(String.init) ?? ""
         soul = b.soulText ?? ""
         readSoul = b.soulText
     }
@@ -71,13 +80,26 @@ struct BotDraft: Identifiable {
     func spec() -> BotSpec? {
         guard let name = Lines.optional(name) else { return nil }
         return BotSpec(name: name, description: Lines.optional(description), worker: Lines.optional(worker),
-                       dailyItems: UInt32(Lines.trimmed(dailyItems)), enabled: enabled)
+                       dailyItems: UInt32(Lines.trimmed(dailyItems)), enabled: enabled, members: members,
+                       handoffsPerDay: members.isEmpty ? nil : UInt32(Lines.trimmed(handoffs)))
+    }
+
+    /// The other Bots it may lead: those that lead no team themselves.
+    func candidates(in workspace: SettingsWorkspace) -> [String] {
+        workspace.bots.filter { $0.name != (existing?.name ?? name) && $0.spec.members.isEmpty }.map(\.name)
+    }
+
+    /// The Bot that leads this one; a member cannot lead a team itself.
+    func lead(in workspace: SettingsWorkspace) -> String? {
+        let me = existing?.name ?? name
+        return workspace.bots.first { $0.name != me && $0.spec.members.contains(me) }?.name
     }
 
     /// The description, its Routines and how its items ended.
     static func summary(_ b: SettingsBot, workspace: SettingsWorkspace, inbox: Inbox) -> String {
         let routines = workspace.routines.filter { $0.spec.bot == b.name }.count
         var parts = [b.spec.description ?? "", routines == 1 ? "1 Routine" : "\(routines) Routines"]
+        if !b.spec.members.isEmpty { parts.append("Leads \(b.spec.members.joined(separator: ", "))") }
         if let count = inbox.bots?.first(where: { $0.workspace == workspace.name && $0.bot == b.name }) {
             parts.append("\(count.done) done · \(count.deleted) deleted")
         }
@@ -89,10 +111,14 @@ struct BotDraft: Identifiable {
 /// Memory is the Bot's own; only an earlier one can be brought back.
 struct BotEditor: View {
     @Environment(NextModel.self) private var model
+    @Environment(NextNavigation.self) private var nav
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     let workspace: SettingsWorkspace
     @State private var draft: BotDraft
     @State private var confirmRestore = false
     @State private var restoreError: String?
+    @State private var talkError: String?
 
     init(workspace: SettingsWorkspace, draft: BotDraft) {
         self.workspace = workspace
@@ -120,6 +146,7 @@ struct BotEditor: View {
             } footer: {
                 if draft.existing == nil { Text("Lowercase letters, digits, - and _.") }
             }
+            if let bot = draft.existing { talk(bot) }
             Section {
                 Picker("Worker", selection: $draft.worker) {
                     Text("The Workspace's agent").tag("")
@@ -132,9 +159,62 @@ struct BotEditor: View {
             } footer: {
                 Text("Past its daily items, the rest go into one \"N more\" item.")
             }
+            team
             soul
             if let bot = draft.existing { memory(bot) }
         }
+    }
+
+    /// Talks with the Bot in a Task: it can propose its settings (ADR 0083).
+    private func talk(_ bot: SettingsBot) -> some View {
+        Section {
+            Button("Talk to \(bot.name)", systemImage: "bubble.left.and.bubble.right") { Task { await startTalk(bot.name) } }
+                .accessibilityIdentifier("bot.talk")
+            SaveError(text: talkError, id: "bot.talk.error")
+        } footer: {
+            Text("A Task with the Bot's soul and memory. What it proposes comes to the Inbox to apply.")
+        }
+    }
+
+    /// A team lead hands work to its members (ADR 0085). A member leads no team.
+    @ViewBuilder
+    private var team: some View {
+        let candidates = draft.candidates(in: workspace)
+        if draft.lead(in: workspace) == nil, !candidates.isEmpty {
+            Section {
+                ForEach(candidates, id: \.self) { name in
+                    Toggle(name, isOn: member(name))
+                        .accessibilityIdentifier("bot.member.\(name)")
+                }
+                if !draft.members.isEmpty {
+                    TextField("Handoffs a day, 1 to 50 (default 10)", text: $draft.handoffs)
+                        .numberEntry()
+                        .accessibilityIdentifier("bot.handoffs")
+                }
+            } header: {
+                Text("Team")
+            } footer: {
+                Text("Members are Bots that lead no team. The lead hands them work, up to its handoffs a day.")
+            }
+        }
+    }
+
+    private func member(_ name: String) -> Binding<Bool> {
+        Binding(
+            get: { draft.members.contains(name) },
+            set: { on in
+                let picked = Set(draft.members.filter { $0 != name } + (on ? [name] : []))
+                draft.members = workspace.bots.map(\.name).filter(picked.contains)
+            })
+    }
+
+    private func startTalk(_ bot: String) async {
+        guard let t = await model.startTalk(workspace: workspace.name, bot: bot, title: "Talk to \(bot)") else {
+            talkError = model.requestError
+            return
+        }
+        dismiss()
+        BotTalk.show(t, nav: nav, openWindow: openWindow)
     }
 
     private var soul: some View {

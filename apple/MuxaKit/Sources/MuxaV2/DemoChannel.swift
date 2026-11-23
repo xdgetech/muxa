@@ -149,7 +149,7 @@ actor DemoServer {
             watching = true
             reply(id, [:])
         case "inbox":
-            reply(id, ["inbox": json(inbox)])
+            reply(id, ["inbox": inbox.wireObject])
         case "parse-capture":
             reply(id, ["capture": json(capture(m["text"] as? String ?? "", today: m["today"] as? String ?? ""))])
         case "inbox-add":
@@ -227,6 +227,10 @@ actor DemoServer {
             resolve(id, item)
         case "inbox-retry":
             retry(id, item)
+        case "inbox-apply":
+            applyProposal(id, item)
+        case "inbox-suggestion":
+            answerSuggestion(id, item, accept: m["accept"] as? Bool ?? false)
         case "workspaces":
             reply(id, ["workspaces": json(content.taskWorkspaces.map(withTasks))])
         case "settings":
@@ -307,6 +311,60 @@ actor DemoServer {
             reply(id, ["settings": plain(content.settings)])
         } catch {
             send(["type": "error", "id": id, "code": "bad-request", "message": (error as? DemoSettingsRefusal)?.message ?? "the ops cannot apply"])
+        }
+    }
+
+    /// Applies a Bot's proposed settings as `settings-update` would, then
+    /// marks the item Done (ADR 0083).
+    private func applyProposal(_ id: UInt64, _ item: String) {
+        guard let found = openItem(id, item) else { return }
+        guard let proposal = found.settingsProposal else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "this item proposes no settings"])
+        }
+        guard proposal.revision == content.settings.revision else {
+            return send(["type": "error", "id": id, "code": "conflict",
+                         "message": "the settings changed since the Bot proposed this; ask it again"])
+        }
+        do {
+            let ops = try proposal.ops.map { try $0.jsonObject() }
+            content.settings = try content.settings.demoApplying(ops)
+        } catch {
+            let message = (error as? DemoSettingsRefusal)?.message ?? "the ops cannot apply"
+            return send(["type": "error", "id": id, "code": "bad-request", "message": message])
+        }
+        resolve(id, item)
+    }
+
+    /// Accept applies the Capture assistant's kind, Workspace, due and note,
+    /// or splits the item; either answer clears the suggestion (ADR 0084).
+    private func answerSuggestion(_ id: UInt64, _ item: String, accept: Bool) {
+        guard let found = openItem(id, item) else { return }
+        guard let s = found.suggestion else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "this item has no suggestion"])
+        }
+        let now = Int64(Date().timeIntervalSince1970)
+        let parts = accept ? s.split.map { title -> InboxItem in
+            defer { nextItem += 1 }
+            return InboxItem(id: "d\(nextItem)", kind: s.kind ?? found.kind, title: title,
+                             workspace: s.workspace ?? found.workspace, due: s.due ?? found.due, laterUntil: nil,
+                             created: now, source: "capture")
+        } : []
+        change(id) { inbox in
+            guard let at = inbox.items.firstIndex(where: { $0.id == item }) else { return false }
+            inbox.items[at].suggestion = nil
+            guard accept else { return true }
+            if !parts.isEmpty {
+                inbox.done.insert(inbox.items.remove(at: at), at: 0)
+                inbox.items.insert(contentsOf: parts, at: at)
+                return true
+            }
+            if let kind = s.kind { inbox.items[at].kind = kind }
+            if let workspace = s.workspace { inbox.items[at].workspace = workspace }
+            if let due = s.due { inbox.items[at].due = due }
+            if let note = s.note {
+                inbox.items[at].note = [inbox.items[at].note, note].compactMap { $0 }.joined(separator: "\n\n")
+            }
+            return true
         }
     }
 
@@ -514,6 +572,8 @@ actor DemoServer {
         }
         let loopSpec = m["loop"] as? [String: Any]
         if let loopSpec, let refusal = loopRefusal(loopSpec, workspace) { return refuse(refusal) }
+        let bot = m["bot"] as? String
+        if let bot, !BotSpec.isValidName(bot) { return refuse("a Bot's name is 1 to 64 lowercase letters, digits, - or _") }
         let places = m["places"] as? [[String: Any]] ?? []
         let checkout = places.first { $0["kind"] as? String == "checkout" }?["repo"] as? String
         let existing = (places.first { $0["kind"] as? String == "existing" }?["path"] as? String)
@@ -533,6 +593,7 @@ actor DemoServer {
         if let branch { labels["muxa.branch"] = branch }
         if let repo { labels["muxa.repo"] = repo }
         if let checkout { labels["muxa.checkout"] = checkout }
+        if let bot { labels["muxa.bot"] = bot }
         // Every agent gets all the Workspace's connections and servers (ADR 0075);
         // `connections` and `mcp` in the request are ignored.
         let connections = workspace.connections.map(\.name)
@@ -592,8 +653,8 @@ actor DemoServer {
             return send(["type": "error", "id": id, "code": "not-found", "message": "no such item"])
         }
         inbox.revision += 1
-        reply(id, ["inbox": json(inbox)])
-        if watching { send(["type": "inbox", "inbox": json(inbox)]) }
+        reply(id, ["inbox": inbox.wireObject])
+        if watching { send(["type": "inbox", "inbox": inbox.wireObject]) }
     }
 
     private func change(_ id: UInt64, _ f: (inout Inbox) -> Void) {

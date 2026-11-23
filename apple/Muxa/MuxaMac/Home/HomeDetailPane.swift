@@ -24,6 +24,8 @@ struct HomeDetailPane: View {
                         .accessibilityIdentifier("detail.title")
                     if let task = liveTerminal { taskLine(task) }
                     noteView(item.note).padding(.top, 8)
+                    ItemSources(item: item).padding(.top, 8)
+                    ItemAssist(item: item, live: position != nil, onDone: onDone)
                     if let error = model.requestError {
                         Text(error).foregroundStyle(Palette.late)
                             .accessibilityIdentifier("detail.error")
@@ -48,6 +50,7 @@ struct HomeDetailPane: View {
             } else {
                 Text("Done").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.textMid)
             }
+            if let bot = item.bot { BotChip(bot: bot).font(.system(size: 12)) }
             Text("· \(item.origin)")
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.textSecondary)

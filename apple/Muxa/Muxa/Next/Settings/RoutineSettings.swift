@@ -51,6 +51,7 @@ struct WorkspaceRoutinesForm: View {
     }
 
     static func when(_ r: RoutineSpec) -> String {
+        if r.on == "review" { return "On review" }
         let zone = r.timezone.map { " · \($0)" } ?? ""
         if let at = r.at { return "Daily at \(at)\(zone)" }
         if let cron = r.schedule { return "\(cron)\(zone)" }
@@ -61,6 +62,8 @@ struct WorkspaceRoutinesForm: View {
 struct RoutineDraft: Identifiable {
     enum Timing: String, CaseIterable, Identifiable {
         case manual = "Run now only", daily = "Daily at", cron = "Cron"
+        /// Each time a Task of the Workspace asks for review (ADR 0084).
+        case review = "On review"
         var id: Self { self }
     }
 
@@ -88,7 +91,7 @@ struct RoutineDraft: Identifiable {
         let s = r.spec
         existing = s
         name = s.name
-        timing = s.at != nil ? .daily : s.schedule != nil ? .cron : .manual
+        timing = s.on == "review" ? .review : s.at != nil ? .daily : s.schedule != nil ? .cron : .manual
         at = s.at ?? at
         cron = s.schedule ?? cron
         timezone = s.timezone ?? timezone
@@ -110,7 +113,8 @@ struct RoutineDraft: Identifiable {
         s.instructions = file
         s.at = timing == .daily ? Lines.optional(at) : nil
         s.schedule = timing == .cron ? Lines.optional(cron) : nil
-        s.timezone = timing == .manual ? nil : Lines.optional(timezone)
+        s.timezone = [.manual, .review].contains(timing) ? nil : Lines.optional(timezone)
+        s.on = timing == .review ? "review" : nil
         s.worker = Lines.optional(worker)
         s.enabled = enabled
         s.items = UInt32(Lines.trimmed(items))
@@ -180,7 +184,7 @@ struct RoutineEditor: View {
             }
             .accessibilityIdentifier("routine.timing")
             switch draft.timing {
-            case .manual: EmptyView()
+            case .manual, .review: EmptyView()
             case .daily:
                 TextField("HH:MM", text: $draft.at)
                     .monospaced()
@@ -192,7 +196,7 @@ struct RoutineEditor: View {
                     .plainEntry()
                     .accessibilityIdentifier("routine.cron")
             }
-            if draft.timing != .manual {
+            if ![.manual, .review].contains(draft.timing) {
                 TextField("Time zone, e.g. Europe/Berlin", text: $draft.timezone)
                     .plainEntry()
                     .accessibilityIdentifier("routine.timezone")
@@ -200,7 +204,11 @@ struct RoutineEditor: View {
         } header: {
             Text("Schedule")
         } footer: {
-            if draft.timing == .cron { Text("*/30 9-18 * * 1-5 runs every 30 minutes on weekdays. Runs are at least 15 minutes apart. Sunday is 0 or 7.") }
+            switch draft.timing {
+            case .cron: Text("*/30 9-18 * * 1-5 runs every 30 minutes on weekdays. Runs are at least 15 minutes apart. Sunday is 0 or 7.")
+            case .review: Text("Runs each time a Task of this Workspace asks for review.")
+            case .manual, .daily: EmptyView()
+            }
         }
     }
 

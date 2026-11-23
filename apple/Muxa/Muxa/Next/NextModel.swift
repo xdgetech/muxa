@@ -439,9 +439,26 @@ final class NextModel {
     func startTask(_ request: TaskRequest) async throws -> Terminal {
         let (t, _) = try await connected().startTask(
             workspace: request.workspace, title: request.title, goal: request.goal, places: request.places,
-            plan: request.plan, loop: request.loop)
+            plan: request.plan, loop: request.loop, bot: request.bot)
         if let at = terminals.firstIndex(where: { $0.id == t.id }) { terminals[at] = t } else { terminals.append(t) }
         return t
+    }
+
+    /// Starts a talk with a Bot of `workspace`, or with one to set up (ADR 0083).
+    func startTalk(workspace: String, bot: String, title: String, goal: String? = nil) async -> Terminal? {
+        var started: Terminal?
+        await run { _ in
+            started = try await self.startTask(TaskRequest(
+                workspace: workspace, title: title, goal: goal, places: [], plan: false, bot: bot))
+        }
+        return started
+    }
+
+    /// Applies a Bot's proposed settings (ADR 0083). Loaded settings are read
+    /// again: the host changed them, or they changed since the proposal.
+    func applyProposal(_ item: InboxItem) async {
+        await inbox(.inboxApply(item: item.id))
+        if settings.settings != nil { await settings.load() }
     }
 
     /// Resume Task: starts the agent in the item's place, then marks the item Done.

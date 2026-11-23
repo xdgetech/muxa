@@ -26,6 +26,7 @@ extension Terminal {
 
     /// The working place: `app branch`, `docs · read only`, `folder · reads 2 repos`.
     var placeText: String? {
+        if let bot { return "talk with \(bot)" }
         if let first = places.first {
             let others = places.count - 1
             let base = Self.describe(first)

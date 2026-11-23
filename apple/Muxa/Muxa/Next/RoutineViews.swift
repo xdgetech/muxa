@@ -2,9 +2,10 @@ import MuxaV2
 import SwiftUI
 
 extension Routine {
-    /// `09:00 Europe/Berlin`, `cron 0 9 * * 1-5`, or `On request`.
+    /// `09:00 Europe/Berlin`, `cron 0 9 * * 1-5`, `On review` or `On request`.
     var when: String {
         guard enabled else { return "Off" }
+        if on == "review" { return "On review" }
         guard let at else { return "On request" }
         let base = "\(at) \(timezone ?? "")".trimmingCharacters(in: .whitespaces)
         return schedule.map { "\(base) · \($0)" } ?? base

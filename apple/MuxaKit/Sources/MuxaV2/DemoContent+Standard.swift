@@ -3,8 +3,10 @@ import Foundation
 extension DemoContent {
     /// Two Tasks (one waits on the user, one has a shell beside its agent), a
     /// shell, a terminal muxa did not start, a Routine run, every Inbox kind,
-    /// four Routines, and the Bot `pr-watch` with two items (ADR 0082).
-    /// Approving `d8` needs force: its worktree holds work. `d9` came from muxa v1.
+    /// four Routines, and the Bot `pr-watch` with two items (ADR 0082) and a
+    /// settings proposal (`d12`, ADR 0083). The Capture assistant suggests
+    /// where `d13` goes (ADR 0084). Approving `d8` needs force: its worktree
+    /// holds work. `d9` came from muxa v1.
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
             Terminal(
@@ -85,6 +87,8 @@ extension DemoContent {
                                            content: "Looks good to me. Merging with squash.")),
                 bot("d11", .reply, "Anna asks when the release ships", due: "2026-11-25",
                     links: [ItemLink(url: "https://example.slack.com/archives/C01/p1764000000", title: "#release thread")]),
+                proposal,
+                suggested,
             ],
             routines: [
                 // t5 runs it.
@@ -150,6 +154,36 @@ extension DemoContent {
             settings: settings)
     }()
 
+    /// What pr-watch proposed in a talk: a turned-off Routine of its own and
+    /// more items a day, against the demo's first settings revision.
+    private static let proposal: InboxItem = {
+        let sweep = RoutineSpec(name: "nightly-sweep", at: "02:30", timezone: "Europe/Berlin",
+                                instructions: "routines/nightly-sweep.md", enabled: false, bot: "pr-watch", readOnly: true)
+        let watch = BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me", dailyItems: 5)
+        var i = InboxItem(
+            id: "d12", kind: .decide, title: "pr-watch proposes: a nightly sweep of stale PRs",
+            note: "- routine-add nightly-sweep (off)\n- bot-update pr-watch\n", workspace: "app", due: nil, laterUntil: nil,
+            created: 1_764_000_000, source: "task", terminal: nil, routine: nil)
+        i.bot = "pr-watch"
+        i.settingsProposal = SettingsProposal(revision: "1", ops: [
+            .routineAdd(workspace: "app", routine: sweep,
+                        instructionsText: "List the PRs with no activity for a week, oldest first.\n"),
+            .botUpdate(workspace: "app", bot: watch),
+        ])
+        return i
+    }()
+
+    /// A capture the Capture assistant has a suggestion for.
+    private static let suggested: InboxItem = {
+        var i = InboxItem(
+            id: "d13", kind: .todo, title: "Look into the flaky login test", note: nil, workspace: nil, due: nil,
+            laterUntil: nil, created: 1_764_000_000, source: "capture", terminal: nil, routine: nil)
+        i.suggestion = ItemSuggestion(
+            workspace: "app", due: "2026-11-28", note: "It fails about once in ten CI runs.",
+            taskGoal: "Find why the login test fails now and then, and fix it.", bot: "pr-watch")
+        return i
+    }()
+
     /// The Workspaces of `workspaces` as their files say, with no secret.
     private static let settings = Settings(
         revision: "1",
@@ -192,7 +226,11 @@ extension DemoContent {
                         instructionsText: "Sum up the week's Done items.\n"),
                 ]),
         ],
-        workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")])
+        workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
+        assistant: SettingsAssistant(
+            enabled: true,
+            soulText: "I sort what you capture: the Workspace, a due date, and whether a Bot can help.\n",
+            memoryText: "Release items go to app. Personal errands have no Workspace.\n"))
 
     private static let plan = """
         # Plan

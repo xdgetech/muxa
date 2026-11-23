@@ -6,6 +6,7 @@ import SwiftUI
 enum MacSettingsPlace: Hashable {
     case workspace(String)
     case workers
+    case assistant
     case connection
     case keyboard
     case terminal
@@ -46,6 +47,7 @@ struct MacSettingsView: View {
         switch picked {
         case .workspace(let name) where workspaces.contains(where: { $0.name == name }): return .workspace(name)
         case .workers where model.settings.settings != nil: return .workers
+        case .assistant where model.settings.settings != nil: return .assistant
         case .connection: return .connection
         case .keyboard: return .keyboard
         case .terminal: return .terminal
@@ -80,6 +82,11 @@ struct MacSettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 MacPaneTitle(title: "Workers", subtitle: "Agents a Routine can run as, on this host.")
                 WorkersSettings().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
+            }
+        case .assistant:
+            VStack(alignment: .leading, spacing: 0) {
+                MacPaneTitle(title: "Capture assistant", subtitle: "Suggests where each capture goes, on this host.")
+                AssistantSettings().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
             }
         case .connection: MacConnectionPane()
         case .keyboard: MacKeyboardPane()

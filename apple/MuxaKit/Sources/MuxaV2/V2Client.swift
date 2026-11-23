@@ -131,12 +131,12 @@ public actor V2Client {
     /// The Task's agent terminal, and whether it was already running.
     public func startTask(
         workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], connections: [String] = [],
-        mcp: [String] = [], plan: Bool = false, loop: LoopSpec? = nil
+        mcp: [String] = [], plan: Bool = false, loop: LoopSpec? = nil, bot: String? = nil
     ) async throws -> (Terminal, existing: Bool) {
         let reply = try await request(
             .startTask(
                 workspace: workspace, title: title, goal: goal, places: places, connections: connections, mcp: mcp,
-                plan: plan, loop: loop))
+                plan: plan, loop: loop, bot: bot))
         return (try field("terminal", of: reply), try field("existing", of: reply))
     }
 
@@ -169,7 +169,7 @@ public actor V2Client {
     /// Any Inbox request; the reply is the whole Inbox. `inboxApprove` and
     /// `closeTask` are `refused(code: "would-lose-work")` while the Task's worktree holds work.
     public func inbox(_ r: V2Request = .inbox) async throws -> Inbox {
-        try field("inbox", of: await request(r))
+        try Inbox.field(of: await request(r))
     }
 
     /// The host's Workspaces, for starting a Task.
@@ -325,7 +325,7 @@ public actor V2Client {
         case "resync":
             eventsOut.yield(.resync)
         case "inbox":
-            if let i: Inbox = try? field("inbox", of: data) { eventsOut.yield(.inbox(i)) }
+            if let i = try? Inbox.field(of: data) { eventsOut.yield(.inbox(i)) }
         case "chat":
             guard let n = (msg["chat"] as? NSNumber)?.uint32Value,
                   let update: ChatUpdate = try? field("update", of: data) else { return }

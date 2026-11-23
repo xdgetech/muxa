@@ -85,11 +85,13 @@ extension Settings {
         case let .mcpRemove(workspace, name):
             try edit(workspace) { w in w.mcp.remove(at: try find(w.mcp, name, \.name)) }
         case let .routineAdd(workspace, spec, text):
+            try checkTiming(spec)
             try edit(workspace) { w in
                 guard !w.routines.contains(where: { $0.name == spec.name }) else { throw refusal("\(spec.name) exists") }
                 w.routines.append(SettingsRoutine(spec: spec, instructionsText: text))
             }
         case let .routineUpdate(workspace, spec, text):
+            try checkTiming(spec)
             try edit(workspace) { w in
                 let at = try find(w.routines, spec.name, \.name)
                 w.routines[at] = SettingsRoutine(spec: spec, instructionsText: text ?? w.routines[at].instructionsText)
@@ -99,11 +101,13 @@ extension Settings {
         case let .botAdd(workspace, spec, text):
             try edit(workspace) { w in
                 guard !w.bots.contains(where: { $0.name == spec.name }) else { throw refusal("\(spec.name) exists") }
+                try checkTeam(spec, in: w)
                 w.bots.append(SettingsBot(spec: spec, soulText: text ?? ""))
             }
         case let .botUpdate(workspace, spec, text):
             try edit(workspace) { w in
                 let at = try find(w.bots, spec.name, \.name)
+                try checkTeam(spec, in: w)
                 w.bots[at].spec = spec
                 if let text { w.bots[at].soulText = text }
             }
@@ -119,6 +123,10 @@ extension Settings {
                 let at = try find(w.bots, name, \.name)
                 guard version >= 1, version <= w.bots[at].memoryVersions else { throw refusal("no kept memory \(version)") }
             }
+        case let .assistantUpdate(enabled, worker, text):
+            let old = assistant ?? SettingsAssistant()
+            assistant = SettingsAssistant(enabled: enabled, worker: worker, soulText: text ?? old.soulText,
+                                          memoryText: old.memoryText)
         case let .workerAdd(worker):
             guard !workers.contains(where: { $0.name == worker.name }) else { throw refusal("\(worker.name) exists") }
             workers.append(worker)
@@ -140,6 +148,27 @@ extension Settings {
         let at = try index(workspace)
         try f(&workspaces[at])
     }
+}
+
+/// `on` is only `review`, and such a Routine has no time (ADR 0084).
+private func checkTiming(_ r: RoutineSpec) throws {
+    guard let on = r.on else { return }
+    guard on == "review" else { throw refusal("on is review or absent") }
+    guard r.at == nil, r.schedule == nil else { throw refusal("a Routine with on has no at or schedule") }
+}
+
+/// A lead's members are other Bots of the Workspace that lead no team (ADR 0085).
+private func checkTeam(_ b: BotSpec, in w: SettingsWorkspace) throws {
+    guard !b.members.isEmpty else { return }
+    guard b.members.count <= 6 else { throw refusal("a team has at most 6 members") }
+    if let lead = w.bots.first(where: { $0.name != b.name && $0.spec.members.contains(b.name) }) {
+        throw refusal("\(b.name) is a member of \(lead.name) and cannot lead a team")
+    }
+    for m in b.members {
+        guard m != b.name, let member = w.bots.first(where: { $0.name == m }) else { throw refusal("no other Bot \(m)") }
+        guard member.spec.members.isEmpty else { throw refusal("\(m) leads a team itself") }
+    }
+    if let handoffs = b.handoffsPerDay, !(1...50).contains(handoffs) { throw refusal("handoffs_per_day is 1 to 50") }
 }
 
 private func find<T>(_ list: [T], _ name: String, _ key: KeyPath<T, String>) throws -> Int {

@@ -43,6 +43,8 @@ public enum SettingsOp: Equatable, Sendable {
     case botRemove(workspace: String, name: String)
     /// Brings back kept memory `version`, 1 the newest.
     case botMemoryRestore(workspace: String, name: String, version: UInt32)
+    /// The Capture assistant (ADR 0084). `soulText` replaces its `soul.md`.
+    case assistantUpdate(enabled: Bool, worker: String? = nil, soulText: String? = nil)
     case workerAdd(worker: WorkerSpec)
     /// Replaces the worker named `worker.name`.
     case workerUpdate(worker: WorkerSpec)
@@ -72,6 +74,7 @@ public enum SettingsOp: Equatable, Sendable {
         case .botUpdate: "bot-update"
         case .botRemove: "bot-remove"
         case .botMemoryRestore: "bot-memory-restore"
+        case .assistantUpdate: "assistant-update"
         case .workerAdd: "worker-add"
         case .workerUpdate: "worker-update"
         case .workerRemove: "worker-remove"
@@ -147,6 +150,10 @@ extension SettingsOp: Codable {
             try c.encode(workspace, forKey: .workspace)
             try c.encode(name, forKey: .name)
             try c.encode(version, forKey: .version)
+        case let .assistantUpdate(enabled, worker, text):
+            try c.encode(enabled, forKey: .enabled)
+            try c.encodeIfPresent(worker, forKey: .worker)
+            try c.encodeIfPresent(text, forKey: .soulText)
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(mcp, forKey: .mcp)
@@ -211,6 +218,10 @@ extension SettingsOp: Codable {
         case "bot-memory-restore":
             self = .botMemoryRestore(workspace: try ws(), name: try s(.name),
                                      version: try c.decode(UInt32.self, forKey: .version))
+        case "assistant-update":
+            self = .assistantUpdate(enabled: try c.decode(Bool.self, forKey: .enabled),
+                                    worker: try c.decodeIfPresent(String.self, forKey: .worker),
+                                    soulText: try c.decodeIfPresent(String.self, forKey: .soulText))
         case "worker-add": self = .workerAdd(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-update": self = .workerUpdate(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-remove": self = .workerRemove(name: try s(.name))
@@ -268,6 +279,9 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
         case let .botAdd(workspace, bot, text), let .botUpdate(workspace, bot, text):
             "\(name)(\(workspace), \(bot), soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
         case let .botMemoryRestore(workspace, n, version): "\(name)(\(workspace), \(n), version: \(version))"
+        case let .assistantUpdate(enabled, worker, text):
+            "\(name)(enabled: \(enabled), worker: \(worker ?? "default"), "
+                + "soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp): "\(name)(\(workspace), \(mcp))"
         case let .routineAdd(workspace, routine, text), let .routineUpdate(workspace, routine, text):
             "\(name)(\(workspace), \(routine), instructions_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"

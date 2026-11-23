@@ -28,6 +28,7 @@ struct InboxItemPane: View {
                     .card(radius: 12, border: true)
                 }
                 ItemSources(item: item)
+                ItemAssist(item: item, live: position != nil, onDone: onDone)
                 actions
                 if position != nil { ItemTaskActions(item: item, onDone: onDone) }
                 if let error = model.requestError {

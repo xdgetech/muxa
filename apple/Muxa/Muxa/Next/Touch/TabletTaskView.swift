@@ -31,7 +31,10 @@ struct TabletTaskView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(path).font(.system(size: 13)).foregroundStyle(Palette.textSecondary).lineLimit(1)
-                Text(terminal.title).font(.system(size: 19, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(terminal.title).font(.system(size: 19, weight: .semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                    if let bot = terminal.bot { BotChip(bot: bot, label: "talks with", id: "task.bot").font(.caption) }
+                }
             }
             Spacer(minLength: 8)
             UploadButton(terminal: terminal.id)

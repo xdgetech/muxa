@@ -17,6 +17,8 @@ struct TaskRequest: Equatable {
     var places: [PlaceSpec]
     var plan: Bool
     var loop: LoopSpec?
+    /// A talk with this Bot (ADR 0083).
+    var bot: String? = nil
 }
 
 /// The Start Task form's choices for one Workspace: one repo or none (ADR 0077).

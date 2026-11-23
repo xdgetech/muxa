@@ -49,7 +49,8 @@ struct DemoTests {
     func aBotsItemsCarryTheirLinksAndProposal() async throws {
         let c = try await open()
         let items = try await c.inbox().items.filter { $0.bot == "pr-watch" }
-        #expect(items.map(\.id) == ["d10", "d11"])
+        // d12 is pr-watch's settings proposal from a talk (ADR 0083).
+        #expect(items.map(\.id) == ["d10", "d11", "d12"])
         #expect(items[0].proposal?.target == "example/app#57")
         #expect(items[1].links?.first?.url.hasPrefix("https://") == true)
         let scan = try #require(try await c.routines().routines.first { $0.name == "scan" })
