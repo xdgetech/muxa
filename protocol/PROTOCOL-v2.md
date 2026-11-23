@@ -236,7 +236,7 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ### Inbox
 
-ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"workspace","bot","done","deleted"}]}`. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
+ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"workspace","bot","done","deleted","day"?,"added"}]}`. `added` is how many of the Bot's items counted against its `daily_items` on `day`, the host's local date (ADR 0086); its "N more" item and its talks' proposals do not count. Servers before ADR 0086 send neither. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
 
 `Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?,"settings_proposal"?,"suggestion"?}`. `settings_proposal` is on a Decide item of a talk with a Bot (ADR 0083); `suggestion` is the Capture assistant's (ADR 0084). ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot adds at most its `daily_items` a day; the rest go into one Read item titled `N more from <bot>`, whose note lists their titles.
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.

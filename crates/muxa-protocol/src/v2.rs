@@ -914,6 +914,13 @@ pub struct BotCount {
     pub bot: String,
     pub done: u32,
     pub deleted: u32,
+    /// The host's local date of `added`, `YYYY-MM-DD`; empty before its first item.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub day: String,
+    /// Items that counted against `daily_items` on `day`. Its "N more" item and
+    /// its talks' proposals do not count.
+    #[serde(default)]
+    pub added: u32,
 }
 
 /// An existing working place in a Workspace.

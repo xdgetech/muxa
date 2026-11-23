@@ -69,14 +69,13 @@ struct BotHomeTab: View {
         return out
     }
 
-    /// Items it made today, open and done, by their `created`; nil when it
-    /// made none the client still knows of.
+    /// The host's count against the daily limit today. Its "N more" item and
+    /// its talks' proposals do not count, so it never passes the limit. Nil
+    /// from a server that does not send it.
     private var itemsToday: Int? {
-        let start = Int64(Calendar.current.startOfDay(for: .now).timeIntervalSince1970)
-        let mine = (model.inbox.items + model.inbox.done).filter {
-            $0.bot == entry.name && $0.workspace == entry.workspace.name && $0.created >= start
-        }
-        return mine.isEmpty ? nil : mine.count
+        let today = Date.now.formatted(.iso8601.year().month().day())
+        let count = model.inbox.bots?.first { $0.workspace == entry.workspace.name && $0.bot == entry.name }
+        return count?.addedToday(today).map(Int.init)
     }
 
     private var noRoutines: some View {

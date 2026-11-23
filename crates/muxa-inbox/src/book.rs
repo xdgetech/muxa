@@ -138,6 +138,8 @@ impl Book {
                         bot: bot.to_owned(),
                         done: l.done,
                         deleted: l.deleted,
+                        day: l.day.clone(),
+                        added: l.added,
                     })
                 })
                 .collect(),
@@ -631,6 +633,12 @@ mod tests {
             .unwrap();
         assert_eq!(titles(&b), ["2 more from news", "a"]);
         assert_eq!(b.item(&first).unwrap().links.len(), 1);
+        let today = &b.view().bots[0];
+        assert_eq!(
+            (today.day.as_str(), today.added),
+            ("2026-11-23", 1),
+            "the \"more\" item and its parts do not count"
+        );
         b.add_from_bot(from_bot("d", "k4"), 1, "2026-11-24", 5)
             .unwrap();
         assert_eq!(titles(&b)[0], "d");

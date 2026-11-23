@@ -96,7 +96,16 @@ data class ItemProposal(val action: String, val target: String, val content: Str
 
 /** How a Bot's items ended (ADR 0082). */
 @Serializable
-data class BotCount(val workspace: String, val bot: String, val done: Long, val deleted: Long)
+data class BotCount(
+    val workspace: String,
+    val bot: String,
+    val done: Long,
+    val deleted: Long,
+    /** The host's local date of [added], `YYYY-MM-DD`; empty from older servers (ADR 0086). */
+    val day: String = "",
+    /** Items that counted against the Bot's daily limit on [day]. */
+    val added: Long = 0,
+)
 
 @Serializable
 data class RoutineRef(val workspace: String, val name: String)

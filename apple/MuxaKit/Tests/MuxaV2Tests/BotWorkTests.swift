@@ -75,3 +75,15 @@ struct BotTerminalTests {
         #expect(!t(["muxa.kind": "task", "muxa.role": "agent"]).belongsToBot)
     }
 }
+
+/// The daily count comes from the host (ADR 0086), not from counting items.
+struct BotCountTests {
+    @Test func todaysCountIsTheHostsAndAnotherDayIsZero() throws {
+        let json = #"{"workspace":"app","bot":"scout","done":1,"deleted":0,"day":"2026-11-23","added":3}"#
+        let count = try JSONDecoder().decode(BotCount.self, from: Data(json.utf8))
+        #expect(count.addedToday("2026-11-23") == 3)
+        #expect(count.addedToday("2026-11-24") == 0)
+        let old = try JSONDecoder().decode(BotCount.self, from: Data(#"{"workspace":"app","bot":"scout","done":1,"deleted":0}"#.utf8))
+        #expect(old.addedToday("2026-11-23") == nil, "an older server sends no count")
+    }
+}

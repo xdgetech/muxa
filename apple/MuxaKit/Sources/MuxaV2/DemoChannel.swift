@@ -89,6 +89,9 @@ actor DemoServer {
         self.content = content
         self.out = out
         inbox = Inbox(revision: 1, items: content.inbox, done: [])
+        // pr-watch has used two of its three items today, as a host counts them.
+        let today = Date.now.formatted(.iso8601.year().month().day())
+        inbox.bots = [BotCount(workspace: "app", bot: "pr-watch", done: 4, deleted: 1, day: today, added: 2)]
     }
 
     func close() { out.finish() }

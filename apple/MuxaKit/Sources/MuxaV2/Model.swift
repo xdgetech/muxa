@@ -128,12 +128,25 @@ public struct BotCount: Codable, Equatable, Sendable {
     public var bot: String
     public var done: UInt32
     public var deleted: UInt32
+    /// The host's local date of `added`, `YYYY-MM-DD`; nil before its first item or from older servers.
+    public var day: String?
+    /// Items that counted against the Bot's daily limit on `day` (ADR 0086).
+    public var added: UInt32?
 
-    public init(workspace: String, bot: String, done: UInt32, deleted: UInt32) {
+    public init(workspace: String, bot: String, done: UInt32, deleted: UInt32, day: String? = nil, added: UInt32? = nil) {
         self.workspace = workspace
         self.bot = bot
         self.done = done
         self.deleted = deleted
+        self.day = day
+        self.added = added
+    }
+
+    /// Items counted against the daily limit today, by the host's count; nil
+    /// when the server does not say or the count is for another day.
+    public func addedToday(_ today: String) -> UInt32? {
+        guard let day, day == today else { return day == nil ? nil : 0 }
+        return added
     }
 }
 
