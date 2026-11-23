@@ -22,7 +22,7 @@ use crate::raw::Raw;
 use client::{Client, Event, State};
 
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
-       muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
+       muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder] [--bot NAME]
                 [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--all-read]
                 [--existing PATH | --checkout REPO]
                 [--plan]
@@ -37,6 +37,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] approve ITEM [--force]
        muxa-cli v2 [--bridge CMD] request-changes ITEM COMMENT...
        muxa-cli v2 [--bridge CMD] retry ITEM
+       muxa-cli v2 [--bridge CMD] apply ITEM
+       muxa-cli v2 [--bridge CMD] accept|dismiss ITEM
        muxa-cli v2 [--bridge CMD] close-task TERMINAL [--force]
        muxa-cli v2 [--bridge CMD] shell TERMINAL
        muxa-cli v2 [--bridge CMD] close-shell TERMINAL
@@ -67,6 +69,10 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   request-changes  types COMMENT into the Task's agent and resolves the item
   retry          runs again what made a Failed item: its Routine, its Task Loop,
                  or its agent
+  apply          applies the settings a Bot proposed in a talk; conflict when
+                 they changed since
+  accept, dismiss  the Capture assistant's suggestion on an item
+  --bot NAME     talks to the Workspace's Bot NAME (a new name: to set one up)
   close-task     closes the Task of an agent terminal as approve does, and marks
                  its open items Done
   shell          starts a shell in the working place of the Task of an agent
@@ -140,6 +146,8 @@ enum Cmd {
         places: Vec<PlaceSpec>,
         plan: bool,
         task_loop: Option<LoopSpec>,
+        /// A talk with this Bot (ADR 0083).
+        bot: Option<String>,
         json: bool,
     },
     Loops {
@@ -208,6 +216,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let (mut with_loop, mut reset) = (false, false);
     let mut spec = LoopSpec::default();
     let (mut workspace, mut title, mut goal) = (None, None, None);
+    let mut bot: Option<String> = None;
     let mut places: Vec<PlaceSpec> = Vec::new();
     let mut chose = false;
     let mut words = Vec::new();
@@ -231,6 +240,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("workspace") => workspace = Some(p.value()?.string()?),
             Long("title") => title = Some(p.value()?.string()?),
             Long("goal") => goal = Some(p.value()?.string()?),
+            Long("bot") => bot = Some(p.value()?.string()?),
             Long("folder") => places.push(PlaceSpec::Folder),
             Long("branch") => {
                 let value = p.value()?.string()?;
@@ -299,6 +309,17 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             action: inbox::Action::Retry((*i).to_owned()),
             json,
         },
+        ["apply", i] => Cmd::Inbox {
+            action: inbox::Action::Apply((*i).to_owned()),
+            json,
+        },
+        [which @ ("accept" | "dismiss"), i] => Cmd::Inbox {
+            action: inbox::Action::Suggestion {
+                item: (*i).to_owned(),
+                accept: *which == "accept",
+            },
+            json,
+        },
         ["start-task"] => Cmd::StartTask {
             workspace: workspace.ok_or("start-task needs --workspace")?,
             title: title.ok_or("start-task needs --title")?,
@@ -306,6 +327,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             places,
             plan,
             task_loop: (with_loop || spec.check.is_some()).then(|| spec.clone()),
+            bot,
             json,
         },
         ["loops"] => Cmd::Loops { json },
@@ -455,11 +477,15 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             places,
             plan,
             task_loop,
+            bot,
             json,
         } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let mut msg = json!({"type": "start-task", "workspace": workspace, "title": title,
                              "goal": goal, "places": places, "plan": plan});
+            if let Some(b) = bot {
+                msg["bot"] = json!(b);
+            }
             if let Some(l) = task_loop {
                 msg["loop"] = json!(l);
             }
@@ -900,6 +926,14 @@ mod tests {
             action(&["retry", "i4"]),
             json!({"type": "inbox-retry", "item": "i4"})
         );
+        assert_eq!(
+            action(&["apply", "i5"]),
+            json!({"type": "inbox-apply", "item": "i5"})
+        );
+        assert_eq!(
+            action(&["dismiss", "i6"]),
+            json!({"type": "inbox-suggestion", "item": "i6", "accept": false})
+        );
         assert_eq!(parse(args(&["request-changes", "i3"])).unwrap(), None);
         assert_eq!(
             parse(args(&["workspaces", "--json"])).unwrap(),
@@ -1009,6 +1043,7 @@ mod tests {
                 ],
                 plan: true,
                 task_loop: None,
+                bot: None,
                 json: false
             }
         );

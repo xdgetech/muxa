@@ -28,6 +28,13 @@ pub enum Action {
         comment: String,
     },
     Retry(String),
+    /// Applies the settings a Bot proposed (ADR 0083).
+    Apply(String),
+    /// Accepts or dismisses the Capture assistant's suggestion (ADR 0084).
+    Suggestion {
+        item: String,
+        accept: bool,
+    },
     /// Closes the Task of an agent terminal without its item (ADR 0079).
     CloseTask {
         terminal: String,
@@ -56,6 +63,10 @@ pub fn request(action: &Action, now: i64) -> Value {
             json!({"type": "inbox-request-changes", "item": item, "comment": comment})
         }
         Action::Retry(item) => json!({"type": "inbox-retry", "item": item}),
+        Action::Apply(item) => json!({"type": "inbox-apply", "item": item}),
+        Action::Suggestion { item, accept } => {
+            json!({"type": "inbox-suggestion", "item": item, "accept": accept})
+        }
         Action::CloseTask { terminal, force } => {
             let worktree = if *force { "force" } else { "remove" };
             json!({"type": "close-task", "terminal": terminal, "worktree": worktree})
