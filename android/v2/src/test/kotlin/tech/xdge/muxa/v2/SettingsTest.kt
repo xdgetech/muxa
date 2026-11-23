@@ -39,6 +39,8 @@ class SettingsTest {
                 """{"op":"workspace-update","workspace":"w","claude_connectors":true}""",
             SettingsOp.WorkspaceUpdate("w", botRules = BotRules(deny = listOf("Bash"))) to
                 """{"op":"workspace-update","workspace":"w","bot_rules":{"allow":[],"deny":["Bash"]}}""",
+            SettingsOp.BotAdd("w", BotSpec("collector", commands = listOf("/path/collect.sh delivery:*"))) to
+                """{"op":"bot-add","workspace":"w","bot":{"name":"collector","enabled":true,"commands":["/path/collect.sh delivery:*"]}}""",
             SettingsOp.AssistantUpdate(true) to """{"op":"assistant-update","enabled":true}""",
             SettingsOp.AssistantUpdate(false, "reviewer", "Be brief.") to
                 """{"op":"assistant-update","enabled":false,"worker":"reviewer","soul_text":"Be brief."}""",

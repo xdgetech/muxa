@@ -201,6 +201,8 @@ data class BotDraft(
     val originalSoul: String? = null,
     val members: Set<String> = emptySet(),
     val handoffs: String = "",
+    /** Shell commands only this Bot may run (ADR 0088), as the inside of `Bash(...)`. */
+    val commands: List<String> = emptyList(),
 ) {
     val problem: String?
         get() = when {
@@ -210,6 +212,8 @@ data class BotDraft(
             members.isNotEmpty() && handoffs.isNotBlank() && handoffs.trim().toIntOrNull() !in PER_DAY ->
                 "Handoffs a day is a number from 1 to 50."
             members.size > MAX_MEMBERS -> "A team has at most $MAX_MEMBERS members."
+            commands.size > MAX_COMMANDS -> "A Bot has at most $MAX_COMMANDS commands."
+            commands.any { commandProblem(it) != null } -> commands.firstNotNullOf { commandProblem(it) }
             soul.toByteArray(Charsets.UTF_8).size > SOUL_BYTES -> "The Soul is at most 12 KiB."
             else -> null
         }
@@ -217,7 +221,7 @@ data class BotDraft(
     fun spec() = BotSpec(
         name.trim(), description.trim().ifEmpty { null }, worker, dailyItems.trim().toIntOrNull(), enabled,
         // Handoffs mean nothing without a team.
-        members.sorted(), handoffs.trim().toIntOrNull().takeIf { members.isNotEmpty() },
+        members.sorted(), handoffs.trim().toIntOrNull().takeIf { members.isNotEmpty() }, commands,
     )
 
     /** As a Routine's text: the Soul goes only when it is new or changed, so an unreadable file is never emptied. */
@@ -231,9 +235,20 @@ data class BotDraft(
         private val BOT_NAME = Regex("[a-z0-9_-]{1,64}")
         private val PER_DAY = 1..50
         private const val MAX_MEMBERS = 6
+        private const val MAX_COMMANDS = 50
+        private const val MAX_COMMAND_BYTES = 500
         private const val SOUL_BYTES = 12 * 1024
 
         fun isValidName(name: String) = BOT_NAME.matches(name)
+
+        /** Why [line] cannot be one of a Bot's commands, or null. The host writes it as `Bash(<line>)`. */
+        fun commandProblem(line: String): String? = when {
+            line.isBlank() -> "Write a command."
+            '\n' in line -> "A command is one line."
+            line.toByteArray(Charsets.UTF_8).size > MAX_COMMAND_BYTES -> "A command is at most $MAX_COMMAND_BYTES bytes."
+            '(' in line || ')' in line -> "Write the command without Bash( and ), and without parentheses."
+            else -> null
+        }
 
         /**
          * The Bots of [bots] that [bot] may lead: the others that lead no team. Its current members stay,
@@ -247,7 +262,7 @@ data class BotDraft(
 
         fun of(b: SettingsBot) = BotDraft(
             false, b.name, b.description.orEmpty(), b.worker, b.dailyItems?.toString().orEmpty(), b.enabled,
-            b.soulText.orEmpty(), b.soulText, b.members.toSet(), b.handoffsPerDay?.toString().orEmpty(),
+            b.soulText.orEmpty(), b.soulText, b.members.toSet(), b.handoffsPerDay?.toString().orEmpty(), b.commands,
         )
     }
 }

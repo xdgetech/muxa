@@ -92,6 +92,14 @@ private fun BotDialog(
         // ADR 0087: no worker; a Bot has its Workspace's connections and MCP servers.
         Text("Runs with $workspace's access.", Modifier.testTag("bot.access"), style = MaterialTheme.typography.bodySmall)
         BotTeam(d, ws.bots) { d = it }
+        Lines(d.commands, "Commands it may run", "bot.command", true, "/path/collect.sh delivery:*", BotDraft::commandProblem) {
+            d = d.copy(commands = it)
+        }
+        Text(
+            "Shell commands only this Bot may run, such as /path/collect.sh delivery:*. In its Routines, any other command is refused; " +
+                "it tells you what it needed.",
+            style = MaterialTheme.typography.bodySmall,
+        )
         if (!d.isNew && d.originalSoul == null) {
             Text("soul.md could not be read. Typing here replaces it.", style = MaterialTheme.typography.bodySmall)
         }

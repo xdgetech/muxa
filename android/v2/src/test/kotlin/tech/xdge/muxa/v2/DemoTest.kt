@@ -612,6 +612,28 @@ class DemoTest {
         }
     }
 
+    @Test
+    fun aBotsCommandsAreKeptAndChecked() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val bot = c.settings().workspaces.first { it.name == "app" }.bots.single()
+            assertEquals(listOf("gh pr list:*"), bot.commands)
+            val more = bot.spec.copy(commands = bot.commands + "/path/collect.sh delivery:*")
+            val s = c.settingsUpdate("1", listOf(SettingsOp.BotUpdate("app", more)))
+            assertEquals(more.commands, s.workspaces.first { it.name == "app" }.bots.single().commands)
+            val wrapped = more.copy(commands = listOf("Bash(gh pr list:*)"))
+            assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.BotUpdate("app", wrapped))) }.code)
+            c.close()
+        }
+        // The talk's proposal replaces the whole Bot and keeps its commands.
+        withTimeout(10_000) {
+            val c = open()
+            c.inbox(V2Request.InboxApply("d12"))
+            assertEquals(listOf("gh pr list:*"), c.settings().workspaces.first { it.name == "app" }.bots.single().commands)
+            c.close()
+        }
+    }
+
     private suspend fun refusal(block: suspend () -> Unit): V2Error.Refused {
         try {
             block()

@@ -164,4 +164,15 @@ class SettingsDraftsTest {
         assertEquals("Add Routine nightly-sweep (off)", proposalLine(SettingsOp.RoutineAdd("app", off)))
         assertEquals("Change Bot pr-watch", proposalLine(SettingsOp.BotUpdate("app", BotSpec("pr-watch"))))
     }
+
+    @Test
+    fun aBotsCommandIsOneLineWithoutParentheses() {
+        assertNull(BotDraft.commandProblem("/path/collect.sh delivery:*"))
+        assertEquals("Write a command.", BotDraft.commandProblem("  "))
+        assertEquals("A command is at most 500 bytes.", BotDraft.commandProblem("x".repeat(501)))
+        assertEquals("Write the command without Bash( and ), and without parentheses.", BotDraft.commandProblem("Bash(ls)"))
+        val b = SettingsBot("collector", commands = listOf("gh pr list:*"))
+        assertEquals(listOf("gh pr list:*"), BotDraft.of(b).spec().commands)
+        assertEquals(BotDraft.commandProblem("a(b"), BotDraft.of(b).copy(commands = listOf("a(b")).problem)
+    }
 }

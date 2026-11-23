@@ -169,6 +169,17 @@ internal class DemoSettings(initial: Settings) {
             require(member.members.isEmpty()) { "$m leads a team itself" }
         }
         require(bot.handoffsPerDay == null || bot.handoffsPerDay in 1..MAX_HANDOFFS) { "handoffs_per_day is 1 to $MAX_HANDOFFS" }
+        requireCommands(bot.commands)
+    }
+
+    /** As the server checks a Bot's commands (ADR 0088): the inside of a `Bash(...)` rule, one line each. */
+    private fun requireCommands(commands: List<String>) {
+        require(commands.size <= MAX_COMMANDS) { "a Bot has at most $MAX_COMMANDS commands" }
+        for (c in commands) {
+            require(c.isNotBlank() && '\n' !in c) { "a command is one line" }
+            require(c.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) { "a command is at most $MAX_COMMAND_BYTES bytes" }
+            require('(' !in c && ')' !in c) { "write a command without Bash( and )" }
+        }
     }
 
     private fun patched(old: String?, p: Patch<String>): String? = when (p) {
@@ -183,5 +194,7 @@ internal class DemoSettings(initial: Settings) {
     private companion object {
         const val MAX_MEMBERS = 6
         const val MAX_HANDOFFS = 50
+        const val MAX_COMMANDS = 50
+        const val MAX_COMMAND_BYTES = 500
     }
 }

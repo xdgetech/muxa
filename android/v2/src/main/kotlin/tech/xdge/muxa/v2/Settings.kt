@@ -187,6 +187,8 @@ data class BotSpec(
     // Absent when empty, as the server writes it.
     @EncodeDefault(EncodeDefault.Mode.NEVER) val members: List<String> = emptyList(),
     @SerialName("handoffs_per_day") val handoffsPerDay: Int? = null,
+    /** Shell command patterns only this Bot may run, each the inside of a `Bash(...)` rule (ADR 0088). Absent when empty. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val commands: List<String> = emptyList(),
 )
 
 /** A Bot with its `soul.md`, its `memory.md` (which its runs write), and how many earlier memories can come back. */
@@ -202,13 +204,14 @@ data class SettingsBot(
     @SerialName("memory_versions") val memoryVersions: Int = 0,
     val members: List<String> = emptyList(),
     @SerialName("handoffs_per_day") val handoffsPerDay: Int? = null,
+    val commands: List<String> = emptyList(),
 ) {
     val spec: BotSpec
-        get() = BotSpec(name, description, worker, dailyItems, enabled, members, handoffsPerDay)
+        get() = BotSpec(name, description, worker, dailyItems, enabled, members, handoffsPerDay, commands)
 
     companion object {
         fun of(spec: BotSpec, soulText: String?) = with(spec) {
-            SettingsBot(name, description, worker, dailyItems, enabled, soulText, "", 0, members, handoffsPerDay)
+            SettingsBot(name, description, worker, dailyItems, enabled, soulText, "", 0, members, handoffsPerDay, commands)
         }
     }
 }

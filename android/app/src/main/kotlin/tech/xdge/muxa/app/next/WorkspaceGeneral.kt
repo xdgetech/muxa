@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LinkButton
 import tech.xdge.muxa.app.ui.PrimaryButton
+import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.Patch
 import tech.xdge.muxa.v2.SettingsOp
@@ -78,10 +79,19 @@ private fun SavedField(value: String, label: String, tag: String, enabled: Boole
     }
 }
 
-/** A list of lines, each removable, and a field to add one. */
+/** A list of lines, each removable, and a field to add one. [problem] says why a line cannot be added, or null. */
 @Composable
-fun Lines(values: List<String>, label: String, tag: String, enabled: Boolean, placeholder: String, save: (List<String>) -> Unit) {
+fun Lines(
+    values: List<String>,
+    label: String,
+    tag: String,
+    enabled: Boolean,
+    placeholder: String,
+    problem: (String) -> String? = { null },
+    save: (List<String>) -> Unit,
+) {
     var adding by remember(values) { mutableStateOf("") }
+    val why = adding.trim().takeIf { it.isNotEmpty() }?.let(problem)
     Text(label, fontSize = 13.sp)
     for (v in values) {
         Row(Modifier.fillMaxWidth().testTag("$tag.$v"), verticalAlignment = Alignment.CenterVertically) {
@@ -91,10 +101,14 @@ fun Lines(values: List<String>, label: String, tag: String, enabled: Boolean, pl
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Field(adding, { adding = it }, "Add", "$tag.new", enabled, mono = true, placeholder = placeholder) }
-        IconButton({ save(values + adding.trim()) }, Modifier.testTag("$tag.add"), enabled = enabled && adding.isNotBlank() && adding.trim() !in values) {
+        IconButton(
+            { save(values + adding.trim()) }, Modifier.testTag("$tag.add"),
+            enabled = enabled && adding.isNotBlank() && adding.trim() !in values && why == null,
+        ) {
             Icon(Icons.add, "Add")
         }
     }
+    why?.let { Text(it, Modifier.testTag("$tag.problem"), color = Theme.failure, fontSize = 13.sp) }
 }
 
 private enum class LoopMode { OFF, ANY, LIST }

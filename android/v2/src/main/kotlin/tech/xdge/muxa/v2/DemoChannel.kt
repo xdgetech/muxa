@@ -795,6 +795,9 @@ private fun standardContent(): DemoContent {
 
 private const val SCAN_SCHEDULE = "*/30 9-18 * * 1-5"
 
+/** The shell commands only pr-watch may run (ADR 0088). */
+private val PR_WATCH_COMMANDS = listOf("gh pr list:*")
+
 /** What pr-watch proposed in a talk: an off Routine of its own, and a day's items more. */
 private val NIGHTLY_SWEEP_OPS = listOf(
     SettingsOp.RoutineAdd(
@@ -802,7 +805,8 @@ private val NIGHTLY_SWEEP_OPS = listOf(
         RoutineSpec("nightly-sweep", at = "02:00", timezone = "Europe/Berlin", instructions = "routines/nightly-sweep.md", enabled = false, bot = "pr-watch"),
         "Close the stale PRs of example/app.\n",
     ),
-    SettingsOp.BotUpdate("app", BotSpec("pr-watch", "Watches the app's open PRs", dailyItems = 4)),
+    // A bot-update replaces the whole Bot, so it keeps the commands it already has.
+    SettingsOp.BotUpdate("app", BotSpec("pr-watch", "Watches the app's open PRs", dailyItems = 4, commands = PR_WATCH_COMMANDS)),
 )
 
 private val DEMO_PLAN = """
@@ -861,6 +865,7 @@ private val DEMO_SETTINGS = Settings(
                     soulText = "You watch the open PRs of example/app.\nPropose a review only when CI passed. Write short items.\n",
                     memoryText = "- Sam reviews the auth code.\n- Dependabot PRs merge on Fridays.\n",
                     memoryVersions = 1,
+                    commands = PR_WATCH_COMMANDS,
                 ),
             ),
         ),
