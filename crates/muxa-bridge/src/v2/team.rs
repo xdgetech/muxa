@@ -200,7 +200,12 @@ fn member_launch(
     if !crate::launch::is_claude_code(&resolved.command) {
         return Err("a member needs Claude Code".into());
     }
-    let brief = bot_run::brief(member, &[], ws)?;
+    let described = member
+        .worker
+        .as_deref()
+        .and_then(|w| workspaces.worker(w))
+        .and_then(|w| w.description.as_deref());
+    let brief = bot_run::brief(member, &[], ws, described)?;
     super::git::write_file(&dir, "TASK.md", &member_text(&brief, lead, h))?;
     let rules = [bot_run::deny(&member.dir)];
     let agent = runner::agent_in(ws, resolved.command, &dir, &rules, &[])?;

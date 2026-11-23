@@ -194,7 +194,7 @@ impl BridgeHost {
             .iter()
             .find(|w| w.name == ws.name)
             .ok_or_else(|| TaskError::Invalid(format!("no Workspace named {:?}", ws.name)))?;
-        Ok(super::talk_check::brief(found, bot))
+        Ok(super::talk_check::brief(found, bot, &view.workers))
     }
 }
 

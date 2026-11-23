@@ -10,6 +10,8 @@ pub struct Reach {
     /// Connection names with their environment variables, as `name ($ENV)`.
     pub connections: Vec<String>,
     pub mcp: Vec<String>,
+    /// The worker it runs as, with its description, when it names one.
+    pub worker: Option<String>,
 }
 
 /// Where the Bot is started.
@@ -42,12 +44,28 @@ pub fn section(name: &str, reach: &Reach, place: Place<'_>) -> String {
          - Your Memory is what you learned. You write it yourself at the end of a run or a talk.\n\
          - Your Routines are muxa Routines: muxa runs you on a schedule, at a time, or when a Task of this \
          Workspace asks for review. They are not Claude cloud routines.\n\
-         - You can read with this Workspace's connections, as environment variables: {connections}; \
-         and its MCP servers: {mcp}. Only these load; the user's claude.ai connectors do not. \
-         For another service, ask the user to add it in Settings › Connections or MCP servers.\n",
+         - This Workspace gives you its connections, as environment variables: {connections}; \
+         and its MCP servers: {mcp}.\n",
         ws = reach.workspace,
         connections = list(&reach.connections),
         mcp = list(&reach.mcp),
+    );
+    // muxa passes --strict-mcp-config only when the Workspace lists servers (ADR 0075).
+    if reach.mcp.is_empty() {
+        out.push_str(&format!(
+            "- {}. Its own settings decide which other MCP servers and connectors load, \
+             the user's claude.ai connectors among them.\n",
+            match &reach.worker {
+                Some(w) => format!("You run as the worker {w}"),
+                None => "You run as the Workspace's agent".to_owned(),
+            }
+        ));
+    } else {
+        out.push_str("- Only those MCP servers load; the user's claude.ai connectors do not.\n");
+    }
+    out.push_str(
+        "- Try a source before you say you cannot reach it. For one you cannot reach, ask the user to add \
+         a connection or an MCP server in Settings.\n",
     );
     match place {
         Place::Member { lead } => out.push_str(&format!(
@@ -95,6 +113,7 @@ mod tests {
             daily_items: 20,
             connections: vec!["linear ($LINEAR_API_KEY)".into()],
             mcp: vec![],
+            worker: Some("lisk-cos: Reads Calendar and Slack".into()),
         }
     }
 
@@ -107,12 +126,31 @@ mod tests {
                 "not Claude cloud routines",
                 "linear ($LINEAR_API_KEY)",
                 "MCP servers: none",
-                "claude.ai connectors do not",
+                "You run as the worker lisk-cos: Reads Calendar and Slack",
+                "Try a source before you say you cannot reach it",
                 "never edit the Workspace's `.muxa/`",
             ] {
                 assert!(text.contains(part), "{place:?}: {part}");
             }
         }
+    }
+
+    #[test]
+    fn claude_ai_connectors_are_off_only_when_the_workspace_lists_servers() {
+        let open = section("scout", &reach(), Place::Run);
+        assert!(open.contains("the user's claude.ai connectors among them"));
+        let strict = section(
+            "scout",
+            &Reach {
+                mcp: vec!["linear".into()],
+                ..reach()
+            },
+            Place::Run,
+        );
+        assert!(
+            strict.contains("claude.ai connectors do not")
+                && !strict.contains("You run as the worker")
+        );
     }
 
     #[test]

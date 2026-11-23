@@ -392,7 +392,15 @@ fn ready(
             let ws = workspaces.get(&routine.workspace).ok_or_else(|| {
                 fail(StartError::Failed("the Routine's Workspace is gone".into()))
             })?;
-            Some(bot_run::brief(found, &team, ws).map_err(|e| fail(StartError::Failed(e)))?)
+            let described = found
+                .worker
+                .as_deref()
+                .and_then(|w| workspaces.worker(w))
+                .and_then(|w| w.description.as_deref());
+            Some(
+                bot_run::brief(found, &team, ws, described)
+                    .map_err(|e| fail(StartError::Failed(e)))?,
+            )
         }
     };
     let goal = crate::routines::brief::goal(&routine, &instructions, bot.as_ref());

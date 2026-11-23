@@ -16,7 +16,12 @@ const SETTINGS_FLAG: &str = "--settings";
 
 /// Blocking. The Bot's files as they are now, its team when it leads one,
 /// and what it can use in its Workspace `ws`.
-pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, String> {
+pub fn brief(
+    bot: &Bot,
+    team: &[&Bot],
+    ws: &Workspace,
+    worker_description: Option<&str>,
+) -> Result<BotBrief, String> {
     Ok(BotBrief {
         reach: Reach {
             workspace: ws.name.clone(),
@@ -27,6 +32,10 @@ pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, Strin
                 .map(|c| format!("{} (${})", c.name, c.env))
                 .collect(),
             mcp: ws.mcp.iter().map(|m| m.name.clone()).collect(),
+            worker: bot
+                .worker
+                .as_ref()
+                .map(|w| worker_line(w, worker_description)),
         },
         name: bot.name.clone(),
         soul: bot.read_soul().map_err(|e| e.to_string())?,
@@ -36,6 +45,14 @@ pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, Strin
             .map(|m| (m.name.clone(), m.description.clone()))
             .collect(),
     })
+}
+
+/// Pure. A worker as a Bot's brief names it: its name, and what it reads.
+pub fn worker_line(name: &str, description: Option<&str>) -> String {
+    match description.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => format!("{name} ({d})"),
+        None => name.to_owned(),
+    }
 }
 
 /// Pure. Paths start with `//` to be absolute; `Edit(…)` covers every
