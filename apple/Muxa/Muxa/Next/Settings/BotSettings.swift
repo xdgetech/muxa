@@ -149,6 +149,10 @@ struct BotEditor: View {
                     ? (.botRemove(workspace: workspace.name, name: bot.name), BotRemovalSection.keepsFiles(bot.name)) : nil
             }
         ) {
+            if let bot = draft.existing {
+                // A renamed Bot is another file entry: the editor closes and the list shows it.
+                BotRenameSection(workspace: workspace, bot: bot) { _ in dismiss() }
+            }
             BotSettingsSections(draft: $draft, workspace: workspace)
             if let bot = draft.existing { talk(bot) }
             soul
@@ -398,5 +402,68 @@ struct BotRemovalSection: View {
             Text(owned.isEmpty ? Self.keepsFiles(bot.name)
                  : "Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(Self.keepsFiles(bot.name))")
         }
+    }
+}
+
+/// A Bot's name with Rename (ADR 0089): one `bot-rename` moves its Routines,
+/// teams, folder and Inbox items to the new name.
+struct BotRenameSection: View {
+    @Environment(NextModel.self) private var model
+    let workspace: SettingsWorkspace
+    let bot: SettingsBot
+    /// After the host renamed it, with the new name.
+    let onRenamed: (String) -> Void
+    @State private var name: String
+    @State private var error: String?
+
+    init(workspace: SettingsWorkspace, bot: SettingsBot, onRenamed: @escaping (String) -> Void) {
+        self.workspace = workspace
+        self.bot = bot
+        self.onRenamed = onRenamed
+        _name = State(initialValue: bot.name)
+    }
+
+    var body: some View {
+        Section {
+            HStack {
+                TextField("Name", text: $name, prompt: Text(bot.name))
+                    .labelsHidden()
+                    .monospaced()
+                    .plainEntry()
+                    .accessibilityIdentifier("bot.rename.name")
+                Button("Rename") { Task { await rename() } }
+                    .disabled(problem != nil || trimmed == bot.name || model.settings.saving || model.settings.readOnly)
+                    .accessibilityIdentifier("bot.rename")
+            }
+            SaveError(text: error, id: "bot.rename.error")
+        } header: {
+            Text("Name")
+        } footer: {
+            Text(problem ?? "Its Routines, team, soul, memory and Inbox items move to the new name.")
+                .foregroundStyle(problem == nil ? Palette.textSecondary : Theme.failure)
+        }
+        // A Bot's name is lowercase; typing capitals or spaces would only leave Rename disabled.
+        .onChange(of: name) { _, typed in
+            let fixed = typed.lowercased().replacingOccurrences(of: " ", with: "-")
+            if fixed != typed { name = fixed }
+        }
+        .onChange(of: bot.name) { _, renamed in name = renamed }
+    }
+
+    private var trimmed: String { Lines.trimmed(name) }
+
+    /// Why the name cannot be taken; nil when it can, or when unchanged.
+    private var problem: String? {
+        guard trimmed != bot.name else { return nil }
+        if !BotSpec.isValidName(trimmed) { return "A name is 1 to 64 lowercase letters, digits, - and _." }
+        let current = model.settings.workspace(workspace.name) ?? workspace
+        if current.bots.contains(where: { $0.name == trimmed }) { return "\(workspace.name) has a Bot named \(trimmed)." }
+        return nil
+    }
+
+    private func rename() async {
+        let to = trimmed
+        error = await model.settings.save([.botRename(workspace: workspace.name, from: bot.name, to: to)])
+        if error == nil { onRenamed(to) }
     }
 }

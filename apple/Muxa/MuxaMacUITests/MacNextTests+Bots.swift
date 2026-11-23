@@ -131,3 +131,25 @@ extension MacNextTests {
         XCTAssertFalse(app.descendants(matching: .any)["bot.access"].exists, "Files keeps Soul and Memory only")
     }
 }
+
+/// Renaming a Bot keeps its page open under the new name (ADR 0089).
+extension MacNextTests {
+    @MainActor
+    func testABotIsRenamedOnItsPage() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["bot.app.pr-watch"].waitForExistence(timeout: 10))
+        app.typeKey("5", modifierFlags: .command)
+        let field = app.textFields["bot.rename.name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let rename = app.buttons["bot.rename"]
+        XCTAssertFalse(rename.isEnabled, "the name is unchanged")
+        field.doubleClick()
+        field.typeKey("a", modifierFlags: .command)
+        field.typeText("Reviews")
+        XCTAssertTrue(waitFor(field, valueContaining: "reviews"), "typed capitals become lowercase")
+        rename.click()
+        XCTAssertTrue(app.descendants(matching: .any)["bot.app.reviews"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["bot.title"].value as? String ?? app.staticTexts["bot.title"].label, "reviews")
+    }
+}

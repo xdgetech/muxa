@@ -17,6 +17,10 @@ struct BotSettingsTab: View {
 
     var body: some View {
         PaletteForm {
+            BotRenameSection(workspace: entry.workspace, bot: entry.bot) { to in
+                // The page follows the Bot under its new name.
+                chrome.botPick = .bot(workspace: entry.workspace.name, name: to)
+            }
             BotSettingsSections(draft: $draft, workspace: entry.workspace)
             Section {
                 HStack {

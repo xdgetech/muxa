@@ -43,6 +43,8 @@ public enum SettingsOp: Equatable, Sendable {
     case botRemove(workspace: String, name: String)
     /// Brings back kept memory `version`, 1 the newest.
     case botMemoryRestore(workspace: String, name: String, version: UInt32)
+    /// Renames a Bot with its Routines, teams, folder and Inbox items (ADR 0089).
+    case botRename(workspace: String, from: String, to: String)
     /// The Capture assistant (ADR 0084). `soulText` replaces its `soul.md`.
     case assistantUpdate(enabled: Bool, worker: String? = nil, soulText: String? = nil)
     case workerAdd(worker: WorkerSpec)
@@ -74,6 +76,7 @@ public enum SettingsOp: Equatable, Sendable {
         case .botUpdate: "bot-update"
         case .botRemove: "bot-remove"
         case .botMemoryRestore: "bot-memory-restore"
+        case .botRename: "bot-rename"
         case .assistantUpdate: "assistant-update"
         case .workerAdd: "worker-add"
         case .workerUpdate: "worker-update"
@@ -89,6 +92,7 @@ public enum SettingsOp: Equatable, Sendable {
 
 extension SettingsOp: Codable {
     enum CodingKeys: String, CodingKey {
+        case from, to
         case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot
         case claudeConnectors = "claude_connectors"
         case botRules = "bot_rules"
@@ -150,6 +154,10 @@ extension SettingsOp: Codable {
             try c.encode(workspace, forKey: .workspace)
             try c.encode(bot, forKey: .bot)
             try c.encodeIfPresent(text, forKey: .soulText)
+        case let .botRename(workspace, from, to):
+            try c.encode(workspace, forKey: .workspace)
+            try c.encode(from, forKey: .from)
+            try c.encode(to, forKey: .to)
         case let .botMemoryRestore(workspace, name, version):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(name, forKey: .name)
@@ -221,6 +229,7 @@ extension SettingsOp: Codable {
                 ? .botAdd(workspace: try ws(), bot: spec, soulText: text)
                 : .botUpdate(workspace: try ws(), bot: spec, soulText: text)
         case "bot-remove": self = .botRemove(workspace: try ws(), name: try s(.name))
+        case "bot-rename": self = .botRename(workspace: try ws(), from: try s(.from), to: try s(.to))
         case "bot-memory-restore":
             self = .botMemoryRestore(workspace: try ws(), name: try s(.name),
                                      version: try c.decode(UInt32.self, forKey: .version))
@@ -287,6 +296,7 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
         case let .botAdd(workspace, bot, text), let .botUpdate(workspace, bot, text):
             "\(name)(\(workspace), \(bot), soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
         case let .botMemoryRestore(workspace, n, version): "\(name)(\(workspace), \(n), version: \(version))"
+        case let .botRename(workspace, from, to): "\(name)(\(workspace), \(from) → \(to))"
         case let .assistantUpdate(enabled, worker, text):
             "\(name)(enabled: \(enabled), worker: \(worker ?? "default"), "
                 + "soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"

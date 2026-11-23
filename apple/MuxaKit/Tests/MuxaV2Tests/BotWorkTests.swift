@@ -191,3 +191,30 @@ struct BotCommandsTests {
         #expect(bot.spec.commands == ["gh pr list:*"])
     }
 }
+
+/// Renaming a Bot carries its Routines, teams and items along (ADR 0089).
+struct BotRenameTests {
+    @Test func theOpIsOnTheWire() throws {
+        let op = SettingsOp.botRename(workspace: "w", from: "a", to: "b")
+        let json = String(decoding: try Coding.plainEncoder.encode(op), as: UTF8.self)
+        #expect(json == #"{"from":"a","op":"bot-rename","to":"b","workspace":"w"}"#)
+        #expect(try Coding.plainDecoder.decode(SettingsOp.self, from: Data(json.utf8)) == op)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func theDemoRenamesTheBotItsRoutinesAndItsItems() async throws {
+        let c = try await V2Client.open(DemoChannel(), name: "test")
+        let s = try await c.settings()
+        let after = try await c.settingsUpdate(
+            revision: s.revision, ops: [.botRename(workspace: "app", from: "pr-watch", to: "reviews")])
+        #expect(after.workspaces[0].bots.map(\.name) == ["reviews"])
+        #expect(after.workspaces[0].routines.first { $0.name == "scan" }?.spec.bot == "reviews")
+        let inbox = try await c.inbox()
+        #expect(inbox.items.filter { $0.bot == "reviews" }.map(\.id) == ["d10", "d11", "d12"])
+        #expect(!inbox.items.contains { $0.bot == "pr-watch" })
+        await #expect(throws: V2Error.self) {
+            try await c.settingsUpdate(revision: after.revision,
+                                       ops: [.botRename(workspace: "app", from: "reviews", to: "Bad Name")])
+        }
+    }
+}

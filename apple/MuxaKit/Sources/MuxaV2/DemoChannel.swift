@@ -310,11 +310,33 @@ actor DemoServer {
             return send(["type": "error", "id": id, "code": "conflict", "message": "the settings changed; read them again"])
         }
         do {
-            content.settings = try content.settings.demoApplying(m["ops"] as? [Any] ?? [])
+            let ops = m["ops"] as? [Any] ?? []
+            content.settings = try content.settings.demoApplying(ops)
             reply(id, ["settings": plain(content.settings)])
+            renameBotItems(ops)
         } catch {
             send(["type": "error", "id": id, "code": "bad-request", "message": (error as? DemoSettingsRefusal)?.message ?? "the ops cannot apply"])
         }
+    }
+
+    /// After `bot-rename`, the server moves the Bot's items and counts to the new name (ADR 0089).
+    private func renameBotItems(_ ops: [Any]) {
+        let renames = ops.compactMap { $0 as? [String: Any] }.filter { $0["op"] as? String == "bot-rename" }
+        guard !renames.isEmpty else { return }
+        for r in renames {
+            guard let w = r["workspace"] as? String, let from = r["from"] as? String, let to = r["to"] as? String else { continue }
+            func move(_ items: inout [InboxItem]) {
+                for i in items.indices where items[i].bot == from && items[i].workspace == w { items[i].bot = to }
+            }
+            move(&inbox.items)
+            move(&inbox.done)
+            if var counts = inbox.bots {
+                for i in counts.indices where counts[i].bot == from && counts[i].workspace == w { counts[i].bot = to }
+                inbox.bots = counts
+            }
+        }
+        inbox.revision += 1
+        if watching { send(["type": "inbox", "inbox": inbox.wireObject]) }
     }
 
     /// Applies a Bot's proposed settings as `settings-update` would, then

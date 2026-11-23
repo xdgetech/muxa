@@ -120,6 +120,17 @@ extension Settings {
                 }
                 w.bots.remove(at: try find(w.bots, name, \.name))
             }
+        case let .botRename(workspace, from, to):
+            try edit(workspace) { w in
+                let at = try find(w.bots, from, \.name)
+                guard BotSpec.isValidName(to) else { throw refusal("\(to) is not a Bot name") }
+                guard !w.bots.contains(where: { $0.name == to }) else { throw refusal("\(to) exists") }
+                w.bots[at].spec.name = to
+                for i in w.bots.indices {
+                    w.bots[i].spec.members = w.bots[i].spec.members.map { $0 == from ? to : $0 }
+                }
+                for i in w.routines.indices where w.routines[i].spec.bot == from { w.routines[i].spec.bot = to }
+            }
         case let .botMemoryRestore(workspace, name, version):
             try edit(workspace) { w in
                 let at = try find(w.bots, name, \.name)
