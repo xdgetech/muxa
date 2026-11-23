@@ -23,7 +23,11 @@ class SettingsTest {
             SettingsOp.McpAdd("w", McpSpec("api", url = "https://api.example.com/mcp", type = "sse")) to
                 """{"op":"mcp-add","workspace":"w","mcp":{"name":"api","url":"https://api.example.com/mcp","type":"sse","env":{},"headers":{},"connections":[]}}""",
             SettingsOp.RoutineAdd("w", RoutineSpec("d", at = "08:00", instructions = "routines/d.md"), "Hi.\n") to
-                """{"op":"routine-add","workspace":"w","routine":{"name":"d","at":"08:00","instructions":"routines/d.md","enabled":true,"direct_writes":false},"instructions_text":"Hi.\n"}""",
+                """{"op":"routine-add","workspace":"w","routine":{"name":"d","at":"08:00","instructions":"routines/d.md","enabled":true,"direct_writes":false,"read_only":false},"instructions_text":"Hi.\n"}""",
+            SettingsOp.BotAdd("w", BotSpec("pr-watch", description = "Watches PRs"), "I watch PRs.\n") to
+                """{"op":"bot-add","workspace":"w","bot":{"name":"pr-watch","description":"Watches PRs","enabled":true},"soul_text":"I watch PRs.\n"}""",
+            SettingsOp.BotMemoryRestore("w", "pr-watch", 1) to
+                """{"op":"bot-memory-restore","workspace":"w","name":"pr-watch","version":1}""",
             SettingsOp.WorkerAdd(WorkerSpec("r", agent = "codex", loop = WorkerLoop("make test", maxAttempts = 2))) to
                 """{"op":"worker-add","worker":{"name":"r","agent":"codex","args":[],"loop":{"check":"make test","max_attempts":2}}}""",
             SettingsOp.WorkerRemove("r") to """{"op":"worker-remove","name":"r"}""",

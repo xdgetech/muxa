@@ -59,6 +59,8 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var mcp: [McpSpec]
     /// Also while `routinesEnabled` is false.
     public var routines: [SettingsRoutine]
+    /// The `[[bot]]` tables of `.muxa/routines.toml` (ADR 0082).
+    public var bots: [SettingsBot] = []
     /// Why `.muxa/routines.toml` cannot be used as it is now.
     public var routinesProblem: String?
 
@@ -67,7 +69,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public init(name: String, root: String, repos: [String] = [], parkAfter: String? = nil, agent: SettingsAgent = SettingsAgent(),
                 loop: WorkspaceLoop? = nil, routinesEnabled: Bool = false, directWrites: Bool = false,
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
-                routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = []) {
+                routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = [],
+                bots: [SettingsBot] = []) {
+        self.bots = bots
         self.name = name
         self.root = root
         self.repos = repos
@@ -85,7 +89,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, root, repos, agent, loop, connections, mcp, routines
+        case name, root, repos, agent, loop, connections, mcp, routines, bots
         case parkAfter = "park_after"
         case routinesEnabled = "routines_enabled"
         case directWrites = "direct_writes"
@@ -109,6 +113,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         connections = try c.decode(.connections, or: [])
         mcp = try c.decode(.mcp, or: [])
         routines = try c.decode(.routines, or: [])
+        bots = try c.decode(.bots, or: [])
         routinesProblem = try c.decodeIfPresent(String.self, forKey: .routinesProblem)
     }
 }
@@ -308,12 +313,18 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
     public var enabled: Bool
     public var items: UInt32?
     public var directWrites: Bool
+    /// The `[[bot]]` that owns it (ADR 0082).
+    public var bot: String?
+    /// Claude Code's edit tools are denied to the run.
+    public var readOnly: Bool
 
     public var id: String { name }
 
     public init(name: String, at: String? = nil, schedule: String? = nil, timezone: String? = nil, worker: String? = nil,
                 instructions: String, project: String? = nil, enabled: Bool = true, items: UInt32? = nil,
-                directWrites: Bool = false) {
+                directWrites: Bool = false, bot: String? = nil, readOnly: Bool = false) {
+        self.bot = bot
+        self.readOnly = readOnly
         self.name = name
         self.at = at
         self.schedule = schedule
@@ -327,8 +338,9 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, at, schedule, timezone, worker, instructions, project, enabled, items
+        case name, at, schedule, timezone, worker, instructions, project, enabled, items, bot
         case directWrites = "direct_writes"
+        case readOnly = "read_only"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -344,6 +356,88 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
         enabled = try c.decode(.enabled, or: true)
         items = try c.decodeIfPresent(UInt32.self, forKey: .items)
         directWrites = try c.decode(.directWrites, or: false)
+        bot = try c.decodeIfPresent(String.self, forKey: .bot)
+        readOnly = try c.decode(.readOnly, or: false)
+    }
+}
+
+/// `[[bot]]` (ADR 0082): a named owner of Routines with a Soul and a Memory.
+public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
+    /// Lowercase letters, digits, `-` and `_`.
+    public var name: String
+    public var description: String?
+    public var worker: String?
+    /// Nil: 3.
+    public var dailyItems: UInt32?
+    public var enabled: Bool
+
+    public var id: String { name }
+
+    public init(name: String, description: String? = nil, worker: String? = nil, dailyItems: UInt32? = nil,
+                enabled: Bool = true) {
+        self.name = name
+        self.description = description
+        self.worker = worker
+        self.dailyItems = dailyItems
+        self.enabled = enabled
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, description, worker, enabled
+        case dailyItems = "daily_items"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        worker = try c.decodeIfPresent(String.self, forKey: .worker)
+        dailyItems = try c.decodeIfPresent(UInt32.self, forKey: .dailyItems)
+        enabled = try c.decode(.enabled, or: true)
+    }
+}
+
+/// A Bot as `settings` shows it, with its Soul and Memory.
+public struct SettingsBot: Codable, Equatable, Sendable, Identifiable {
+    public var spec: BotSpec
+    /// `soul.md`; nil when it cannot be read, empty when there is none.
+    public var soulText: String?
+    /// `memory.md`, which the Bot's runs write.
+    public var memoryText: String?
+    /// How many earlier memories can come back.
+    public var memoryVersions: UInt32
+
+    public var id: String { spec.name }
+    public var name: String { spec.name }
+
+    public init(spec: BotSpec, soulText: String? = "", memoryText: String? = "", memoryVersions: UInt32 = 0) {
+        self.spec = spec
+        self.soulText = soulText
+        self.memoryText = memoryText
+        self.memoryVersions = memoryVersions
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case soulText = "soul_text"
+        case memoryText = "memory_text"
+        case memoryVersions = "memory_versions"
+    }
+
+    // On the wire the spec's fields and the texts share one object.
+    public init(from decoder: any Decoder) throws {
+        spec = try BotSpec(from: decoder)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        soulText = try c.decodeIfPresent(String.self, forKey: .soulText)
+        memoryText = try c.decodeIfPresent(String.self, forKey: .memoryText)
+        memoryVersions = try c.decode(.memoryVersions, or: 0)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        try spec.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(soulText, forKey: .soulText)
+        try c.encodeIfPresent(memoryText, forKey: .memoryText)
+        try c.encode(memoryVersions, forKey: .memoryVersions)
     }
 }
 

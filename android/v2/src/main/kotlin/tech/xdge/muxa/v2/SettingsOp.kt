@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
@@ -88,6 +89,16 @@ sealed class SettingsOp(val op: String) {
 
     /** Its instruction file stays. */
     data class RoutineRemove(val workspace: String, val name: String) : SettingsOp("routine-remove")
+
+    /** [soulText] replaces the Bot's `soul.md` (ADR 0082). */
+    data class BotAdd(val workspace: String, val bot: BotSpec, val soulText: String? = null) : SettingsOp("bot-add")
+    data class BotUpdate(val workspace: String, val bot: BotSpec, val soulText: String? = null) : SettingsOp("bot-update")
+
+    /** Its Routines must go first; its folder stays. */
+    data class BotRemove(val workspace: String, val name: String) : SettingsOp("bot-remove")
+
+    /** Brings back kept memory [version], 1 the newest. */
+    data class BotMemoryRestore(val workspace: String, val name: String, val version: Int) : SettingsOp("bot-memory-restore")
     data class WorkerAdd(val worker: WorkerSpec) : SettingsOp("worker-add")
 
     /** Replaces the worker named `worker.name`. */
@@ -114,6 +125,10 @@ sealed class SettingsOp(val op: String) {
             is RoutineAdd -> workspace
             is RoutineUpdate -> workspace
             is RoutineRemove -> workspace
+            is BotAdd -> workspace
+            is BotUpdate -> workspace
+            is BotRemove -> workspace
+            is BotMemoryRestore -> workspace
             is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
         }
 
@@ -147,6 +162,10 @@ sealed class SettingsOp(val op: String) {
             is RoutineAdd -> routine(o.workspace, o.routine, o.instructionsText)
             is RoutineUpdate -> routine(o.workspace, o.routine, o.instructionsText)
             is RoutineRemove -> { put("workspace", o.workspace); put("name", o.name) }
+            is BotAdd -> bot(o.workspace, o.bot, o.soulText)
+            is BotUpdate -> bot(o.workspace, o.bot, o.soulText)
+            is BotRemove -> { put("workspace", o.workspace); put("name", o.name) }
+            is BotMemoryRestore -> { put("workspace", o.workspace); put("name", o.name); put("version", o.version) }
             is WorkerAdd -> put("worker", enc(o.worker))
             is WorkerUpdate -> put("worker", enc(o.worker))
             is WorkerRemove -> put("name", o.name)
@@ -189,6 +208,12 @@ sealed class SettingsOp(val op: String) {
                 "routine-add" -> RoutineAdd(ws(), obj("routine") { opsJson.decodeFromJsonElement(it) }, s("instructions_text"))
                 "routine-update" -> RoutineUpdate(ws(), obj("routine") { opsJson.decodeFromJsonElement(it) }, s("instructions_text"))
                 "routine-remove" -> RoutineRemove(ws(), req("name"))
+                "bot-add" -> BotAdd(ws(), obj("bot") { opsJson.decodeFromJsonElement(it) }, s("soul_text"))
+                "bot-update" -> BotUpdate(ws(), obj("bot") { opsJson.decodeFromJsonElement(it) }, s("soul_text"))
+                "bot-remove" -> BotRemove(ws(), req("name"))
+                "bot-memory-restore" -> BotMemoryRestore(
+                    ws(), req("name"), (o["version"] as? JsonPrimitive)?.intOrNull ?: throw IllegalArgumentException("no version"),
+                )
                 "worker-add" -> WorkerAdd(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-update" -> WorkerUpdate(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-remove" -> WorkerRemove(req("name"))
@@ -214,6 +239,11 @@ private fun JsonObjectBuilder.patch(key: String, p: Patch<String>) {
 private fun JsonObjectBuilder.connection(workspace: String, spec: ConnectionSpec, secret: String?) {
     put("workspace", workspace); put("connection", enc(spec))
     secret?.let { put("secret", it) }
+}
+
+private fun JsonObjectBuilder.bot(workspace: String, spec: BotSpec, soulText: String?) {
+    put("workspace", workspace); put("bot", enc(spec))
+    soulText?.let { put("soul_text", it) }
 }
 
 private fun JsonObjectBuilder.routine(workspace: String, spec: RoutineSpec, instructionsText: String?) {

@@ -120,6 +120,26 @@ internal class DemoSettings(initial: Settings) {
             require(w.routines.any { it.name == op.name }) { "no Routine ${op.name}" }
             w.copy(routines = w.routines.filter { it.name != op.name })
         }
+        is SettingsOp.BotAdd -> {
+            require(w.bots.none { it.name == op.bot.name }) { "${op.bot.name} exists" }
+            w.copy(bots = w.bots + SettingsBot.of(op.bot, op.soulText ?: ""))
+        }
+        is SettingsOp.BotUpdate -> {
+            val old = w.bots.firstOrNull { it.name == op.bot.name } ?: throw IllegalArgumentException("no Bot ${op.bot.name}")
+            val updated = SettingsBot.of(op.bot, op.soulText ?: old.soulText)
+                .copy(memoryText = old.memoryText, memoryVersions = old.memoryVersions)
+            w.copy(bots = w.bots.map { if (it.name == old.name) updated else it })
+        }
+        is SettingsOp.BotRemove -> {
+            require(w.bots.any { it.name == op.name }) { "no Bot ${op.name}" }
+            require(w.routines.none { it.bot == op.name }) { "${op.name} still owns Routines; remove them first" }
+            w.copy(bots = w.bots.filter { it.name != op.name })
+        }
+        is SettingsOp.BotMemoryRestore -> {
+            val bot = w.bots.firstOrNull { it.name == op.name } ?: throw IllegalArgumentException("no Bot ${op.name}")
+            require(op.version in 1..bot.memoryVersions) { "no kept memory ${op.version}" }
+            w
+        }
         else -> throw IllegalArgumentException("not a Workspace op")
     }
 

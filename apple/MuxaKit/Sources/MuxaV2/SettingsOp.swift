@@ -36,6 +36,13 @@ public enum SettingsOp: Equatable, Sendable {
     case routineUpdate(workspace: String, routine: RoutineSpec, instructionsText: String? = nil)
     /// Its instruction file stays.
     case routineRemove(workspace: String, name: String)
+    /// `soulText` replaces the Bot's `soul.md` (ADR 0082).
+    case botAdd(workspace: String, bot: BotSpec, soulText: String? = nil)
+    case botUpdate(workspace: String, bot: BotSpec, soulText: String? = nil)
+    /// Its Routines must go first; its folder stays.
+    case botRemove(workspace: String, name: String)
+    /// Brings back kept memory `version`, 1 the newest.
+    case botMemoryRestore(workspace: String, name: String, version: UInt32)
     case workerAdd(worker: WorkerSpec)
     /// Replaces the worker named `worker.name`.
     case workerUpdate(worker: WorkerSpec)
@@ -61,6 +68,10 @@ public enum SettingsOp: Equatable, Sendable {
         case .routineAdd: "routine-add"
         case .routineUpdate: "routine-update"
         case .routineRemove: "routine-remove"
+        case .botAdd: "bot-add"
+        case .botUpdate: "bot-update"
+        case .botRemove: "bot-remove"
+        case .botMemoryRestore: "bot-memory-restore"
         case .workerAdd: "worker-add"
         case .workerUpdate: "worker-update"
         case .workerRemove: "worker-remove"
@@ -75,7 +86,9 @@ public enum SettingsOp: Equatable, Sendable {
 
 extension SettingsOp: Codable {
     enum CodingKeys: String, CodingKey {
-        case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker
+        case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot
+        case version
+        case soulText = "soul_text"
         case agentCommand = "agent_command"
         case parkAfter = "park_after"
         case hiddenRepos = "hidden_repos"
@@ -122,9 +135,18 @@ extension SettingsOp: Codable {
             try c.encode(workspace, forKey: .workspace)
             try c.encode(name, forKey: .name)
             try c.encode(secret, forKey: .secret)
-        case let .connectionRemove(workspace, name), let .mcpRemove(workspace, name), let .routineRemove(workspace, name):
+        case let .connectionRemove(workspace, name), let .mcpRemove(workspace, name), let .routineRemove(workspace, name),
+             let .botRemove(workspace, name):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(name, forKey: .name)
+        case let .botAdd(workspace, bot, text), let .botUpdate(workspace, bot, text):
+            try c.encode(workspace, forKey: .workspace)
+            try c.encode(bot, forKey: .bot)
+            try c.encodeIfPresent(text, forKey: .soulText)
+        case let .botMemoryRestore(workspace, name, version):
+            try c.encode(workspace, forKey: .workspace)
+            try c.encode(name, forKey: .name)
+            try c.encode(version, forKey: .version)
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(mcp, forKey: .mcp)
@@ -179,6 +201,16 @@ extension SettingsOp: Codable {
                 ? .routineAdd(workspace: try ws(), routine: spec, instructionsText: text)
                 : .routineUpdate(workspace: try ws(), routine: spec, instructionsText: text)
         case "routine-remove": self = .routineRemove(workspace: try ws(), name: try s(.name))
+        case "bot-add", "bot-update":
+            let spec = try c.decode(BotSpec.self, forKey: .bot)
+            let text = try c.decodeIfPresent(String.self, forKey: .soulText)
+            self = op == "bot-add"
+                ? .botAdd(workspace: try ws(), bot: spec, soulText: text)
+                : .botUpdate(workspace: try ws(), bot: spec, soulText: text)
+        case "bot-remove": self = .botRemove(workspace: try ws(), name: try s(.name))
+        case "bot-memory-restore":
+            self = .botMemoryRestore(workspace: try ws(), name: try s(.name),
+                                     version: try c.decode(UInt32.self, forKey: .version))
         case "worker-add": self = .workerAdd(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-update": self = .workerUpdate(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-remove": self = .workerRemove(name: try s(.name))
@@ -230,8 +262,12 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
         case let .connectionAdd(workspace, connection, secret), let .connectionUpdate(workspace, connection, secret):
             "\(name)(\(workspace), \(connection), secret: \(secret == nil ? "none" : Self.hidden))"
         case let .connectionSecret(workspace, connection, _): "\(name)(\(workspace), \(connection), secret: \(Self.hidden))"
-        case let .connectionRemove(workspace, n), let .mcpRemove(workspace, n), let .routineRemove(workspace, n):
+        case let .connectionRemove(workspace, n), let .mcpRemove(workspace, n), let .routineRemove(workspace, n),
+             let .botRemove(workspace, n):
             "\(name)(\(workspace), \(n))"
+        case let .botAdd(workspace, bot, text), let .botUpdate(workspace, bot, text):
+            "\(name)(\(workspace), \(bot), soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
+        case let .botMemoryRestore(workspace, n, version): "\(name)(\(workspace), \(n), version: \(version))"
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp): "\(name)(\(workspace), \(mcp))"
         case let .routineAdd(workspace, routine, text), let .routineUpdate(workspace, routine, text):
             "\(name)(\(workspace), \(routine), instructions_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"

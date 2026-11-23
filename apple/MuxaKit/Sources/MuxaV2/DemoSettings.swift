@@ -96,6 +96,29 @@ extension Settings {
             }
         case let .routineRemove(workspace, name):
             try edit(workspace) { w in w.routines.remove(at: try find(w.routines, name, \.name)) }
+        case let .botAdd(workspace, spec, text):
+            try edit(workspace) { w in
+                guard !w.bots.contains(where: { $0.name == spec.name }) else { throw refusal("\(spec.name) exists") }
+                w.bots.append(SettingsBot(spec: spec, soulText: text ?? ""))
+            }
+        case let .botUpdate(workspace, spec, text):
+            try edit(workspace) { w in
+                let at = try find(w.bots, spec.name, \.name)
+                w.bots[at].spec = spec
+                if let text { w.bots[at].soulText = text }
+            }
+        case let .botRemove(workspace, name):
+            try edit(workspace) { w in
+                guard !w.routines.contains(where: { $0.spec.bot == name }) else {
+                    throw refusal("\(name) still owns Routines; remove them first")
+                }
+                w.bots.remove(at: try find(w.bots, name, \.name))
+            }
+        case let .botMemoryRestore(workspace, name, version):
+            try edit(workspace) { w in
+                let at = try find(w.bots, name, \.name)
+                guard version >= 1, version <= w.bots[at].memoryVersions else { throw refusal("no kept memory \(version)") }
+            }
         case let .workerAdd(worker):
             guard !workers.contains(where: { $0.name == worker.name }) else { throw refusal("\(worker.name) exists") }
             workers.append(worker)
