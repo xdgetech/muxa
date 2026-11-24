@@ -12,6 +12,6 @@ The apps type a chat message into the agent's terminal and send it with Return (
 
 ## What muxa does with it
 
-- The apps write the message first, then `\r` alone after `KeyBytes.submitPause` (200 ms). The server's `type_comment` waits as long after a paste. Over the network, two writes sent back to back may reach the terminal in one read, so the pause is longer than the probe needed.
+- The apps write the message first, then `\r` alone after `KeyBytes.submitPause` (200 ms). Over the network, two writes sent back to back may reach the terminal in one read, so the pause is longer than the probe needed.
+- The host does the same through `muxa_server::typing::type_message`: Request changes' comment, and the fix prompt of a Routine run and of a Task Loop.
 - A Bot's page lands on a talk whatever its state, since `done` only means the turn ended.
-- Not yet changed: the host types the Routine check-fail prompt (`runner.rs`) and a single-line comment (`task_actions.rs`) with `\r` in the same write.

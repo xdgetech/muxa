@@ -1676,8 +1676,14 @@ async fn request_changes_types_the_comment_into_the_agent() {
     )
     .await;
     assert_eq!(sent["inbox"]["done"][0]["id"], item.as_str(), "{sent}");
-    let typed: Vec<u8> = backend.inputs(&agent).concat();
-    assert_eq!(typed, b"\x1b[200~Rename it.\nAnd add a test.\x1b[201~\r");
+    assert_eq!(
+        backend.inputs(&agent),
+        vec![
+            b"\x1b[200~Rename it.\nAnd add a test.\x1b[201~".to_vec(),
+            b"\r".to_vec()
+        ],
+        "Return is a write of its own"
+    );
 
     let item = review_item(&mut client, &agent).await;
     request(
@@ -1685,7 +1691,11 @@ async fn request_changes_types_the_comment_into_the_agent() {
         json!({"type": "inbox-request-changes", "id": 3, "item": item, "comment": "One more"}),
     )
     .await;
-    assert!(backend.inputs(&agent).concat().ends_with(b"One more\r"));
+    let writes = backend.inputs(&agent);
+    assert_eq!(
+        writes[writes.len() - 2..],
+        [b"One more".to_vec(), b"\r".to_vec()]
+    );
 }
 
 #[tokio::test]

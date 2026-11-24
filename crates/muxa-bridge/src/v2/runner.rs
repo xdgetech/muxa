@@ -8,12 +8,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use jiff::civil::DateTime;
 use muxa_backend::{
     Change, ChangeStream, Labels, Launch, SessionBackend, Size, TerminalId, TerminalInfo,
-    TerminalStream,
 };
 use muxa_protocol::RoutineFailure;
 
@@ -662,8 +660,8 @@ fn close(s: &mut RoutineState, occurrence: &str, id: &str, why: &str, at: u64) {
     });
 }
 
-/// Types `line` and Return into the terminal.
-/// Types `line` and Enter into the terminal.
+/// Types `line` into the terminal, then Return as a write of its own
+/// (`muxa_server::typing`).
 pub(crate) async fn type_line<B: SessionBackend>(
     backend: &B,
     id: &TerminalId,
@@ -673,13 +671,9 @@ pub(crate) async fn type_line<B: SessionBackend>(
         .attach(id, SIZE, 0)
         .await
         .map_err(|e| e.to_string())?;
-    let mut bytes = line.as_bytes().to_vec();
-    bytes.push(b'\r');
-    let typed = stream.input(&bytes).map_err(|e| e.to_string());
-    // Give the bytes time to leave before the stream goes.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    let _ = stream.detach();
-    typed
+    muxa_server::typing::type_message(stream, line)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub(crate) async fn end_terminal<B: SessionBackend>(backend: &B, id: &TerminalId) {
