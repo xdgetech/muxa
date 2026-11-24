@@ -819,3 +819,62 @@ fn a_login_becomes_a_subscription_that_workspaces_bots_and_the_assistant_use() {
     assert!(s.subscriptions.is_empty() && s.workspaces[0].subscriptions.is_empty());
     assert!(!text(&h).contains("[[subscription]]"));
 }
+
+/// ADR 0091 §7: onboarding finds Work's env login without showing its path,
+/// and one op makes it a subscription Work lists.
+#[test]
+fn a_workspaces_env_login_is_found_and_adopted_without_its_path_crossing_the_wire() {
+    let h = host("adopt");
+    let s = h.store.view().unwrap();
+    assert_eq!(
+        s.found_logins,
+        [muxa_protocol::settings::FoundLogin {
+            agent: "claude-code".into(),
+            home: None,
+            workspace: Some("Work".into()),
+        }]
+    );
+    fs::create_dir_all(h.dir.join(".codex")).unwrap();
+    let found = h.store.view().unwrap().found_logins;
+    assert_eq!(
+        found[0].home.as_deref(),
+        Some("~/.codex"),
+        "a default folder that exists"
+    );
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(json!({"op": "subscription-adopt", "workspace": "Work",
+                "agent": "claude-code", "name": "work", "plan": "Max 20x"}))],
+        )
+        .unwrap();
+    assert_eq!(s.subscriptions[0].home, "~/.claude-work");
+    assert_eq!(s.workspaces[0].subscriptions, ["work"]);
+    assert!(
+        !s.workspaces[0]
+            .agent
+            .env
+            .iter()
+            .any(|e| e.key == "CLAUDE_CONFIG_DIR")
+    );
+    assert!(
+        s.workspaces[0]
+            .agent
+            .env
+            .iter()
+            .any(|e| e.key == "API_TOKEN"),
+        "other env stays"
+    );
+    assert!(s.found_logins.iter().all(|f| f.workspace.is_none()));
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert_eq!(loaded.subscriptions()[0].home, h.dir.join(".claude-work"));
+    let refused = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "subscription-adopt", "workspace": "Home",
+            "agent": "claude-code", "name": "home"}))],
+    );
+    assert!(
+        matches!(refused, Err(SettingsError::Invalid(m)) if m.contains("has no CLAUDE_CONFIG_DIR"))
+    );
+}

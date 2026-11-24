@@ -262,6 +262,7 @@ class ServerTest {
                 ),
                 workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
                 subscriptions = listOf(SubscriptionSpec("claude-work", "claude-code", "~/.claude-work", plan = "Max 20x")),
+                foundLogins = listOf(FoundLogin("claude-code", workspace = "Personal")),
             )
             assertEquals(expected, c.settings())
             val ops = listOf(

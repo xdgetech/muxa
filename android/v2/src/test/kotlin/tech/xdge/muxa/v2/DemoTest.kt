@@ -583,6 +583,25 @@ class DemoTest {
         }
     }
 
+    /** ADR 0091 §7: onboarding adopts app's env login, and a login terminal opens once per subscription. */
+    @Test
+    fun aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            assertEquals(listOf(FoundLogin("claude-code", workspace = "app")), c.settings().foundLogins)
+            val s = c.settingsUpdate("1", listOf(SettingsOp.SubscriptionAdopt("app", "claude-code", "claude-app")))
+            assertEquals(listOf("claude-app"), s.workspaces[0].subscriptions)
+            assertEquals(false, s.workspaces[0].agent.env.any { it.key == "CLAUDE_CONFIG_DIR" })
+            assertEquals(emptyList<FoundLogin>(), s.foundLogins)
+            val (t, existing) = c.loginStart("claude-app")
+            assertEquals(Triple(false, "login", "claude-app"), Triple(existing, t.labels["muxa.kind"], t.labels["muxa.subscription"]))
+            val (again, open) = c.loginStart("claude-app")
+            assertEquals(true to t.id, open to again.id)
+            assertEquals("bad-request", refusal { c.loginStart("nope") }.code)
+            c.close()
+        }
+    }
+
     /** ADR 0091: a login is named once and Workspaces list it; one a Workspace lists cannot go. */
     @Test
     fun subscriptionsAreAddedListedAndKeptWhileListed() = runBlocking {

@@ -18,10 +18,14 @@ public struct Settings: Codable, Equatable, Sendable {
     public var assistant: SettingsAssistant?
     /// `[[subscription]]`: named agent logins (ADR 0091).
     public var subscriptions: [SubscriptionSpec]
+    /// Logins on the host that are no subscription yet, for onboarding (ADR 0091 §7).
+    public var foundLogins: [FoundLogin]
 
     public init(revision: String, readOnly: Bool = false, problem: String? = nil, workspaces: [SettingsWorkspace] = [],
-                workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil, subscriptions: [SubscriptionSpec] = []) {
+                workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil, subscriptions: [SubscriptionSpec] = [],
+                foundLogins: [FoundLogin] = []) {
         self.subscriptions = subscriptions
+        self.foundLogins = foundLogins
         self.revision = revision
         self.readOnly = readOnly
         self.problem = problem
@@ -33,6 +37,7 @@ public struct Settings: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case revision, problem, workspaces, workers, assistant, subscriptions
         case readOnly = "read_only"
+        case foundLogins = "found_logins"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -44,7 +49,28 @@ public struct Settings: Codable, Equatable, Sendable {
         workers = try c.decode(.workers, or: [])
         assistant = try c.decodeIfPresent(SettingsAssistant.self, forKey: .assistant)
         subscriptions = try c.decode(.subscriptions, or: [])
+        foundLogins = try c.decode(.foundLogins, or: [])
     }
+}
+
+/// A login the host found without opening a file: a default folder, or a
+/// Workspace's env variable. An env value never crosses the wire, so a
+/// Workspace's login has no `home`; `subscriptionAdopt` makes it one.
+public struct FoundLogin: Codable, Equatable, Sendable, Hashable {
+    /// `claude-code` or `codex`.
+    public var agent: String
+    /// `~/.claude` or `~/.codex`; nil for a Workspace's env login.
+    public var home: String?
+    /// The Workspace whose env names this login.
+    public var workspace: String?
+
+    public init(agent: String, home: String? = nil, workspace: String? = nil) {
+        self.agent = agent
+        self.home = home
+        self.workspace = workspace
+    }
+
+    enum CodingKeys: String, CodingKey { case agent, home, workspace }
 }
 
 /// `[[subscription]]` (ADR 0091): an agent login muxa names. The login stays

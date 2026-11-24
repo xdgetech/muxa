@@ -5,6 +5,7 @@
 mod attachment;
 mod inbox;
 mod item_actions;
+pub mod logins;
 pub mod memory_settings;
 mod migrate;
 pub mod reader;
@@ -19,6 +20,7 @@ mod uploads;
 mod usage;
 mod wire;
 
+pub use logins::LoginLaunch;
 pub use muxa_inbox::Inbox;
 pub use reader::ReaderOpen;
 pub use session::{Config, PARK, ServeError, Services, serve};

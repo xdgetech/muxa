@@ -55,6 +55,9 @@ public enum SettingsOp: Equatable, Sendable {
     case subscriptionUpdate(subscription: SubscriptionSpec)
     /// Refused while a Workspace lists it.
     case subscriptionRemove(name: String)
+    /// Makes the login `workspace`'s env names a subscription called `name`, takes the
+    /// variable out of the env, and puts it first in the Workspace's list.
+    case subscriptionAdopt(workspace: String, agent: String, name: String, plan: String? = nil)
     case workerAdd(worker: WorkerSpec)
     /// Replaces the worker named `worker.name`.
     case workerUpdate(worker: WorkerSpec)
@@ -89,6 +92,7 @@ public enum SettingsOp: Equatable, Sendable {
         case .subscriptionAdd: "subscription-add"
         case .subscriptionUpdate: "subscription-update"
         case .subscriptionRemove: "subscription-remove"
+        case .subscriptionAdopt: "subscription-adopt"
         case .workerAdd: "worker-add"
         case .workerUpdate: "worker-update"
         case .workerRemove: "worker-remove"
@@ -105,7 +109,7 @@ extension SettingsOp: Codable {
     enum CodingKeys: String, CodingKey {
         case from, to
         case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot
-        case subscription, subscriptions
+        case subscription, subscriptions, agent, plan
         case claudeConnectors = "claude_connectors"
         case botRules = "bot_rules"
         case version
@@ -185,6 +189,11 @@ extension SettingsOp: Codable {
             try c.encode(subscription, forKey: .subscription)
         case let .subscriptionRemove(name):
             try c.encode(name, forKey: .name)
+        case let .subscriptionAdopt(workspace, agent, name, plan):
+            try c.encode(workspace, forKey: .workspace)
+            try c.encode(agent, forKey: .agent)
+            try c.encode(name, forKey: .name)
+            try c.encodeIfPresent(plan, forKey: .plan)
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(mcp, forKey: .mcp)
@@ -263,6 +272,9 @@ extension SettingsOp: Codable {
         case "subscription-update":
             self = .subscriptionUpdate(subscription: try c.decode(SubscriptionSpec.self, forKey: .subscription))
         case "subscription-remove": self = .subscriptionRemove(name: try s(.name))
+        case "subscription-adopt":
+            self = .subscriptionAdopt(workspace: try ws(), agent: try s(.agent), name: try s(.name),
+                                      plan: try c.decodeIfPresent(String.self, forKey: .plan))
         case "worker-add": self = .workerAdd(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-update": self = .workerUpdate(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-remove": self = .workerRemove(name: try s(.name))
@@ -331,6 +343,8 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
                 + "subscriptions: \(subscriptions.map { "\($0)" } ?? "keep"))"
         case let .subscriptionAdd(subscription), let .subscriptionUpdate(subscription): "\(name)(\(subscription))"
         case let .subscriptionRemove(n): "\(name)(\(n))"
+        case let .subscriptionAdopt(workspace, agent, n, plan):
+            "\(name)(\(workspace), \(agent) → \(n), plan: \(plan ?? "none"))"
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp): "\(name)(\(workspace), \(mcp))"
         case let .routineAdd(workspace, routine, text), let .routineUpdate(workspace, routine, text):
             "\(name)(\(workspace), \(routine), instructions_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"

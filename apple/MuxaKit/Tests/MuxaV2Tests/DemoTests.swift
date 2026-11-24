@@ -335,6 +335,25 @@ struct DemoTests {
         #expect(usage[1].windows.isEmpty && usage[1].asOf == nil)
     }
 
+    /// ADR 0091 §7: onboarding adopts app's env login, and a login terminal
+    /// opens once per subscription.
+    @Test(.timeLimit(.minutes(1)))
+    func aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() async throws {
+        let c = try await open()
+        #expect(try await c.settings().foundLogins == [FoundLogin(agent: "claude-code", workspace: "app")])
+        let s = try await c.settingsUpdate(revision: "1", ops: [
+            .subscriptionAdopt(workspace: "app", agent: "claude-code", name: "claude-app"),
+        ])
+        #expect(s.workspaces[0].subscriptions == ["claude-app"])
+        #expect(!s.workspaces[0].agent.env.contains { $0.key == "CLAUDE_CONFIG_DIR" })
+        #expect(s.foundLogins.isEmpty)
+        let (t, existing) = try await c.loginStart("claude-app")
+        #expect(!existing && t.labels["muxa.kind"] == "login" && t.labels["muxa.subscription"] == "claude-app")
+        let (again, open) = try await c.loginStart("claude-app")
+        #expect(open && again.id == t.id)
+        await #expect(throws: V2Error.self) { _ = try await c.loginStart("nope") }
+    }
+
     /// ADR 0091: a login is named once and Workspaces list it; one that a
     /// Workspace lists cannot go.
     @Test(.timeLimit(.minutes(1)))

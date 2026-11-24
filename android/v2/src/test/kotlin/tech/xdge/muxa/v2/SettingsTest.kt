@@ -52,6 +52,8 @@ class SettingsTest {
             SettingsOp.SubscriptionUpdate(SubscriptionSpec("work", "codex", "~/.codex")) to
                 """{"op":"subscription-update","subscription":{"name":"work","agent":"codex","home":"~/.codex"}}""",
             SettingsOp.SubscriptionRemove("work") to """{"op":"subscription-remove","name":"work"}""",
+            SettingsOp.SubscriptionAdopt("w", "claude-code", "work", "Max 20x") to
+                """{"op":"subscription-adopt","workspace":"w","agent":"claude-code","name":"work","plan":"Max 20x"}""",
             SettingsOp.WorkspaceUpdate("w", subscriptions = listOf("work", "spare")) to
                 """{"op":"workspace-update","workspace":"w","subscriptions":["work","spare"]}""",
             SettingsOp.BotUpdate("w", BotSpec("b", subscriptions = listOf("spare"))) to

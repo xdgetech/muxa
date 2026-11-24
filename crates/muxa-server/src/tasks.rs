@@ -172,6 +172,14 @@ pub trait Host: Send + Sync {
         async { Ok(Vec::new()) }
     }
 
+    /// What runs for `subscription`'s login terminal (ADR 0091 §7).
+    fn login_launch(
+        &self,
+        _subscription: &str,
+    ) -> impl Future<Output = Result<crate::logins::LoginLaunch, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no subscriptions".into())) }
+    }
+
     /// Each subscription and the limits its agents last reported (ADR 0091).
     fn subscriptions(
         &self,

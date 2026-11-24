@@ -28,6 +28,22 @@ data class Settings(
     val assistant: SettingsAssistant? = null,
     /** `[[subscription]]`: named agent logins (ADR 0091). */
     val subscriptions: List<SubscriptionSpec> = emptyList(),
+    /** Logins on the host that are no subscription yet, for onboarding (ADR 0091 §7). */
+    @SerialName("found_logins") val foundLogins: List<FoundLogin> = emptyList(),
+)
+
+/**
+ * A login the host found without opening a file: a default folder, or a Workspace's env variable. An env value
+ * never crosses the wire, so a Workspace's login has no [home]; `subscription-adopt` makes it one.
+ */
+@Serializable
+data class FoundLogin(
+    /** `claude-code` or `codex`. */
+    val agent: String,
+    /** `~/.claude` or `~/.codex`; null for a Workspace's env login. */
+    val home: String? = null,
+    /** The Workspace whose env names this login. */
+    val workspace: String? = null,
 )
 
 /** `[[subscription]]` (ADR 0091): an agent login muxa names. The login stays with the agent; muxa keeps the name and the folder. */

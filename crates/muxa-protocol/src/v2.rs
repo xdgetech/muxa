@@ -465,6 +465,12 @@ pub enum ClientMsg {
     Subscriptions {
         id: u64,
     },
+    /// Opens the agent's own login for a subscription in a host terminal,
+    /// or the one already open (ADR 0091 §7). Answers `started`.
+    LoginStart {
+        id: u64,
+        subscription: String,
+    },
     /// Approves a Review item: closes its Task (ADR 0068 §7, ADR 0043).
     InboxApprove {
         id: u64,

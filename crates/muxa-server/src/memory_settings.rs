@@ -386,6 +386,38 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             subscription_shape(&subscription)?;
             put(&mut s.subscriptions, subscription, false, |x| &x.name)
         }
+        // In memory the env value is not kept, so the folder is a stand-in.
+        SettingsOp::SubscriptionAdopt {
+            workspace: ws,
+            agent,
+            name,
+            plan,
+        } => {
+            let key = match agent.as_str() {
+                "claude-code" => "CLAUDE_CONFIG_DIR",
+                "codex" => "CODEX_HOME",
+                _ => return Err("agent must be \"claude-code\" or \"codex\"".into()),
+            };
+            let w = workspace(s, &ws)?;
+            if !w.agent.env.iter().any(|e| e.key == key) {
+                return Err(format!("workspace {ws:?} has no env {key}"));
+            }
+            w.agent.env.retain(|e| e.key != key);
+            w.subscriptions.retain(|n| n != &name);
+            w.subscriptions.insert(0, name.clone());
+            s.found_logins
+                .retain(|f| f.workspace.as_deref() != Some(ws.as_str()));
+            if !s.subscriptions.iter().any(|x| x.name == name) {
+                s.subscriptions
+                    .push(muxa_protocol::settings::SubscriptionSpec {
+                        name,
+                        agent,
+                        home: format!("~/.{key}-{ws}").to_lowercase(),
+                        plan,
+                    });
+            }
+            Ok(())
+        }
         SettingsOp::SubscriptionRemove { name } => {
             if let Some(w) = s
                 .workspaces

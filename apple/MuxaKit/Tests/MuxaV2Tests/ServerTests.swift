@@ -161,7 +161,8 @@ struct ServerTests {
             ],
             workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
             subscriptions: [SubscriptionSpec(name: "claude-work", agent: "claude-code", home: "~/.claude-work",
-                                             plan: "Max 20x")]))
+                                             plan: "Max 20x")],
+            foundLogins: [FoundLogin(agent: "claude-code", workspace: "Personal")]))
         await c.close()
     }
 

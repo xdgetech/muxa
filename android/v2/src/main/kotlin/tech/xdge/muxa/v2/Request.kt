@@ -72,6 +72,9 @@ sealed interface V2Request {
 
     /** Each subscription and its agents' last report of the plan limits (ADR 0091). */
     data object Subscriptions : V2Request
+
+    /** Opens the agent's own login for [subscription] in a host terminal, or the one already open (ADR 0091 §7). */
+    data class LoginStart(val subscription: String) : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request
     data class ReaderListOf(val terminal: String, val kind: ReaderKind, val html: Boolean = false) : V2Request
@@ -138,6 +141,7 @@ sealed interface V2Request {
             is InboxSuggestion -> { type("inbox-suggestion"); put("item", r.item); put("accept", r.accept) }
             Workspaces -> type("workspaces")
             Subscriptions -> type("subscriptions")
+            is LoginStart -> { type("login-start"); put("subscription", r.subscription) }
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
             is ReaderListOf -> { type("reader-list"); put("terminal", r.terminal); put("kind", r.kind.wire); put("html", r.html) }

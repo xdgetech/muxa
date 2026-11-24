@@ -179,6 +179,27 @@ fn run_own(command: &str, input: &[u8]) -> String {
         .unwrap_or_default()
 }
 
+/// Pure. A subscription's login terminal (ADR 0091 §7): the agent in a
+/// login `shell`, so its PATH is the user's, with the subscription's folder.
+/// Claude Code asks to log in on a new folder, or takes `/login`; Codex has
+/// `codex login`.
+pub fn login_launch(
+    sub: &crate::records::subscriptions::Subscription,
+    shell: Vec<String>,
+    home: Option<&Path>,
+) -> muxa_server::LoginLaunch {
+    let program = match sub.agent {
+        crate::records::workers::WorkerAgent::ClaudeCode => "claude",
+        crate::records::workers::WorkerAgent::Codex => "codex login",
+    };
+    let shell_path = shell.into_iter().next().unwrap_or_else(|| "/bin/sh".into());
+    muxa_server::LoginLaunch {
+        argv: vec![shell_path, "-l".into(), "-c".into(), program.into()],
+        cwd: home.map(Path::to_path_buf),
+        env: sub.env().into_iter().collect(),
+    }
+}
+
 #[cfg(test)]
 #[path = "status_line_tests.rs"]
 mod tests;

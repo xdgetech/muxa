@@ -294,7 +294,9 @@ extension DemoContent {
             SubscriptionSpec(name: "claude-personal", agent: "claude-code", home: "~/.claude", plan: "Max 20x"),
             SubscriptionSpec(name: "claude-spare", agent: "claude-code", home: "~/.claude-spare", plan: "Max 5x"),
             SubscriptionSpec(name: "chatgpt", agent: "codex", home: "~/.codex", plan: "Plus"),
-        ])
+        ],
+        // app's env names its own Claude login: onboarding offers to adopt it.
+        foundLogins: [FoundLogin(agent: "claude-code", workspace: "app")])
 
     private static let plan = """
         # Plan

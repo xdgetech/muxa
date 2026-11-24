@@ -175,6 +175,7 @@ impl SettingsStore {
         if let Err(e) = &loaded {
             problem.get_or_insert_with(|| e.to_string());
         }
+        let found_logins = view::found_logins(&config, home);
         let mut workspaces: Vec<_> = config
             .workspace
             .into_iter()
@@ -199,6 +200,7 @@ impl SettingsStore {
             workers: config.worker,
             assistant: Some(assistant),
             subscriptions: config.subscription,
+            found_logins,
         })
     }
 

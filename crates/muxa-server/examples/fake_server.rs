@@ -79,6 +79,25 @@ impl Host for FakeHost {
         vec!["Personal".into()]
     }
 
+    async fn login_launch(
+        &self,
+        subscription: &str,
+    ) -> Result<muxa_server::LoginLaunch, TaskError> {
+        if subscription != "claude-work" {
+            return Err(TaskError::Invalid(format!(
+                "no subscription named {subscription:?}"
+            )));
+        }
+        Ok(muxa_server::LoginLaunch {
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "echo log in; sleep 600".into(),
+            ],
+            ..Default::default()
+        })
+    }
+
     async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
         Ok(vec![muxa_protocol::v2::SubscriptionUsage {
             name: "claude-work".into(),
@@ -307,6 +326,12 @@ fn start_settings() -> Settings {
         revision: "1".into(),
         read_only: false,
         problem: None,
+        // Personal's env names its login (`CLAUDE_CONFIG_DIR`); onboarding offers it.
+        found_logins: vec![muxa_protocol::settings::FoundLogin {
+            agent: "claude-code".into(),
+            home: None,
+            workspace: Some("Personal".into()),
+        }],
         subscriptions: vec![SubscriptionSpec {
             name: "claude-work".into(),
             agent: "claude-code".into(),

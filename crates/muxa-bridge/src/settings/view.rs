@@ -6,9 +6,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
-    BotRules, BotSpec, ConnectionSpec, EnvKey, McpSpec, MemoryVersion, RoutineSpec, SettingsAgent,
-    SettingsAssistant, SettingsBot, SettingsConnection, SettingsLoop, SettingsRoutine,
-    SettingsWorkspace, SubscriptionSpec, WorkerSpec,
+    BotRules, BotSpec, ConnectionSpec, EnvKey, FoundLogin, McpSpec, MemoryVersion, RoutineSpec,
+    SettingsAgent, SettingsAssistant, SettingsBot, SettingsConnection, SettingsLoop,
+    SettingsRoutine, SettingsWorkspace, SubscriptionSpec, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
 use serde::Deserialize;
@@ -53,6 +53,54 @@ pub struct FileWorkspace {
     bots: FileBotRules,
     #[serde(default)]
     subscriptions: Vec<String>,
+}
+
+impl FileWorkspace {
+    /// The agents whose login this Workspace's env names, by its variable
+    /// (ADR 0016); none once it lists subscriptions. The values stay here.
+    pub fn env_logins(&self) -> Vec<&'static str> {
+        if !self.subscriptions.is_empty() {
+            return Vec::new();
+        }
+        let env = self.agent.as_ref().map(|a| &a.env);
+        [
+            (crate::agents::claude::DIR_ENV, "claude-code"),
+            (crate::agents::codex::DIR_ENV, "codex"),
+        ]
+        .into_iter()
+        .filter(|(key, _)| env.is_some_and(|e| e.contains_key(*key)))
+        .map(|(_, agent)| agent)
+        .collect()
+    }
+}
+
+/// Logins on the host that are no subscription yet (ADR 0091 §7): the
+/// default folders that exist, and each Workspace's env login. Blocking.
+pub fn found_logins(config: &FileConfig, home: Option<&Path>) -> Vec<FoundLogin> {
+    let taken = |raw: &str| {
+        config
+            .subscription
+            .iter()
+            .any(|s| s.home == raw || (expand(&s.home, home).ok() == expand(raw, home).ok()))
+    };
+    let mut found: Vec<FoundLogin> = [("claude-code", "~/.claude"), ("codex", "~/.codex")]
+        .into_iter()
+        .filter(|(_, raw)| !taken(raw))
+        .filter(|(_, raw)| expand(raw, home).is_ok_and(|p| p.is_dir()))
+        .map(|(agent, raw)| FoundLogin {
+            agent: agent.to_owned(),
+            home: Some(raw.to_owned()),
+            workspace: None,
+        })
+        .collect();
+    for w in &config.workspace {
+        found.extend(w.env_logins().into_iter().map(|agent| FoundLogin {
+            agent: agent.to_owned(),
+            home: None,
+            workspace: Some(w.name.clone()),
+        }));
+    }
+    found
 }
 
 /// `[workspace.bots]`; with no `allow` the Bots get the defaults (ADR 0090),

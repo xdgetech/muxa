@@ -52,6 +52,8 @@ struct SettingsOpTests {
                                                              plan: "Max 20x")),
              #"{"op":"subscription-add","subscription":{"agent":"claude-code","home":"~\/.claude-work","name":"work","plan":"Max 20x"}}"#),
             (.subscriptionRemove(name: "work"), #"{"name":"work","op":"subscription-remove"}"#),
+            (.subscriptionAdopt(workspace: "w", agent: "claude-code", name: "work", plan: "Max 20x"),
+             #"{"agent":"claude-code","name":"work","op":"subscription-adopt","plan":"Max 20x","workspace":"w"}"#),
             (.workspaceUpdate(workspace: "w", subscriptions: ["work", "spare"]),
              #"{"op":"workspace-update","subscriptions":["work","spare"],"workspace":"w"}"#),
             (.assistantUpdate(enabled: true, subscriptions: ["work"]),

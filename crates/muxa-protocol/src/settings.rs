@@ -42,6 +42,25 @@ pub struct Settings {
     /// `[[subscription]]`: named agent logins (ADR 0091).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subscriptions: Vec<SubscriptionSpec>,
+    /// Logins on the host that are no subscription yet, for onboarding
+    /// (ADR 0091 §7).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub found_logins: Vec<FoundLogin>,
+}
+
+/// A login muxa found without opening a file: a default folder that exists,
+/// or a Workspace's env variable. An env value never crosses the wire, so a
+/// Workspace's login has no `home`; `subscription-adopt` makes it one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoundLogin {
+    /// `claude-code` or `codex`.
+    pub agent: String,
+    /// `~/.claude` or `~/.codex`; absent for a Workspace's env login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
+    /// The Workspace whose env names this login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
 }
 
 /// `[[subscription]]` (ADR 0091): an agent login muxa names. The login
@@ -510,6 +529,17 @@ pub enum SettingsOp {
     SubscriptionRemove {
         name: String,
     },
+    /// Makes the login a Workspace's env names a subscription called `name`
+    /// (one with that folder already is reused), takes the variable out of
+    /// the env, and puts the subscription first in the Workspace's list.
+    SubscriptionAdopt {
+        workspace: String,
+        /// `claude-code` or `codex`: which variable.
+        agent: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plan: Option<String>,
+    },
     WorkerAdd {
         worker: WorkerSpec,
     },
@@ -551,6 +581,7 @@ impl SettingsOp {
             Self::SubscriptionAdd { .. } => "subscription-add",
             Self::SubscriptionUpdate { .. } => "subscription-update",
             Self::SubscriptionRemove { .. } => "subscription-remove",
+            Self::SubscriptionAdopt { .. } => "subscription-adopt",
             Self::WorkerAdd { .. } => "worker-add",
             Self::WorkerUpdate { .. } => "worker-update",
             Self::WorkerRemove { .. } => "worker-remove",
@@ -581,7 +612,8 @@ impl SettingsOp {
             | Self::BotUpdate { workspace, .. }
             | Self::BotRemove { workspace, .. }
             | Self::BotRename { workspace, .. }
-            | Self::BotMemoryRestore { workspace, .. } => Some(workspace),
+            | Self::BotMemoryRestore { workspace, .. }
+            | Self::SubscriptionAdopt { workspace, .. } => Some(workspace),
             Self::AssistantUpdate { .. }
             | Self::SubscriptionAdd { .. }
             | Self::SubscriptionUpdate { .. }

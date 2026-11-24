@@ -133,6 +133,10 @@ sealed class SettingsOp(val op: String) {
 
     /** Refused while a Workspace lists it. */
     data class SubscriptionRemove(val name: String) : SettingsOp("subscription-remove")
+
+    /** Makes the login [workspace]'s env names a subscription called [name], takes the variable out of the env, and puts it first in the Workspace's list. */
+    data class SubscriptionAdopt(val workspace: String, val agent: String, val name: String, val plan: String? = null) :
+        SettingsOp("subscription-adopt")
     data class WorkerAdd(val worker: WorkerSpec) : SettingsOp("worker-add")
 
     /** Replaces the worker named `worker.name`. */
@@ -164,6 +168,7 @@ sealed class SettingsOp(val op: String) {
             is BotRemove -> workspace
             is BotRename -> workspace
             is BotMemoryRestore -> workspace
+            is SubscriptionAdopt -> workspace
             is AssistantUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove,
             is SubscriptionAdd, is SubscriptionUpdate, is SubscriptionRemove -> null
         }
@@ -215,6 +220,10 @@ sealed class SettingsOp(val op: String) {
             is SubscriptionAdd -> put("subscription", enc(o.subscription))
             is SubscriptionUpdate -> put("subscription", enc(o.subscription))
             is SubscriptionRemove -> put("name", o.name)
+            is SubscriptionAdopt -> {
+                put("workspace", o.workspace); put("agent", o.agent); put("name", o.name)
+                o.plan?.let { put("plan", it) }
+            }
             is WorkerAdd -> put("worker", enc(o.worker))
             is WorkerUpdate -> put("worker", enc(o.worker))
             is WorkerRemove -> put("name", o.name)
@@ -273,6 +282,7 @@ sealed class SettingsOp(val op: String) {
                 "subscription-add" -> SubscriptionAdd(obj("subscription") { opsJson.decodeFromJsonElement(it) })
                 "subscription-update" -> SubscriptionUpdate(obj("subscription") { opsJson.decodeFromJsonElement(it) })
                 "subscription-remove" -> SubscriptionRemove(req("name"))
+                "subscription-adopt" -> SubscriptionAdopt(ws(), req("agent"), req("name"), s("plan"))
                 "worker-add" -> WorkerAdd(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-update" -> WorkerUpdate(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-remove" -> WorkerRemove(req("name"))

@@ -69,6 +69,23 @@ internal class DemoSettings(initial: Settings) {
             require(s.subscriptions.any { it.name == op.subscription.name }) { "no subscription ${op.subscription.name}" }
             s.copy(subscriptions = s.subscriptions.map { if (it.name == op.subscription.name) op.subscription else it })
         }
+        is SettingsOp.SubscriptionAdopt -> {
+            val key = if (op.agent == "codex") "CODEX_HOME" else "CLAUDE_CONFIG_DIR"
+            val w = workspace(s, op.workspace)
+            require(w.agent.env.any { it.key == key }) { "no env $key" }
+            val adopted = w.copy(
+                agent = w.agent.copy(env = w.agent.env.filter { it.key != key }),
+                subscriptions = listOf(op.name) + w.subscriptions.filter { it != op.name },
+            )
+            // The demo keeps no env value, so the folder is a stand-in.
+            val subs = if (s.subscriptions.any { it.name == op.name }) s.subscriptions
+            else s.subscriptions + SubscriptionSpec(op.name, op.agent, "~/.${op.name}", op.plan)
+            s.copy(
+                workspaces = s.workspaces.map { if (it.name == w.name) adopted else it },
+                subscriptions = subs,
+                foundLogins = s.foundLogins.filter { it.workspace != op.workspace },
+            )
+        }
         is SettingsOp.SubscriptionRemove -> {
             s.workspaces.firstOrNull { op.name in it.subscriptions }?.let {
                 throw IllegalArgumentException("${it.name} still lists ${op.name}")

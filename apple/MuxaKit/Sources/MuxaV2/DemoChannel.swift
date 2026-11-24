@@ -214,6 +214,8 @@ actor DemoServer {
             resolve(id, item)
         case "task-shell":
             taskShell(id, m["terminal"] as? String)
+        case "login-start":
+            loginStart(id, m["subscription"] as? String)
         case "close-terminal":
             guard let t = content.terminals.first(where: { $0.id == m["terminal"] as? String }), t.isTaskShell else {
                 return send(["type": "error", "id": id, "code": "bad-request", "message": "only a Task's shell closes this way"])
@@ -489,6 +491,27 @@ actor DemoServer {
                          labels: labels, cols: 80, rows: 24)
         content.terminals.append(t)
         content.screens[t.id] = "\(dir) $ "
+        reply(id, ["terminal": json(t), "existing": false])
+        if watching { send(["type": "changed", "terminal": json(t)]) }
+    }
+
+    /// A subscription's login terminal (ADR 0091 §7): one per subscription; the
+    /// demo's screen shows where the agent asks to log in.
+    private func loginStart(_ id: UInt64, _ name: String?) {
+        guard let name, let sub = content.settings.subscriptions.first(where: { $0.name == name }) else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "no subscription named \(name ?? "")"])
+        }
+        if let live = content.terminals.first(where: {
+            $0.live && $0.labels["muxa.kind"] == "login" && $0.labels["muxa.subscription"] == name
+        }) {
+            return reply(id, ["terminal": json(live), "existing": true])
+        }
+        let t = Terminal(id: newTerminalID(), name: "login-\(name)", live: true, status: nil,
+                         labels: ["muxa.kind": "login", "muxa.subscription": name], cols: 80, rows: 24)
+        content.terminals.append(t)
+        content.screens[t.id] = sub.agent == "codex"
+            ? "$ codex login\r\nOpen this link to sign in with ChatGPT.\r\n"
+            : "$ claude\r\nSelect login method:\r\n › 1. Claude account with subscription\r\n"
         reply(id, ["terminal": json(t), "existing": false])
         if watching { send(["type": "changed", "terminal": json(t)]) }
     }

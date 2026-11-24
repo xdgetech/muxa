@@ -218,6 +218,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             }
             "inbox-approve" -> approve(id, item, force = m.str("worktree") == "force")
             "task-shell" -> taskShell(id, m.str("terminal"))
+            "login-start" -> loginStart(id, m.str("subscription"))
             "close-terminal" -> {
                 val t = terminals.firstOrNull { it.id == m.str("terminal") }
                 if (t == null || !t.isTaskShell) return send(error(id, "bad-request", "only a Task's shell closes this way"))
@@ -407,6 +408,21 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         val t = Terminal(newTerminalId(), agent.name?.let { "$it-sh" }, live = true, labels = labels, cols = 80, rows = 24)
         terminals += t
         screens[t.id] = "$dir $ "
+        reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
+        if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+    }
+
+    /** A subscription's login terminal (ADR 0091 §7): one per subscription; its screen shows where the agent asks to log in. */
+    private fun loginStart(id: Long, name: String?) {
+        val sub = settings.current.subscriptions.firstOrNull { it.name == name }
+            ?: return send(error(id, "bad-request", "no subscription named ${name.orEmpty()}"))
+        val open = terminals.firstOrNull { it.live && it.labels["muxa.kind"] == "login" && it.labels["muxa.subscription"] == sub.name }
+        if (open != null) return reply(id, "terminal" to enc(open), "existing" to JsonPrimitive(true))
+        val labels = mapOf("muxa.kind" to "login", "muxa.subscription" to sub.name)
+        val t = Terminal(newTerminalId(), "login-${sub.name}", live = true, labels = labels, cols = 80, rows = 24)
+        terminals += t
+        screens[t.id] = if (sub.agent == "codex") "$ codex login\r\nOpen this link to sign in with ChatGPT.\r\n"
+        else "$ claude\r\nSelect login method:\r\n › 1. Claude account with subscription\r\n"
         reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
     }
@@ -958,5 +974,7 @@ private val DEMO_SETTINGS = Settings(
         SubscriptionSpec("claude-spare", "claude-code", "~/.claude-spare", plan = "Max 5x"),
         SubscriptionSpec("chatgpt", "codex", "~/.codex", plan = "Plus"),
     ),
+    // app's env names its own Claude login: onboarding offers to adopt it.
+    foundLogins = listOf(FoundLogin("claude-code", workspace = "app")),
 )
 private const val MAX_SHELLS = 3

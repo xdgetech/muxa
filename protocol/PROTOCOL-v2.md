@@ -138,7 +138,7 @@ If the Task's agent is still running in that working place, the reply has it wit
 - `muxa.connections`: a JSON list of every connection the agent got, when it got any. Names only.
 - `muxa.mcp`: a JSON list of every MCP server the agent got, when it got any. Names only.
 - `muxa.bot`: the Bot a talk Task talks with (ADR 0083). A Routine run of a Bot's Routine and a team member (`muxa.kind` = `handoff`, ADR 0085) carry it too; a member also carries `muxa.lead`, the lead it works for (ADR 0086).
-- `muxa.subscription`: the subscription, a named agent login, the agent runs on (ADR 0091). Task agents, restarts, Routine runs, team members and Capture assistant runs carry it when their Workspace, Bot or the assistant lists subscriptions. A restart keeps it. Clients may show it; they never send it.
+- `muxa.subscription`: the subscription, a named agent login, the agent runs on (ADR 0091). A login terminal (`muxa.kind` = `login`) carries it too. Task agents, restarts, Routine runs, team members and Capture assistant runs carry it when their Workspace, Bot or the assistant lists subscriptions. A restart keeps it. Clients may show it; they never send it.
 
 Every agent gets all of its Workspace's connections as environment variables (ADR 0075). Their secrets come from the host's Keychain and never cross the wire back. A missing or locked secret fails the start before any place is made.
 
@@ -345,15 +345,18 @@ ADR 0091. `{"type":"subscriptions","id"}` answers `{"subscriptions":[Subscriptio
 
 `SubscriptionUsage`: `{"name","agent","plan"?,"windows":[UsageWindow...],"as_of"}`. `windows` and `as_of` (Unix seconds) are what the subscription's agents last reported; before the first report `windows` is empty and `as_of` is `null`. `UsageWindow`: `{"minutes","used_percent","resets_at"}`: the window's length (300 is 5 hours, 10080 a week), the part used, 0 to 100, and when it resets, in Unix seconds. A `resets_at` in the past means the window reset after the last report and its use is not known.
 
+`{"type":"login-start","id","subscription"}` opens the agent's own login for a subscription in a host terminal and answers `started` (`existing` when it was open already). The terminal has `muxa.kind` = `login` and `muxa.subscription`, runs `claude` (which asks to log in on a new folder, or takes `/login`) or `codex login` in the user's login shell, with the subscription's folder as `CLAUDE_CONFIG_DIR` or `CODEX_HOME`, and gets no connection. A client attaches it like any terminal; ended ones of the same subscription are removed at the next `login-start`. muxa never reads what is typed into it.
+
 Where the host gets them: a Claude Code agent with a subscription reports through its status line, which muxa adds to its `--settings` and which still prints the login's own status line; it reports only while a session runs, after its first reply. A Codex subscription's newest session log is read every minute. muxa never reads a login's credential and never asks the vendor itself.
 
 ### Settings
 
 ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace's `.muxa/routines.toml` and the Routines' instruction files. The files stay the source of truth, and a person can still edit them by hand. The daemon edits them in place, so comments and order stay, and reads them again on its next use.
 
-`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...],"assistant"?,"subscriptions"?:[SubscriptionSpec...]}`.
+`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...],"assistant"?,"subscriptions"?:[SubscriptionSpec...],"found_logins"?:[FoundLogin...]}`.
 - `assistant`: `{"enabled","worker"?,"soul_text","memory_text","subscriptions"?}`, the Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`, and `assistant/soul.md` and `memory.md` beside it. Absent from an older server. `subscriptions` (ADR 0091): the Claude subscriptions it runs on, in order; any of the host's. Absent or empty: the default login.
 - `subscriptions`: `[[subscription]]` in `workspaces.toml` (ADR 0091), absent when there are none. `SubscriptionSpec`: `{"name","agent","home","plan"?}`. `name` follows a Bot's name rules. `agent` is `claude-code` or `codex`. `home` is the login's folder as written, `~/` included: the agent's `CLAUDE_CONFIG_DIR` or `CODEX_HOME`; `~/.claude` and `~/.codex` are the default logins and set no variable. `plan` is a label. muxa keeps the name and the folder; the login itself stays with the agent, and its credential never crosses the wire.
+- `found_logins` (ADR 0091 §7): logins on the host that are no subscription yet, for onboarding. `FoundLogin`: `{"agent","home"?,"workspace"?}`: `~/.claude` or `~/.codex` when that folder exists and no subscription has it, or a Workspace whose env sets `CLAUDE_CONFIG_DIR` or `CODEX_HOME` and lists no subscriptions. An env value never crosses the wire, so such a login has `workspace` and no `home`; `subscription-adopt` makes it a subscription on the host.
 - `revision`: a hash of the files' bytes. It changes when any of them changes, by hand too.
 - `read_only`: the daemon runs with `--settings-read-only`; `settings-update` is refused.
 - `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
@@ -406,6 +409,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `bot-memory-restore` | `workspace`, `name`, `version` | Brings back kept memory `version`, 1 the newest of 5; the current one is kept in its place |
 | `assistant-update` | `enabled`, `worker`?, `soul_text`?, `subscriptions`? | Sets `[assistant]`; `soul_text` replaces `assistant/soul.md` beside `workspaces.toml`; `subscriptions` replaces its list, absent keeps it |
 | `subscription-add`, `subscription-update` | `subscription`: SubscriptionSpec | Adds a `[[subscription]]`, or changes the one named `subscription.name` (ADR 0091) |
+| `subscription-adopt` | `workspace`, `agent`, `name`, `plan`? | Makes the login the Workspace's env names (`CLAUDE_CONFIG_DIR` for `claude-code`, `CODEX_HOME` for `codex`) a subscription `name` with that folder, or reuses a subscription that has it; removes the variable from the env; puts the subscription first in the Workspace's `subscriptions`. No env is `bad-request` |
 | `subscription-remove` | `name` | Removes it. Refused while a Workspace lists it; a Bot's or the assistant's list may still name it and skips it |
 | `worker-add`, `worker-update` | `worker`: WorkerSpec | Adds a worker, or replaces the one named `worker.name` |
 | `worker-remove` | `name` | |

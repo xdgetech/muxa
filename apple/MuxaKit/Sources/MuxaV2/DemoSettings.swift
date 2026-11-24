@@ -154,6 +154,19 @@ extension Settings {
         case let .subscriptionUpdate(subscription):
             try checkAgent(subscription)
             subscriptions[try find(subscriptions, subscription.name, \.name)] = subscription
+        case let .subscriptionAdopt(workspace, agent, name, plan):
+            let key = agent == "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
+            try edit(workspace) { w in
+                guard w.agent.env.contains(where: { $0.key == key }) else { throw refusal("no env \(key)") }
+                w.agent.env.removeAll { $0.key == key }
+                w.subscriptions.removeAll { $0 == name }
+                w.subscriptions.insert(name, at: 0)
+            }
+            foundLogins.removeAll { $0.workspace == workspace }
+            if !subscriptions.contains(where: { $0.name == name }) {
+                // The demo keeps no env value, so the folder is a stand-in.
+                subscriptions.append(SubscriptionSpec(name: name, agent: agent, home: "~/.\(name)", plan: plan))
+            }
         case let .subscriptionRemove(name):
             if let w = workspaces.first(where: { $0.subscriptions.contains(name) }) {
                 throw refusal("\(w.name) still lists \(name)")

@@ -90,3 +90,27 @@ fn the_users_status_line_gets_the_same_input_and_prints_its_output() {
     assert_eq!(run_own("tr a-z A-Z", b"model opus"), "MODEL OPUS");
     assert_eq!(run_own("exit 3", b"{}"), "");
 }
+
+#[test]
+fn a_login_runs_the_agents_own_login_in_the_users_shell_with_its_folder() {
+    let sub = |agent, home: &str, default_login| crate::records::subscriptions::Subscription {
+        name: "s".into(),
+        agent,
+        home: PathBuf::from(home),
+        plan: None,
+        default_login,
+    };
+    use crate::records::workers::WorkerAgent::{ClaudeCode, Codex};
+    let shell = || vec!["/bin/zsh".to_owned(), "-l".to_owned()];
+    let claude = login_launch(
+        &sub(ClaudeCode, "/h/.claude-work", false),
+        shell(),
+        Some(Path::new("/h")),
+    );
+    assert_eq!(claude.argv, ["/bin/zsh", "-l", "-c", "claude"]);
+    assert_eq!(claude.env["CLAUDE_CONFIG_DIR"], "/h/.claude-work");
+    assert_eq!(claude.cwd.as_deref(), Some(Path::new("/h")));
+    let codex = login_launch(&sub(Codex, "/h/.codex", true), shell(), None);
+    assert_eq!(codex.argv[3], "codex login");
+    assert!(codex.env.is_empty(), "the default login sets no variable");
+}

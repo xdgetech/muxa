@@ -37,6 +37,26 @@ impl Host for FakeTasks {
         Ok(format!(".muxa/uploads/{name}"))
     }
 
+    async fn login_launch(
+        &self,
+        subscription: &str,
+    ) -> Result<muxa_server::LoginLaunch, TaskError> {
+        if subscription != "work" {
+            return Err(TaskError::Invalid(format!(
+                "no subscription named {subscription:?}"
+            )));
+        }
+        Ok(muxa_server::LoginLaunch {
+            argv: vec!["/bin/sh".into(), "-l".into(), "-c".into(), "claude".into()],
+            cwd: Some("/home/me".into()),
+            env: [(
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                "/home/me/.claude-work".to_owned(),
+            )]
+            .into(),
+        })
+    }
+
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         if spec.branch().is_some_and(|(_, b)| b == "bad") {
             return Err(TaskError::Invalid("bad is not a branch".into()));
@@ -2003,4 +2023,41 @@ async fn an_upload_goes_to_the_tasks_folder_by_the_host() {
         "a bad upload never echoes its bytes: {message}"
     );
     assert_eq!(UPLOADS.with(|u| u.borrow().len()), 1);
+}
+
+/// ADR 0091 §7: one login terminal per subscription, labelled so clients
+/// find it; asking again opens the same one.
+#[tokio::test]
+async fn a_subscriptions_login_runs_once_in_its_own_terminal() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let started = request(
+        &mut client,
+        json!({"type": "login-start", "id": 1, "subscription": "work"}),
+    )
+    .await;
+    let t = started["terminal"].clone();
+    assert_eq!(t["labels"]["muxa.kind"], "login", "{started}");
+    assert_eq!(t["labels"]["muxa.subscription"], "work");
+    assert_eq!(started["existing"], false);
+    let launch = backend.launches().pop().unwrap();
+    assert_eq!(launch.argv, ["/bin/sh", "-l", "-c", "claude"]);
+    assert_eq!(launch.env["CLAUDE_CONFIG_DIR"], "/home/me/.claude-work");
+    let again = request(
+        &mut client,
+        json!({"type": "login-start", "id": 2, "subscription": "work"}),
+    )
+    .await;
+    assert_eq!(
+        (again["existing"].clone(), again["terminal"]["id"].clone()),
+        (json!(true), t["id"].clone())
+    );
+    assert_eq!(backend.launches().len(), 1);
+    let unknown = request(
+        &mut client,
+        json!({"type": "login-start", "id": 3, "subscription": "nope"}),
+    )
+    .await;
+    assert_eq!(unknown["code"], "bad-request", "{unknown}");
 }

@@ -156,6 +156,12 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 
+    /** The login terminal of [subscription] (ADR 0091 §7), and whether it was open already. */
+    suspend fun loginStart(subscription: String): Pair<Terminal, Boolean> {
+        val reply = request(V2Request.LoginStart(subscription))
+        return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
+    }
+
     /** A new shell beside the Task's agent [terminal]; refused with `conflict` when it has 3. */
     suspend fun taskShell(terminal: String): Terminal = field("terminal", request(V2Request.TaskShell(terminal)))
 

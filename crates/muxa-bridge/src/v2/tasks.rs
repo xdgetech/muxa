@@ -618,6 +618,25 @@ impl Host for BridgeHost {
         }
     }
 
+    async fn login_launch(
+        &self,
+        subscription: &str,
+    ) -> Result<muxa_server::LoginLaunch, TaskError> {
+        let (records, name) = (Arc::clone(&self.records), subscription.to_owned());
+        let shell = self.shell();
+        let all = blocking(move || records.load_workspaces()).await?;
+        let sub = all
+            .subscriptions()
+            .iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| TaskError::Invalid(format!("no subscription named {name:?}")))?;
+        Ok(crate::status_line::login_launch(
+            sub,
+            shell,
+            self.records.home.as_deref(),
+        ))
+    }
+
     async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
         let records = Arc::clone(&self.records);
         blocking(move || {
