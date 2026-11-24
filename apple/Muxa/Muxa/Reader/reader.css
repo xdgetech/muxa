@@ -1,5 +1,5 @@
-/* The design mocks' dark palette, as in Theme.swift and Theme.kt. The apps are
-   dark only, so the page is too, whatever the system's setting. */
+/* muxa Dark until the app sends its theme (setTheme in reader.js, ADR 0091).
+   The page follows the app's theme, not the system's setting. */
 :root {
   color-scheme: dark;
   --bg: #0E1014;
@@ -13,6 +13,8 @@
   --link: #6AA6FF;
   --code-fg: #D5D9DF;
   --error: #FF9B9B;
+  --added: #3FC79A;
+  --added-text: #7FE0B8;
   /* Installed fonts only: the page loads nothing (ADR 0065). */
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, "Roboto Mono", "Droid Sans Mono", monospace;
 }
@@ -44,7 +46,7 @@ h4 { color: var(--muted); }
 
 a { color: var(--link); text-decoration: none; }
 strong { color: var(--fg); }
-::selection { background: rgba(106, 166, 255, 0.3); }
+::selection { background: color-mix(in srgb, var(--link) 30%, transparent); }
 
 code, pre { font-family: var(--mono); font-size: 0.86em; }
 :not(pre) > code {
@@ -88,13 +90,13 @@ li::marker { color: var(--faint); }
 li + li { margin-top: 0.25em; }
 input[type=checkbox] { margin-right: 0.4em; accent-color: var(--link); }
 
-/* Diffs, laid out like GitHub's unified view, in the mocks' muted green and red. */
+/* Diffs, laid out like GitHub's unified view, tinted with the theme's added and removed colors. */
 :root {
-  --add-bg: rgba(63, 199, 154, 0.10);
-  --add-num: rgba(63, 199, 154, 0.20);
-  --del-bg: rgba(255, 107, 107, 0.10);
-  --del-num: rgba(255, 107, 107, 0.20);
-  --hunk-bg: rgba(106, 166, 255, 0.10);
+  --add-bg: color-mix(in srgb, var(--added) 10%, transparent);
+  --add-num: color-mix(in srgb, var(--added) 20%, transparent);
+  --del-bg: color-mix(in srgb, var(--error) 10%, transparent);
+  --del-num: color-mix(in srgb, var(--error) 20%, transparent);
+  --hunk-bg: color-mix(in srgb, var(--link) 10%, transparent);
 }
 
 main.diff { max-width: none; padding: 0 0 64px; overflow-wrap: normal; }
@@ -120,7 +122,7 @@ table.diff td.num {
 }
 table.diff td.code { white-space: pre; width: 100%; }
 table.diff tr.add td { background: var(--add-bg); }
-table.diff tr.add td.num { background: var(--add-num); color: #7FE0B8; }
+table.diff tr.add td.num { background: var(--add-num); color: var(--added-text); }
 table.diff tr.del td { background: var(--del-bg); }
 table.diff tr.del td.num { background: var(--del-num); color: var(--error); }
 table.diff tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding-top: 4px; padding-bottom: 4px; }

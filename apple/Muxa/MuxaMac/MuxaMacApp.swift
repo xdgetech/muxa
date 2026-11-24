@@ -24,10 +24,8 @@ struct MuxaMacApp: App {
                 .environment(model)
                 .environment(nav)
                 .environment(chrome)
-                .tint(Theme.accent)
+                .modifier(ThemedWindow())
                 .frame(minWidth: 720, minHeight: 480)
-                .containerBackground(Palette.ground, for: .window)
-                .toolbarBackground(Palette.ground, for: .windowToolbar)
                 .sheet(isPresented: $chrome.showShortcuts) { ShortcutsSheet() }
                 .background(WindowReader { chrome.mainWindow = $0 })
                 // Every screen draws the mocks' header where the title bar was.
@@ -69,8 +67,7 @@ struct MuxaMacApp: App {
                 .environment(nav)
                 .environment(chrome)
                 .frame(minWidth: 960, minHeight: 600)
-                .background(Palette.ground)
-                .preferredColorScheme(.dark)
+                .modifier(ThemedWindow())
         }
         .commands {
             // The items are views: a View body observes the model and the

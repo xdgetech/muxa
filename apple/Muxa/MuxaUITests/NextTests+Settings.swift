@@ -16,24 +16,37 @@ extension NextTests {
     }
 
     @MainActor
-    func testTerminalColorsArePickedOnThisDevice() throws {
-        let app = launch()
+    func testTheThemeIsPickedOnThisDeviceAndKept() throws {
+        var app = launch()
+        openAppearance(app)
+        let dracula = app.buttons["terminal.theme.dracula"]
+        XCTAssertTrue(dracula.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["terminal.preview"].exists)
+        dracula.tap()
+        XCTAssertTrue(dracula.isSelected, "the picked theme is marked")
+
+        // The pick stays on the device (ADR 0091).
+        app.terminate()
+        app = launch()
+        openAppearance(app)
+        XCTAssertTrue(app.buttons["terminal.theme.dracula"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["terminal.theme.dracula"].isSelected, "the pick survives a relaunch")
+
+        // Back to the default, so the other tests see the usual colors.
+        app.buttons["terminal.theme.muxa-dark"].tap()
+        XCTAssertTrue(app.buttons["terminal.theme.muxa-dark"].isSelected)
+    }
+
+    /// Settings › Appearance. The row is last, and a list loads its rows only once they scroll in.
+    @MainActor
+    private func openAppearance(_ app: XCUIApplication) {
         showSettings(app)
-        // The row is last, and a list loads its rows only once they scroll in.
         let list = app.descendants(matching: .any)["settings.list"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10))
         let row = app.buttons["settings.terminal"]
         for _ in 0..<5 where !(row.exists && row.isHittable) { list.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
-        let dracula = app.buttons["terminal.theme.dracula"]
-        XCTAssertTrue(dracula.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["terminal.preview"].exists)
-        dracula.tap()
-        XCTAssertTrue(dracula.isSelected, "the picked theme is marked")
-        // Back to the default, so the other tests see the usual colors.
-        app.buttons["terminal.theme.muxa"].tap()
-        XCTAssertTrue(app.buttons["terminal.theme.muxa"].isSelected)
     }
 
     @MainActor

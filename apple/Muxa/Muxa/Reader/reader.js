@@ -3,24 +3,51 @@
 "use strict";
 
 (function () {
-  // The page is dark only (reader.css); diagrams take the same palette.
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    theme: "base",
-    themeVariables: {
-      darkMode: true,
-      background: "#0E1014",
-      primaryColor: "#161A20",
-      primaryTextColor: "#E7E9EC",
-      primaryBorderColor: "#2C323C",
-      secondaryColor: "#14263F",
-      tertiaryColor: "#14171C",
-      lineColor: "#8B94A0",
-      textColor: "#E7E9EC",
-      fontFamily: "system-ui, -apple-system, Roboto, sans-serif",
-    },
-  });
+  // The app's theme (ADR 0091): token key -> "#rrggbb", plus `appearance`.
+  // This map is the one place that names which token colors what, for both apps.
+  const cssVariables = {
+    "--bg": "ground", "--fg": "text", "--muted": "textSecondary", "--faint": "textTertiary",
+    "--surface": "surface", "--raised": "card", "--border": "border", "--border-strong": "borderStrong",
+    "--link": "accent", "--code-fg": "terminalForeground", "--error": "diffRemoved",
+    "--added": "diffAdded", "--added-text": "okText",
+  };
+  const muxaDark = {
+    appearance: "dark", ground: "#0E1014", text: "#E7E9EC", textTertiary: "#8B94A0", card: "#161A20",
+    surface: "#14171C", borderStrong: "#2C323C", readBack: "#14263F",
+  };
+
+  function initMermaid(t) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      themeVariables: {
+        darkMode: t.appearance !== "light",
+        background: t.ground,
+        primaryColor: t.card,
+        primaryTextColor: t.text,
+        primaryBorderColor: t.borderStrong,
+        secondaryColor: t.readBack,
+        tertiaryColor: t.surface,
+        lineColor: t.textTertiary,
+        textColor: t.text,
+        fontFamily: "system-ui, -apple-system, Roboto, sans-serif",
+      },
+    });
+  }
+
+  /** @param {Record<string, string>} t a resolved theme */
+  function applyTheme(t) {
+    const root = document.documentElement.style;
+    for (const [variable, token] of Object.entries(cssVariables)) {
+      if (/^#[0-9a-fA-F]{6}$/.test(t[token] || "")) root.setProperty(variable, t[token]);
+    }
+    root.setProperty("color-scheme", t.appearance === "light" ? "light" : "dark");
+    initMermaid({ ...muxaDark, ...t });
+  }
+
+  // The app may set window.muxaTheme before this file runs, so the first paint has the theme.
+  applyTheme(window.muxaTheme || muxaDark);
 
   const escape = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -91,7 +118,10 @@
   }
 
   let current = null;
+  // What is on the page, so a new theme can draw it again.
+  let shown = null;
   window.render = async function (text, path, first) {
+    shown = { draw: window.render, text, path };
     const a = first ? { id: null, top: 0 } : anchor();
     slugs.clear();
     const html = DOMPurify.sanitize(marked.parse(text), { USE_PROFILES: { html: true } });
@@ -119,6 +149,7 @@
 
   // A unified diff as GitHub shows it: both line numbers, then the line with its sign.
   window.renderDiff = function (text, path, first) {
+    shown = { draw: window.renderDiff, text, path };
     const y = first ? 0 : window.scrollY;
     const table = document.createElement("table");
     table.className = "diff";
@@ -179,4 +210,11 @@
     }
     post({ type: "link", href, from: current });
   });
+
+  // A new theme from the app: the colors change at once, and diagrams are drawn again in them.
+  window.setTheme = function (theme) {
+    window.muxaTheme = theme;
+    applyTheme(theme);
+    if (shown) shown.draw(shown.text, shown.path, false);
+  };
 })();

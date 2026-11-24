@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
+/// `MUXA_THEME=<theme id>` and
 /// `MUXA_SCREEN=home|focus|routines|shortcuts|palette|reader|settings[-tab]|settings-terminal|settings-assistant|bots[-chat|-chats|-run|-routines|-files|-settings|-new|-routine-edit|-soul-edit]` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
@@ -12,6 +13,7 @@ enum Snapshot {
     static func runIfAsked(model: NextModel, nav: NextNavigation, chrome: MacChrome) async {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["MUXA_SNAPSHOT"] else { return }
+        if let theme = env["MUXA_THEME"] { ThemeStore.shared.preview(theme) }
         switch env["MUXA_SCREEN"] {
         case "focus": nav.focus = true
         case "routines": nav.tab = .bots

@@ -155,7 +155,7 @@ struct QuietButtonStyle: ButtonStyle {
             .padding(.horizontal, 14)
             .frame(minHeight: minTouch)
             .background(Palette.rowSelected, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(hex: 0x323843)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.buttonBorder))
             .opacity(enabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
     }
 }

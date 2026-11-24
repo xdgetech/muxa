@@ -92,7 +92,7 @@ struct MacSettingsView: View {
         case .keyboard: MacKeyboardPane()
         case .terminal:
             VStack(alignment: .leading, spacing: 0) {
-                MacPaneTitle(title: "Terminal", subtitle: "How terminals look on this Mac.")
+                MacPaneTitle(title: "Appearance", subtitle: "The theme and terminal font on this Mac.")
                 TerminalSettingsForm().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
             }
         }

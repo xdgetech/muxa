@@ -43,14 +43,15 @@ private struct GroundList: ViewModifier {
     }
 }
 
+/// Nil reads the theme's ground when the view draws, so it follows a new theme.
 private struct FormGroundKey: EnvironmentKey {
-    static let defaultValue = Palette.ground
+    static let defaultValue: Color? = nil
 }
 
 extension EnvironmentValues {
     /// What a Form is drawn on: the Mac's Settings pane is lighter than the ground.
     var formGround: Color {
-        get { self[FormGroundKey.self] }
+        get { self[FormGroundKey.self] ?? Palette.ground }
         set { self[FormGroundKey.self] = newValue }
     }
 }

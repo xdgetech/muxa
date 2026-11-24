@@ -24,7 +24,7 @@ struct TerminalPane: NSViewRepresentable {
         let view = FocusReportingTerminalView(frame: .zero, font: MacTerminalLook.font(settings))
         view.onFocus = { context.coordinator.onActivate() }
         view.terminalDelegate = context.coordinator
-        MacTerminalLook.colors(settings.theme, on: view)
+        MacTerminalLook.colors(ThemeStore.shared.theme.terminal, on: view)
         context.coordinator.look = MacTerminalLook.key(settings)
         view.setAccessibilityIdentifier("focus.pane")
         context.coordinator.view = view
@@ -37,7 +37,7 @@ struct TerminalPane: NSViewRepresentable {
         if context.coordinator.look != MacTerminalLook.key(settings) {
             context.coordinator.look = MacTerminalLook.key(settings)
             view.font = MacTerminalLook.font(settings)
-            MacTerminalLook.colors(settings.theme, on: view)
+            MacTerminalLook.colors(ThemeStore.shared.theme.terminal, on: view)
         }
         guard active, context.coordinator.focusRequest != focusRequest else { return }
         context.coordinator.focusRequest = focusRequest
@@ -151,8 +151,11 @@ struct TerminalPane: NSViewRepresentable {
 /// The device's terminal settings on SwiftTerm's AppKit view.
 @MainActor
 enum MacTerminalLook {
-    /// What the view shows; a change re-applies the font and colors.
-    static func key(_ s: TerminalSettings) -> String { "\(s.themeID)|\(s.fontName)|\(s.fontSize)" }
+    /// What the view shows; a change re-applies the font and colors. The whole
+    /// resolved theme counts, so an edited theme with the same id applies too.
+    static func key(_ s: TerminalSettings) -> String {
+        "\(ThemeStore.shared.theme.hashValue)|\(s.fontName)|\(s.fontSize)"
+    }
 
     static func font(_ s: TerminalSettings) -> NSFont {
         s.font(size: s.fontSize).map { $0 as NSFont } ?? .monospacedSystemFont(ofSize: CGFloat(s.fontSize), weight: .regular)

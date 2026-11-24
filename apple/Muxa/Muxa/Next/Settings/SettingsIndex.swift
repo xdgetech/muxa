@@ -36,7 +36,7 @@ struct SettingsIndex: View {
             HostsSection(editing: $editingHost)
             Section("This device") {
                 row(.terminal, id: "settings.terminal") {
-                    LabeledContent("Terminal", value: TerminalSettings.shared.theme.name)
+                    LabeledContent("Appearance", value: ThemeStore.shared.theme.name)
                 }
             }
         }
@@ -113,7 +113,7 @@ struct SettingsDetail: View {
         case .workspace(let name): WorkspaceSettings(name: name)
         case .workers: WorkersSettings()
         case .assistant: AssistantSettings()
-        case .terminal: TerminalSettingsForm().navigationTitle("Terminal")
+        case .terminal: TerminalSettingsForm().navigationTitle("Appearance")
         }
     }
 }

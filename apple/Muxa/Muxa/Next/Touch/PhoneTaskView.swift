@@ -81,6 +81,6 @@ struct InboxSheet: View {
                 }
         }
         .presentationDetents([.medium, .large])
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ColorScheme(ThemeStore.shared.theme.appearance))
     }
 }

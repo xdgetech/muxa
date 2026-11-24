@@ -1,6 +1,7 @@
 #if canImport(UIKit)
 import MuxaUI
 #endif
+import MuxaSession
 import SwiftUI
 import WebKit
 
@@ -23,6 +24,11 @@ struct ReaderWebView: WebRepresentable {
         config.websiteDataStore = .nonPersistent()
         // A weak hop: the content controller keeps its handlers alive.
         config.userContentController.add(WeakHandler(context.coordinator), name: "reader")
+        // The theme is in place before reader.js runs, so the first paint has it (ADR 0091).
+        let theme = ThemeStore.shared.theme
+        config.userContentController.addUserScript(WKUserScript(
+            source: "window.muxaTheme = \(Self.themeJSON(theme));", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        context.coordinator.applied = theme
         let view = ReaderPageView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
         view.readerLook(identifier: "reader")
@@ -33,6 +39,7 @@ struct ReaderWebView: WebRepresentable {
     func updateWebView(_ view: WKWebView, context: Context) {
         context.coordinator.onLink = onLink
         context.coordinator.show(Shown(text: text, path: path, kind: kind))
+        context.coordinator.apply(ThemeStore.shared.theme)
     }
 
     static func dismantleWebView(_ view: WKWebView, coordinator: Coordinator) {
@@ -47,12 +54,31 @@ struct ReaderWebView: WebRepresentable {
         private var loaded = false
         private var wanted: Shown?
         private var shown: Shown?
+        /// The theme the page has; a different one is sent with `setTheme`.
+        var applied: ResolvedTheme?
+        private var wantedTheme: ResolvedTheme?
 
         func load(into view: WKWebView) {
             self.view = view
             guard let page = Bundle.main.url(forResource: "reader", withExtension: "html") else { return }
             self.page = page
             view.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+        }
+
+        func apply(_ theme: ResolvedTheme) {
+            wantedTheme = theme
+            sendTheme()
+        }
+
+        private func sendTheme() {
+            guard loaded, let view, let theme = wantedTheme, theme != applied else { return }
+            applied = theme
+            view.evaluateJavaScript("setTheme(\(ReaderWebView.themeJSON(theme)))") { _, error in
+                if let error { NSLog("muxa: the Reader did not take the theme: %@", error.localizedDescription) }
+            }
+            #if canImport(UIKit)
+            view.backgroundColor = UIColor(Color(theme[.ground]))
+            #endif
         }
 
         func show(_ content: Shown) {
@@ -85,6 +111,7 @@ struct ReaderWebView: WebRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             loaded = true
+            sendTheme()
             render()
         }
 
@@ -101,6 +128,16 @@ struct ReaderWebView: WebRepresentable {
             else { return }
             onLink(href, body["from"] as? String ?? "")
         }
+    }
+
+    /// Every token as `#rrggbb`, and the appearance: what reader.js reads.
+    static func themeJSON(_ theme: ResolvedTheme) -> String {
+        var values = Dictionary(uniqueKeysWithValues: ThemeToken.allCases.map { ($0.rawValue, theme[$0].hex) })
+        values["appearance"] = theme.appearance.rawValue
+        guard let data = try? JSONSerialization.data(withJSONObject: values, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8)
+        else { return "{}" }
+        return json
     }
 
     struct Shown: Equatable {

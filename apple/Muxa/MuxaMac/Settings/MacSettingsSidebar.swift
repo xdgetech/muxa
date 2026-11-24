@@ -35,7 +35,7 @@ struct MacSettingsSidebar: View {
                 row(model.connectionTitle, meta: status, place: .connection, id: "settings.connection")
                 label("This Mac", top: 16)
                 row("Keyboard", meta: Shortcut.shortcuts.display, place: .keyboard, id: "settings.keyboard")
-                row("Terminal", meta: TerminalSettings.shared.theme.name, place: .terminal, id: "settings.terminal")
+                row("Appearance", meta: ThemeStore.shared.theme.name, place: .terminal, id: "settings.terminal")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 14)
