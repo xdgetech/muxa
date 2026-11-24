@@ -5,9 +5,9 @@ import XCTest
 extension MacNextTests {
     @MainActor
     private func openTalk(_ app: XCUIApplication) {
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        openPrWatchsHome(app)
         let talk = app.descendants(matching: .any)["bot.terminal.t7"]
-        XCTAssertTrue(talk.waitForExistence(timeout: 10))
+        XCTAssertTrue(talk.waitForExistence(timeout: 5))
         talk.click()
         XCTAssertTrue(app.descendants(matching: .any)["chat.assistant"].firstMatch.waitForExistence(timeout: 5))
     }

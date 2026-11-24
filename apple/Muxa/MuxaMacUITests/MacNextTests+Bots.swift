@@ -3,14 +3,23 @@ import XCTest
 /// The Bots page (ADR 0086) against the demo: pr-watch's Home, the
 /// proposal bar above its talk in Focus, and New Bot.
 extension MacNextTests {
+    /// pr-watch's Home: its page itself opens on its talk.
     @MainActor
-    func testBotsOpensOnPrWatchsHome() throws {
-        let app = launch()
+    func openPrWatchsHome(_ app: XCUIApplication) {
         app.typeKey("b", modifierFlags: .command)
         let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
         XCTAssertTrue(bot.waitForExistence(timeout: 10))
         bot.click()
+        let home = app.buttons["bot.tab.home"]
+        XCTAssertTrue(home.waitForExistence(timeout: 5))
+        home.click()
         XCTAssertTrue(app.staticTexts["bot.title"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testBotsOpensOnPrWatchsHome() throws {
+        let app = launch()
+        openPrWatchsHome(app)
         for section in ["bot.home.needsyou", "bot.home.inprogress", "bot.home.planned"] {
             XCTAssertTrue(app.descendants(matching: .any)[section].exists, section)
         }
@@ -26,7 +35,7 @@ extension MacNextTests {
     @MainActor
     func testAnItemOnABotsHomeOpensInHome() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: .command)
+        openPrWatchsHome(app)
         let row = app.descendants(matching: .any)["bot.item.d10"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.click()
@@ -38,7 +47,7 @@ extension MacNextTests {
     @MainActor
     func testAProposalIsAppliedFromItsChatOnTheBotPage() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: .command)
+        openPrWatchsHome(app)
         let talk = app.descendants(matching: .any)["bot.terminal.t7"]
         XCTAssertTrue(talk.waitForExistence(timeout: 10))
         talk.click()
@@ -154,7 +163,7 @@ extension MacNextTests {
     }
 }
 
-/// A Bot's page first opens on its live talk, else on Home with a field to start one (ADR 0086).
+/// A Bot's page opens on its live talk, else on Home with a field to start one (ADR 0086).
 extension MacNextTests {
     @MainActor
     func testABotWithALiveTalkLandsOnIt() throws {
@@ -168,20 +177,71 @@ extension MacNextTests {
         XCTAssertTrue(app.buttons["bot.chat.t9"].isSelected)
     }
 
+    /// pr-watch's talk reported `done`: it waits for the user, and the page still lands on it.
     @MainActor
-    func testABotWithoutATalkStartsOneFromItsHome() throws {
+    func testATalkWhoseTurnIsDoneIsLandedOn() throws {
         let app = launch()
         app.typeKey("b", modifierFlags: .command)
         let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
         XCTAssertTrue(bot.waitForExistence(timeout: 10))
         bot.click()
+        XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["bot.chat.t7"].isSelected)
+    }
+
+    /// The tab a Bot was left on does not keep it from its live talk: the
+    /// sidebar and ⌘B both open the talk again.
+    @MainActor
+    func testABotLeftOnHomeOpensOnItsTalkAgain() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: .command)
+        let scout = app.descendants(matching: .any)["bot.app.scout"]
+        XCTAssertTrue(scout.waitForExistence(timeout: 10))
+        scout.click()
+        XCTAssertTrue(app.buttons["bot.chat.t9"].waitForExistence(timeout: 5))
+        app.buttons["bot.tab.home"].click()
+        XCTAssertTrue(app.textFields["bot.home.talk"].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["bot.app.pr-watch"].click()
+        XCTAssertTrue(app.buttons["bot.chat.t7"].waitForExistence(timeout: 5))
+        scout.click()
+        XCTAssertTrue(app.buttons["bot.chat.t9"].waitForExistence(timeout: 5), "the sidebar opens scout's talk")
+        XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
+        app.buttons["bot.tab.home"].click()
+        app.typeKey("h", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
+        app.typeKey("b", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["bot.chat.t9"].waitForExistence(timeout: 5), "⌘B opens scout's talk")
+        XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
+    }
+
+    /// An Inbox item opens its own talk on the Bot's page, whatever tab the Bot was left on.
+    @MainActor
+    func testAnInboxItemOpensItsBotsTalk() throws {
+        let app = launch()
+        openPrWatchsHome(app)
+        app.typeKey("h", modifierFlags: [.command, .shift])
+        let item = app.descendants(matching: .any)["item.d12"]
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        item.click()
+        let open = app.buttons["detail.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        open.click()
+        XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
+        XCTAssertTrue(app.buttons["bot.chat.t7"].isSelected)
+    }
+
+    @MainActor
+    func testATalkStartsFromABotsHome() throws {
+        let app = launch()
+        openPrWatchsHome(app)
         let field = app.textFields["bot.home.talk"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["bot.tab.home"].isSelected)
         field.click()
         field.typeText("What waits for me today?\r")
         XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
+        XCTAssertFalse(app.buttons["bot.chat.t7"].isSelected, "the new talk is open")
     }
 }
 
@@ -271,11 +331,7 @@ extension MacNextTests {
     @MainActor
     func testABotsHomeSaysItsItemsTodayWithNoLimit() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
-        let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
-        XCTAssertTrue(bot.waitForExistence(timeout: 10))
-        bot.click()
-        XCTAssertTrue(app.staticTexts["bot.title"].waitForExistence(timeout: 5))
+        openPrWatchsHome(app)
         let perDay = NSPredicate(format: "label CONTAINS 'items a day' OR label CONTAINS ' of '")
         XCTAssertEqual(app.staticTexts.matching(perDay).count, 0)
         keep(app, "bot-home")

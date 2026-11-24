@@ -77,11 +77,16 @@ extension NextModel {
         return await startTalk(workspace: e.workspace.name, bot: e.name, title: "Talk to \(e.name) · \(stamp)", goal: goal)
     }
 
-    /// Its most recent live talk, one whose agent is not done: a Bot's page
-    /// first opens on it (ADR 0086).
+    /// Its most recent live talk: a Bot's page opens on it (ADR 0086). Its
+    /// state does not count: Claude Code reports `done` after every turn, and
+    /// the talk then waits for the user's next message.
     func liveTalk(of e: BotEntry) -> Terminal? {
-        talks(of: e).last { $0.status?.state != "done" }
+        talks(of: e).last
     }
+
+    /// The terminals have not come yet: a Bot page that opens now lands
+    /// again once its live talk shows.
+    var terminalsPending: Bool { terminals.isEmpty }
 
     /// New Bot (ADR 0086 decision 3): `bot-add`, then its first talk. A talk
     /// that did not start leaves the Bot added and says so.

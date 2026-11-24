@@ -58,6 +58,9 @@ final class NextNavigation {
     var botRoute: BotRoute?
     /// iOS: the tab each Bot's page was left on in this run, by `workspace/name`.
     var botTabs: [String: BotTab] = [:]
+    /// iOS: the Bot page `showOnBotPage` opened on a terminal, by `workspace/name`;
+    /// it keeps that terminal instead of landing.
+    var botRoutedTo: String?
     var sidebar = NavigationSplitViewVisibility.all
 
     /// The open Task's terminal (its agent), whichever pane has the keyboard.

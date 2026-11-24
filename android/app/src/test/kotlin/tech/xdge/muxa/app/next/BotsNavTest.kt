@@ -84,10 +84,10 @@ class BotsNavTest {
     )
 
     @Test
-    fun aBotLandsOnItsNewestLiveTalkThatIsNotDone() {
+    fun aBotLandsOnItsNewestLiveTalkEvenWhenItsTurnIsDone() {
         assertEquals("t3", liveTalk(listOf(talk("t1", "working"), talk("t2", "done"), talk("t3", "waiting"))).let { it?.id })
-        assertEquals("t1", liveTalk(listOf(talk("t1", null), talk("t2", "done"))).let { it?.id })
-        assertNull(liveTalk(listOf(talk("t1", "done"), talk("t2", "working", live = false))))
+        assertEquals("t2", liveTalk(listOf(talk("t1", null), talk("t2", "done"))).let { it?.id })
+        assertNull(liveTalk(listOf(talk("t2", "working", live = false))))
         assertNull(liveTalk(emptyList()))
     }
 
@@ -97,18 +97,17 @@ class BotsNavTest {
     }
 
     @Test
-    fun theFirstPickLandsOnTheLiveTalkOrHomeAndLaterPicksKeepTheLastTab() {
+    fun aPickLandsOnTheLiveTalkElseOnTheLastTabElseHome() {
         val nav = BotNav()
-        nav.pickBot(entry(talk("t2", "done")))
+        nav.pickBot(entry())
         assertEquals(BotTab.HOME to null, nav.tab to nav.terminal)
         nav.selectTab(BotTab.FILES)
         nav.back()
-        nav.pickBot(entry(talk("t2", "done"), talk("t9", "working")))
-        assertEquals("a Bot picked before keeps its last tab", BotTab.FILES to null, nav.tab to nav.terminal)
-
-        val fresh = BotNav()
-        fresh.pickBot(entry(talk("t9", "working")))
-        assertEquals(BotTab.CHATS to "t9", fresh.tab to fresh.terminal)
+        nav.pickBot(entry())
+        assertEquals("a Bot with no talk keeps its last tab", BotTab.FILES to null, nav.tab to nav.terminal)
+        nav.back()
+        nav.pickBot(entry(talk("t2", "done")))
+        assertEquals("a talk waiting for the user wins over the last tab", BotTab.CHATS to "t2", nav.tab to nav.terminal)
     }
 
     @Test

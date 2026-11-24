@@ -42,17 +42,17 @@ class BotNav {
     private val lastTab = mutableMapOf<BotPick, BotTab>()
 
     /**
-     * The user picks [e] in the list. The first time, it lands on its live talk's conversation in Chats,
-     * else on Home; after that, on the tab it was left on.
+     * The user picks [e] in the list. It lands on its live talk's conversation in Chats; a Bot with no
+     * live talk lands on the tab it was left on, else on Home (ADR 0086).
      */
     fun pickBot(e: BotEntry) {
         val p = e.pick
         pick = p
         routine = null
         item = null
-        val talk = e.liveTalk.takeIf { p !in lastTab }
+        val talk = e.liveTalk
         terminal = talk?.id
-        tab = lastTab[p] ?: if (talk != null) BotTab.CHATS else BotTab.HOME
+        tab = if (talk != null) BotTab.CHATS else lastTab[p] ?: BotTab.HOME
         lastTab[p] = tab
     }
 
@@ -101,17 +101,16 @@ data class BotEntry(val workspace: SettingsWorkspace, val bot: SettingsBot, val 
     /** Its other terminals: Routine runs, its runs as a member, and its members' runs. */
     val runs: List<Terminal> get() = work.terminals - talks.toSet()
 
-    /** The talk a picked Bot opens on: its most recent live one whose agent is not done. */
+    /** The talk a picked Bot opens on: its most recent live one. */
     val liveTalk: Terminal? get() = liveTalk(talks)
 }
 
 /**
- * The most recent of [talks] that is live and not done. The server lists terminals in the order they
- * started, so the last one is the newest.
+ * The most recent of [talks] that is live. The server lists terminals in the order they started, so
+ * the last one is the newest. Its state does not count: Claude Code reports `done` after every turn,
+ * and the talk then waits for the user's next message.
  */
-fun liveTalk(talks: List<Terminal>): Terminal? = talks.lastOrNull { it.live && it.status?.state != DONE }
-
-private const val DONE = "done"
+fun liveTalk(talks: List<Terminal>): Terminal? = talks.lastOrNull { it.live }
 
 /** Every Bot of [settings], Workspace by Workspace, with its work grouped as the protocol says. */
 fun botEntries(settings: Settings?, inbox: Inbox, terminals: List<Terminal>, routines: List<Routine>): List<BotEntry> =

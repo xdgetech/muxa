@@ -181,6 +181,7 @@ extension NextNavigation {
         tab = .bots
         taskView = t.isTaskAgent ? .chat : .terminal
         botTabs["\(workspace)/\(bot)"] = .chats
+        botRoutedTo = "\(workspace)/\(bot)"
         botRoute = BotRoute(workspace: workspace, bot: bot, terminal: t.id)
         return true
     }
