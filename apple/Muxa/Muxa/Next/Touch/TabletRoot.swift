@@ -13,7 +13,6 @@ struct TabletRoot: View {
     @State private var botPath: [BotsDestination] = []
     @State private var selectedSetting: SettingsPlace?
     @State private var filter = InboxFilter()
-    @State private var now = Int64(Date().timeIntervalSince1970)
 
     /// The mock's sidebar width; a portrait iPad mini keeps more for the terminal.
     private static let sidebarWidth: CGFloat = 360
@@ -23,7 +22,7 @@ struct TabletRoot: View {
             HStack(spacing: 0) {
                 TabletSidebar(
                     mode: mode, selectedItem: $selectedItem, selectedBot: $selectedBot, botPath: $botPath,
-                    selectedSetting: $selectedSetting, filter: $filter, now: now)
+                    selectedSetting: $selectedSetting, filter: $filter)
                     .frame(width: min(Self.sidebarWidth, max(300, geo.size.width * 0.4)))
                 Rectangle().fill(Palette.border).frame(width: 1)
                 main.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -37,13 +36,6 @@ struct TabletRoot: View {
             selectedBot = .bot(workspace: route.workspace, name: route.bot)
             botPath = route.terminal.map { [.conversation(terminal: $0)] } ?? []
             nav.botRoute = nil
-        }
-        .task {
-            // Later items come back on their own; the clock decides what shows.
-            while !Task.isCancelled {
-                now = Int64(Date().timeIntervalSince1970)
-                try? await Task.sleep(for: .seconds(30))
-            }
         }
     }
 
@@ -92,7 +84,7 @@ struct TabletRoot: View {
             Group {
                 if let id = selectedItem, let item = (model.inbox.items + model.inbox.done).first(where: { $0.id == id }) {
                     let position = model.inbox.items.firstIndex(where: { $0.id == id }).map { $0 + 1 }
-                    let visible = filter.apply(model.inbox.items, now: now)
+                    let visible = filter.apply(model.inbox.items)
                     InboxItemPane(item: item, position: position) {
                         // The list may have dropped the item already; the onChange below picked the one below.
                         if visible.contains(where: { $0.id == id }) { selectedItem = filter.next(after: id, in: visible) }
@@ -102,7 +94,7 @@ struct TabletRoot: View {
                     ContentUnavailableView(model.inbox.items.isEmpty ? "Inbox zero" : "Select an item", systemImage: "tray")
                 }
             }
-            .onChange(of: filter.apply(model.inbox.items, now: now).map(\.id)) { old, new in
+            .onChange(of: filter.apply(model.inbox.items).map(\.id)) { old, new in
                 // Done or Later took the picked item away: pick the one that took its place.
                 guard let id = selectedItem, let at = old.firstIndex(of: id), !new.contains(id), !new.isEmpty else { return }
                 selectedItem = new[min(at, new.count - 1)]

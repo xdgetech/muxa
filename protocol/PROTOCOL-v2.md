@@ -90,7 +90,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
 | `{"type":"inbox-add","kind","title","note"?,"workspace"?,"due"?}` | `{"inbox":Inbox}`. The item goes on top |
 | `{"type":"inbox-move","item","index"}` | `{"inbox":Inbox}`. An index past the end means last |
-| `{"type":"inbox-later","item","until"}` | `{"inbox":Inbox}`. `until` is Unix seconds, in the future |
+| `{"type":"inbox-later","item"}` | `{"inbox":Inbox}`. The open item goes last (ADR 0091). Apps before ADR 0091 also send `until`; it is ignored |
 | `{"type":"inbox-done","item"}`, `inbox-reopen`, `inbox-delete` | `{"inbox":Inbox}` |
 | `{"type":"routines"}` | `{"routines":[Routine...],"problems":[{"workspace","reason"}...],"off"?:[{"workspace","count"}...]}` |
 | `{"type":"run-routine","workspace","name"}` | `{}`. The run reports through the Inbox; `conflict` while it already runs |
@@ -238,10 +238,10 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"workspace","bot","done","deleted","day"?,"added"}]}`. `added` is how many of the Bot's items counted against its `daily_items` on `day`, the host's local date (ADR 0086); its "N more" item and its talks' proposals do not count. Servers before ADR 0086 send neither. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
 
-`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?,"settings_proposal"?,"suggestion"?}`. `settings_proposal` is on a Decide item of a talk with a Bot (ADR 0083); `suggestion` is the Capture assistant's (ADR 0084). ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot adds at most its `daily_items` a day; the rest go into one Read item titled `N more from <bot>`, whose note lists their titles.
+`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?,"settings_proposal"?,"suggestion"?}`. `settings_proposal` is on a Decide item of a talk with a Bot (ADR 0083); `suggestion` is the Capture assistant's (ADR 0084). ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot adds at most its `daily_items` a day; the rest go into one Read item titled `N more from <bot>`, whose note lists their titles.
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
-- `due`: `YYYY-MM-DD`. `created` and `later_until`: Unix seconds.
-- An item with `later_until` in the future stays in `items` and the client hides it. At that time the server puts it back on top, clears `later_until` and sends `inbox`.
+- `due`: `YYYY-MM-DD`. `created`: Unix seconds.
+- Every open item is in `items`; a client hides none. Servers before ADR 0091 sent `later_until` on an item Later hid. A server since then never sends it, and on start it moves such stored items to the end of `items`.
 - `source`: `capture`, `task`, `routine` or `v1`.
 - `terminal`: the Task agent terminal that made the item (Review, and Failed of an agent or a Task Loop). `routine`: `{"workspace","name"}`, the Routine that made it. Items made before these fields have neither.
 - `place`: `{"workspace","path"}`, where an older Task worked. A client offers Resume Task for it: `start-task` with that workspace, the title without `Resume: `, and `places: [{"kind":"existing","path"}]`, then `inbox-done`.
@@ -290,7 +290,7 @@ ADR 0084. When `[assistant] enabled = true` in `workspaces.toml`, each item adde
 
 ADR 0086. Clients show each Bot on a page of its own. Every client groups the data it already has by these rules, and the demo servers answer them the same way. For a Bot `b` of Workspace `w`:
 
-- **Items:** open Inbox items with `bot` = `b` and `workspace` = `w`. Later items count once they are back.
+- **Items:** open Inbox items with `bot` = `b` and `workspace` = `w`.
 - **Terminals:** live terminals with `muxa.workspace` = `w` and `muxa.bot` = `b` (its talks, runs, and its runs as a member), or `muxa.lead` = `b` (its members' runs).
 - **Needs you:** its items, then its terminals whose `status.state` is `blocked` or `waiting`.
 - **In progress:** its other terminals.

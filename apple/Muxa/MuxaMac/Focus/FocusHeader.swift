@@ -53,10 +53,7 @@ private struct InboxButton: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
 
-    private var count: Int {
-        let now = Int64(Date().timeIntervalSince1970)
-        return model.inbox.items.filter { !$0.isLater(now: now) }.count
-    }
+    private var count: Int { model.inbox.items.count }
 
     var body: some View {
         let on = nav.showInbox

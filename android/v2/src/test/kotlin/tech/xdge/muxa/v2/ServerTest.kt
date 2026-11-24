@@ -144,6 +144,9 @@ class ServerTest {
             assertEquals(listOf("to the bank"), inbox.items.map { it.title })
             val pushed = phone.next { it !is V2Event.InboxChanged }
             assertEquals(V2Event.InboxChanged(inbox), pushed)
+            val second = mac.inbox(V2Request.InboxAdd(Capture(ItemKind.TODO, "milk")))
+            val later = mac.inbox(V2Request.InboxLater(second.items[0].id))
+            assertEquals(listOf("to the bank", "milk"), later.items.map { it.title })
             try {
                 mac.inbox(V2Request.InboxDone("nope"))
                 fail("done on a missing item")

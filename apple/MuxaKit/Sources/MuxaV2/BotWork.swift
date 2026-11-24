@@ -33,11 +33,11 @@ public struct BotWork: Equatable, Sendable {
     public var recent: [InboxItem]
     public var status: Status
 
-    /// `enabled`: the Bot's own switch in `BotSpec`. `now` is Unix seconds.
+    /// `enabled`: the Bot's own switch in `BotSpec`.
     public init(bot: String, workspace: String, enabled: Bool, inbox: Inbox, terminals all: [Terminal],
-                routines: [Routine], now: Int64) {
+                routines: [Routine]) {
         func mine(_ i: InboxItem) -> Bool { i.bot == bot && i.workspace == workspace }
-        items = inbox.items.filter { mine($0) && !$0.isLater(now: now) }
+        items = inbox.items.filter(mine)
         terminals = all.filter {
             $0.live && $0.workspace == workspace && ($0.bot == bot || $0.lead == bot)
         }

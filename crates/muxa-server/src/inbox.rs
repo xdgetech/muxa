@@ -46,9 +46,7 @@ pub(crate) async fn handle<H: Host>(msg: ClientMsg, inbox: &Inbox, host: &H) -> 
         ClientMsg::InboxMove { id, item, index } => {
             (id, inbox.change(|b, _| b.move_to(&item, index)))
         }
-        ClientMsg::InboxLater { id, item, until } => {
-            (id, inbox.change(|b, now| b.later(&item, until, now)))
-        }
+        ClientMsg::InboxLater { id, item, .. } => (id, inbox.change(|b, _| b.later(&item))),
         ClientMsg::InboxDone { id, item } => (id, inbox.change(|b, _| b.done(&item))),
         ClientMsg::InboxReopen { id, item } => (id, inbox.change(|b, _| b.reopen(&item))),
         ClientMsg::InboxDelete { id, item } => (id, inbox.change(|b, _| b.delete(&item))),

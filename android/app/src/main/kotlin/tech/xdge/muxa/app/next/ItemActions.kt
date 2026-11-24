@@ -136,7 +136,6 @@ fun ItemActions(
         onDone()
     }
     val terminal = item.terminal?.let { id -> model.terminals.firstOrNull { it.id == id } }
-    var later by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     val workspace = item.workspace
     val bots by produceState(emptyList<String>(), workspace) { value = workspace?.let { model.botNames(it) }.orEmpty() }
@@ -158,17 +157,7 @@ fun ItemActions(
                 SecondaryButton("Open in Focus", { openTerminal(terminal) }, Modifier.testTag("detail.open"))
             }
             if (bots.isNotEmpty()) AskBotButton(bots, !actions.busy) { actions.ask(item, it, openTerminal) }
-            Column {
-                SecondaryButton("Later", { later = true }, Modifier.testTag("detail.later"))
-                DropdownMenu(later, { later = false }) {
-                    for (choice in LaterChoice.entries) {
-                        DropdownMenuItem({ Text(choice.title) }, {
-                            later = false
-                            act(V2Request.InboxLater(item.id, choice.until()))
-                        })
-                    }
-                }
-            }
+            SecondaryButton("Later", { act(V2Request.InboxLater(item.id)) }, Modifier.testTag("detail.later"))
             if (item.kind.mainAction != "Done") {
                 SecondaryButton("Done", { act(V2Request.InboxDone(item.id)) }, Modifier.testTag("detail.done"))
             }

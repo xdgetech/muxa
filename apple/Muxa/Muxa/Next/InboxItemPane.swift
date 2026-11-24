@@ -82,7 +82,7 @@ struct InboxItemPane: View {
                 .buttonStyle(FilledButtonStyle())
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityIdentifier("detail.main")
-                laterMenu
+                later
                 if item.closesTask {
                     Button("Done", systemImage: "checkmark") { Task { await done() } }
                         .buttonStyle(QuietButtonStyle())
@@ -100,23 +100,19 @@ struct InboxItemPane: View {
         }
     }
 
-    private var laterMenu: some View {
-        Menu {
-            ForEach(LaterChoice.allCases) { choice in
-                Button(choice.title) { Task { await act(.inboxLater(item: item.id, until: choice.until())) } }
-            }
-        } label: {
-            Label("Later", systemImage: "clock")
+    /// Moves the item to the bottom of the Inbox (ADR 0091).
+    private var later: some View {
+        Button("Later", systemImage: "text.line.last.and.arrowtriangle.forward") {
+            Task { await act(.inboxLater(item: item.id)) }
         }
-        .menuStyle(.button)
         .buttonStyle(QuietButtonStyle())
         .accessibilityIdentifier("detail.later")
     }
 
-    /// `⌘L`: Later until tomorrow morning, the usual choice. `⌘⌫`: Done.
+    /// `⌘L`: Later. `⌘⌫`: Done.
     private var hiddenKeys: some View {
         Group {
-            Button("") { Task { await act(.inboxLater(item: item.id, until: LaterChoice.tomorrow.until())) } }
+            Button("") { Task { await act(.inboxLater(item: item.id)) } }
                 .keyboardShortcut("l", modifiers: .command)
             Button("") { Task { await done() } }
                 .keyboardShortcut(.delete, modifiers: .command)

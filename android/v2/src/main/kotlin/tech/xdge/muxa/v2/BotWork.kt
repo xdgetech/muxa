@@ -35,7 +35,7 @@ data class BotWork(
     }
 
     companion object {
-        /** [enabled] is the Bot's own switch. [now] is Unix seconds. */
+        /** [enabled] is the Bot's own switch. */
         fun of(
             bot: String,
             workspace: String,
@@ -43,10 +43,9 @@ data class BotWork(
             inbox: Inbox,
             terminals: List<Terminal>,
             routines: List<Routine>,
-            now: Long,
         ): BotWork {
             fun mine(i: InboxItem) = i.bot == bot && i.workspace == workspace
-            val items = inbox.items.filter { mine(it) && !it.isLater(now) }
+            val items = inbox.items.filter(::mine)
             val own = terminals.filter { it.live && it.labels[WORKSPACE] == workspace && (it.bot == bot || it.lead == bot) }
             val waiting = own.filter { it.status?.state in WAITING }
             val routinesOn = routines.filter { it.bot == bot && it.workspace == workspace && it.enabled }

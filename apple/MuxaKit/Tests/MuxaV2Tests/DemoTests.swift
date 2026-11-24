@@ -36,6 +36,14 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func laterMovesAnItemToTheBottom() async throws {
+        let c = try await open()
+        let before = try await c.inbox().items.map(\.id)
+        let after = try await c.inbox(.inboxLater(item: before[0])).items.map(\.id)
+        #expect(after == Array(before.dropFirst()) + [before[0]])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func turnedOffRoutinesAreReportedUntilTurnedOn() async throws {
         let c = try await open()
         #expect(try await c.routines().off == [RoutinesOff(workspace: "Personal", count: 1)])

@@ -114,9 +114,9 @@ fun liveTalk(talks: List<Terminal>): Terminal? = talks.lastOrNull { it.live && i
 private const val DONE = "done"
 
 /** Every Bot of [settings], Workspace by Workspace, with its work grouped as the protocol says. */
-fun botEntries(settings: Settings?, inbox: Inbox, terminals: List<Terminal>, routines: List<Routine>, now: Long): List<BotEntry> =
+fun botEntries(settings: Settings?, inbox: Inbox, terminals: List<Terminal>, routines: List<Routine>): List<BotEntry> =
     settings?.workspaces.orEmpty().flatMap { w ->
-        w.bots.map { b -> BotEntry(w, b, BotWork.of(b.name, w.name, b.enabled, inbox, terminals, routines, now)) }
+        w.bots.map { b -> BotEntry(w, b, BotWork.of(b.name, w.name, b.enabled, inbox, terminals, routines)) }
     }
 
 /** Routines no Bot owns: failed or held ones first (ADR 0086). */

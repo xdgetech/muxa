@@ -52,7 +52,7 @@ pub fn load(path: &Path) -> Result<Book, StoreError> {
         path: shown.clone(),
         source,
     })?;
-    let book: Book = serde_json::from_slice(&text).map_err(|e| StoreError::Bad {
+    let mut book: Book = serde_json::from_slice(&text).map_err(|e| StoreError::Bad {
         path: shown.clone(),
         why: e.to_string(),
     })?;
@@ -62,6 +62,7 @@ pub fn load(path: &Path) -> Result<Book, StoreError> {
             found: book.version(),
         });
     }
+    book.unhide();
     Ok(book)
 }
 
@@ -149,6 +150,28 @@ mod tests {
         .unwrap();
         let item = &load(&path).unwrap().view().items[0];
         assert_eq!((&item.terminal, &item.routine), (&None, &None));
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn items_an_older_server_hid_with_later_load_at_the_bottom() {
+        let d = dir("hidden");
+        fs::create_dir_all(&d).unwrap();
+        let path = d.join("inbox.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"revision":4,"next_id":4,"items":[
+                {"id":"i3","kind":"todo","title":"c","created":3,"source":"capture","later_until":900},
+                {"id":"i2","kind":"todo","title":"b","created":2,"source":"capture"},
+                {"id":"i1","kind":"todo","title":"a","created":1,"source":"capture","later_until":800}],
+                "done":[]}"#,
+        )
+        .unwrap();
+        let book = load(&path).unwrap();
+        let ids: Vec<String> = book.view().items.into_iter().map(|i| i.id).collect();
+        assert_eq!(ids, ["i2", "i3", "i1"]);
+        save(&path, &book).unwrap();
+        assert!(!fs::read_to_string(&path).unwrap().contains("later_until"));
         fs::remove_dir_all(&d).unwrap();
     }
 

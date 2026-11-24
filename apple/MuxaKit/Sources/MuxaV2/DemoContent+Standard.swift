@@ -21,7 +21,7 @@ extension DemoContent {
                   due: String? = nil, source: String, terminal: String? = nil, routine: RoutineRef? = nil,
                   place: ItemPlace? = nil) -> InboxItem {
             InboxItem(id: id, kind: kind, title: title, note: note, workspace: workspace, due: due,
-                      laterUntil: nil, created: 1_764_000_000, source: source, terminal: terminal, routine: routine,
+                      created: 1_764_000_000, source: source, terminal: terminal, routine: routine,
                       place: place)
         }
         func bot(_ id: String, _ kind: ItemKind, _ title: String, note: String? = nil, due: String? = nil,
@@ -199,7 +199,7 @@ extension DemoContent {
                             commands: ["gh pr list:*", "gh pr diff:*"])
         var i = InboxItem(
             id: "d12", kind: .decide, title: "pr-watch proposes: a nightly sweep of stale PRs",
-            note: "- routine-add nightly-sweep (off)\n- Change Bot pr-watch, may run: gh pr list:*; gh pr diff:*\n", workspace: "app", due: nil, laterUntil: nil,
+            note: "- routine-add nightly-sweep (off)\n- Change Bot pr-watch, may run: gh pr list:*; gh pr diff:*\n", workspace: "app", due: nil,
             created: 1_764_000_000, source: "task", terminal: "t7", routine: nil)
         i.bot = "pr-watch"
         i.settingsProposal = SettingsProposal(revision: "1", ops: [
@@ -214,7 +214,7 @@ extension DemoContent {
     private static let suggested: InboxItem = {
         var i = InboxItem(
             id: "d13", kind: .todo, title: "Look into the flaky login test", note: nil, workspace: nil, due: nil,
-            laterUntil: nil, created: 1_764_000_000, source: "capture", terminal: nil, routine: nil)
+            created: 1_764_000_000, source: "capture", terminal: nil, routine: nil)
         i.suggestion = ItemSuggestion(
             workspace: "app", due: "2026-11-28", note: "It fails about once in ten CI runs.",
             taskGoal: "Find why the login test fails now and then, and fix it.", bot: "pr-watch")

@@ -52,14 +52,13 @@ import tech.xdge.muxa.v2.V2Request
 data class InboxFilter(
     val kind: ItemKind? = null,
     val workspace: String? = null,
-    val showLater: Boolean = false,
     val showDone: Boolean = false,
 ) {
     val narrows: Boolean get() = kind != null || workspace != null
-    val any: Boolean get() = narrows || showLater || showDone
+    val any: Boolean get() = narrows || showDone
 
-    fun shows(item: InboxItem, now: Long) =
-        (kind == null || item.kind == kind) && (workspace == null || item.workspace == workspace) && (showLater || !item.isLater(now))
+    fun shows(item: InboxItem) =
+        (kind == null || item.kind == kind) && (workspace == null || item.workspace == workspace)
 }
 
 /** Filter and Reorder, as icons beside the Inbox's title. */
@@ -88,9 +87,6 @@ fun InboxTools(
             DropdownMenuItem({ Text("Every Workspace") }, { pick(filter.copy(workspace = null)) })
             for (w in workspaces) DropdownMenuItem({ Text(w) }, { pick(filter.copy(workspace = w)) })
             HorizontalDivider()
-            DropdownMenuItem({ Text(if (filter.showLater) "Hide Later Items" else "Show Later Items") }, {
-                pick(filter.copy(showLater = !filter.showLater))
-            })
             DropdownMenuItem({ Text(if (filter.showDone) "Hide Done" else "Show Done") }, {
                 pick(filter.copy(showDone = !filter.showDone))
             })
@@ -109,7 +105,6 @@ fun InboxList(
     model: NextModel,
     visible: List<InboxItem>,
     filter: InboxFilter,
-    now: Long,
     selected: String?,
     reordering: Boolean,
     select: (String) -> Unit,
@@ -130,7 +125,7 @@ fun InboxList(
             val at = model.inbox.items.indexOfFirst { it.id == item.id }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SwipeRow(model, item, Modifier.weight(1f)) {
-                    ItemRow(item, now, selected = item.id == selected) { select(item.id) }
+                    ItemRow(item, selected = item.id == selected) { select(item.id) }
                 }
                 if (reordering && !filter.narrows) {
                     IconButton({ model.inbox(V2Request.InboxMove(item.id, at - 1)) }, enabled = at > 0) {
@@ -153,7 +148,7 @@ fun InboxList(
         if (filter.showDone && model.inbox.done.isNotEmpty()) {
             item { SectionHeader("Done", Palette.textTertiary, model.inbox.done.size) }
             items(model.inbox.done, key = { "done-" + it.id }) { item ->
-                ItemRow(item, now, selected = item.id == selected) { select(item.id) }
+                ItemRow(item, selected = item.id == selected) { select(item.id) }
             }
         }
     }
@@ -180,7 +175,7 @@ private fun SwipeRow(model: NextModel, item: InboxItem, modifier: Modifier, cont
         onDismiss = { value ->
             when (value) {
                 SwipeToDismissBoxValue.EndToStart -> model.inbox(V2Request.InboxDone(item.id))
-                SwipeToDismissBoxValue.StartToEnd -> model.inbox(V2Request.InboxLater(item.id, LaterChoice.TOMORROW.until()))
+                SwipeToDismissBoxValue.StartToEnd -> model.inbox(V2Request.InboxLater(item.id))
                 SwipeToDismissBoxValue.Settled -> {}
             }
             // The row leaves when the Inbox changes; until then it stays in place.
