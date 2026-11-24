@@ -1,9 +1,8 @@
 //! Inbox items from Routines (ADR 0066 decision 5) while Routines still run
 //! in the v1 engine: new entries and failures in the Routine store are copied
 //! into the Inbox. Entries from before the first copy are not (no migration).
-//! A Bot's entries count against its daily limit (ADR 0082).
+//! A Bot's entries are counted per day, with no limit (ADR 0091).
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,9 +11,6 @@ use muxa_protocol::v2::{ItemKind, ItemLink, ItemProposal, RoutineRef};
 use muxa_protocol::{InboxEntryKind, RoutineFailure};
 
 use crate::routines::store::{RoutineState, RoutineStore};
-
-/// `(workspace, bot)` to its daily limit.
-type Limits = BTreeMap<(String, String), u32>;
 
 const EVERY: Duration = Duration::from_secs(15);
 const SOURCE: &str = "routines";
@@ -28,12 +24,11 @@ pub fn spawn(inbox: Arc<Inbox>, records: Arc<crate::config::Config>) {
             let config = Arc::clone(&records);
             let read = tokio::task::spawn_blocking(move || {
                 let dir = config.state_dir.as_ref().filter(|d| d.is_dir())?;
-                let states = RoutineStore::open(dir).and_then(|s| s.all());
-                Some(states.map(|s| (s, limits(&config))))
+                Some(RoutineStore::open(dir).and_then(|s| s.all()))
             })
             .await;
             match read {
-                Ok(Some(Ok((states, limits)))) => copy(&inbox, &states, &limits),
+                Ok(Some(Ok(states))) => copy(&inbox, &states),
                 Ok(Some(Err(e))) => tracing::warn!(error = %e, "cannot read Routine output"),
                 Ok(None) => {}
                 Err(e) => tracing::warn!(error = %e, "the Routine feed failed"),
@@ -43,19 +38,7 @@ pub fn spawn(inbox: Arc<Inbox>, records: Arc<crate::config::Config>) {
     });
 }
 
-/// Blocking. The configured Bots' limits; none when the config cannot load.
-fn limits(config: &crate::config::Config) -> Limits {
-    let Ok(workspaces) = crate::routines::runs::load(config) else {
-        return Limits::new();
-    };
-    workspaces
-        .bots()
-        .iter()
-        .map(|b| ((b.workspace.clone(), b.name.clone()), b.daily_items))
-        .collect()
-}
-
-fn copy(inbox: &Inbox, states: &[RoutineState], limits: &Limits) {
+fn copy(inbox: &Inbox, states: &[RoutineState]) {
     let day = jiff::Zoned::now().date().to_string();
     let result = inbox.change(|b, now| {
         let Some(since) = b.cursor(SOURCE) else {
@@ -65,14 +48,7 @@ fn copy(inbox: &Inbox, states: &[RoutineState], limits: &Limits) {
         };
         let (items, newest) = collect(states, since);
         for item in items {
-            let limit = match (&item.workspace, &item.extra.bot) {
-                (Some(w), Some(bot)) => limits.get(&(w.clone(), bot.clone())).copied(),
-                _ => None,
-            };
-            match limit {
-                Some(limit) => b.add_from_bot(item, limit, &day, now)?,
-                None => b.add(item, now)?,
-            };
+            b.add_from_bot(item, &day, now)?;
         }
         if let Some(t) = newest {
             b.advance(SOURCE, t);
@@ -229,7 +205,7 @@ mod tests {
     fn the_first_copy_takes_nothing_and_later_ones_take_each_entry_once() {
         let inbox = Inbox::memory();
         let old = state(json!([entry("e-1", "briefing", 1)]), json!(null));
-        copy(&inbox, std::slice::from_ref(&old), &Limits::new());
+        copy(&inbox, std::slice::from_ref(&old));
         assert!(inbox.view().items.is_empty());
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -242,8 +218,8 @@ mod tests {
             ]),
             json!(null),
         );
-        copy(&inbox, std::slice::from_ref(&fresh), &Limits::new());
-        copy(&inbox, &[fresh], &Limits::new());
+        copy(&inbox, std::slice::from_ref(&fresh));
+        copy(&inbox, &[fresh]);
         let titles: Vec<_> = inbox.view().items.into_iter().map(|i| i.title).collect();
         assert_eq!(titles, ["t e-2"]);
     }
@@ -282,9 +258,9 @@ mod tests {
     }
 
     #[test]
-    fn a_bot_past_its_daily_limit_adds_one_more_item() {
+    fn every_entry_of_a_bot_becomes_an_item_and_is_counted() {
         let inbox = Inbox::memory();
-        copy(&inbox, &[], &Limits::new());
+        copy(&inbox, &[]);
         let t = now() + 5;
         let entries: Vec<_> = (1..=4)
             .map(|n| {
@@ -293,11 +269,10 @@ mod tests {
                 e
             })
             .collect();
-        let limits = Limits::from([(("lisk".to_owned(), "news".to_owned()), 2)]);
-        copy(&inbox, &[state(json!(entries), json!(null))], &limits);
+        copy(&inbox, &[state(json!(entries), json!(null))]);
         let view = inbox.view();
         let titles: Vec<_> = view.items.iter().map(|i| i.title.as_str()).collect();
-        assert_eq!(titles, ["2 more from news", "t e-2", "t e-1"]);
-        assert!(view.items[0].note.as_deref().unwrap().contains("t e-4"));
+        assert_eq!(titles, ["t e-4", "t e-3", "t e-2", "t e-1"]);
+        assert_eq!(view.bots[0].added, 4);
     }
 }

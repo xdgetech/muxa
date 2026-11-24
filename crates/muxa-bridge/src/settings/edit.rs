@@ -688,15 +688,8 @@ fn rename_refs(root: &mut Table, from: &str, to: &str) -> Result<(), String> {
 fn write_bot(t: &mut Table, b: &BotSpec) {
     set_str(t, "description", b.description.as_deref());
     set_str(t, "worker", b.worker.as_deref());
-    match b.daily_items {
-        Some(n) if t.get("daily_items").and_then(Item::as_integer) != Some(i64::from(n)) => {
-            t.insert("daily_items", value(i64::from(n)));
-        }
-        Some(_) => {}
-        None => {
-            t.remove("daily_items");
-        }
-    }
+    // ADR 0091: no daily limit. An older file's key goes on the next edit.
+    t.remove("daily_items");
     set_bool(t, "enabled", b.enabled, true);
     set_list(t, "members", &b.members);
     match b.handoffs_per_day {

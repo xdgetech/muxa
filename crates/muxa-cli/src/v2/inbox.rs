@@ -10,6 +10,8 @@ pub enum Action {
     Done(String),
     Reopen(String),
     Delete(String),
+    /// Deletes every item older than this many days (ADR 0092).
+    DeleteOlder(u32),
     Move {
         item: String,
         index: usize,
@@ -51,6 +53,7 @@ pub fn request(action: &Action, now: i64) -> Value {
         Action::Done(item) => json!({"type": "inbox-done", "item": item}),
         Action::Reopen(item) => json!({"type": "inbox-reopen", "item": item}),
         Action::Delete(item) => json!({"type": "inbox-delete", "item": item}),
+        Action::DeleteOlder(days) => json!({"type": "inbox-delete-older", "days": days}),
         Action::Move { item, index } => json!({"type": "inbox-move", "item": item, "index": index}),
         Action::Later { item, minutes } => {
             json!({"type": "inbox-later", "item": item, "until": now + i64::from(*minutes) * 60})

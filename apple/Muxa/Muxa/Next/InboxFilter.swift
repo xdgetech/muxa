@@ -28,11 +28,13 @@ struct InboxFilter {
     }
 }
 
-/// The filter as an icon menu. `reordering`, where given, adds Reorder.
+/// The filter as an icon menu. `reordering`, where given, adds Reorder;
+/// `deleteOlder` adds Delete Older Than.
 struct InboxFilterMenu: View {
     @Binding var filter: InboxFilter
     let items: [InboxItem]
     var reordering: Binding<Bool>?
+    var deleteOlder: Binding<Int?>?
 
     var body: some View {
         Menu {
@@ -48,6 +50,10 @@ struct InboxFilterMenu: View {
             Toggle("Show Done", isOn: $filter.showDone)
             if let reordering, !filter.isActive {
                 Toggle("Reorder", isOn: reordering)
+            }
+            if let deleteOlder {
+                Divider()
+                InboxDeleteOlderMenu(days: deleteOlder)
             }
         } label: {
             Image(systemName: filter.changesList

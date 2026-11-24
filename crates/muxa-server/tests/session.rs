@@ -1139,6 +1139,21 @@ async fn the_user_orders_hides_and_finishes_items() {
     )
     .await;
     assert_eq!(bad["code"], "bad-request");
+    // Items made just now are not a day old; the book's tests cover removal.
+    let kept = request(
+        &mut client,
+        json!({"type": "inbox-delete-older", "id": 12, "days": 1}),
+    )
+    .await;
+    assert_eq!(titles(&kept["inbox"]), ["c", "b"]);
+    for days in [0, 3651] {
+        let bad = request(
+            &mut client,
+            json!({"type": "inbox-delete-older", "id": 13, "days": days}),
+        )
+        .await;
+        assert_eq!(bad["code"], "bad-request", "{days} days");
+    }
 }
 
 #[tokio::test]

@@ -115,7 +115,7 @@ private fun BotHeader(e: BotEntry) {
                     color = statusColor(e.work.status), fontSize = 12.5.sp,
                 )
             }
-            Text("${e.workspace.name} · ${e.bot.dailyItems ?: DEFAULT_DAILY_ITEMS} items a day", color = Palette.textTertiary, fontSize = 13.sp)
+            Text(e.workspace.name, color = Palette.textTertiary, fontSize = 13.sp)
             e.bot.description?.let { Text(it, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
     }

@@ -62,7 +62,7 @@ data class InboxFilter(
         (kind == null || item.kind == kind) && (workspace == null || item.workspace == workspace) && (showLater || !item.isLater(now))
 }
 
-/** Filter and Reorder, as icons beside the Inbox's title. */
+/** Filter, Reorder and More, as icons beside the Inbox's title. */
 @Composable
 fun InboxTools(
     model: NextModel,
@@ -102,6 +102,7 @@ fun InboxTools(
             Icon(Icons.reorder, if (reordering) "Done Reordering" else "Reorder", tint = if (reordering) Palette.accent else Palette.textSecondary)
         }
     }
+    InboxMoreMenu(model)
 }
 
 @Composable

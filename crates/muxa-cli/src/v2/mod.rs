@@ -31,6 +31,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
        muxa-cli v2 [--bridge CMD] inbox [--json]
        muxa-cli v2 [--bridge CMD] inbox done|reopen|delete ITEM
+       muxa-cli v2 [--bridge CMD] inbox delete-older DAYS
        muxa-cli v2 [--bridge CMD] inbox move ITEM INDEX
        muxa-cli v2 [--bridge CMD] inbox later ITEM --minutes N
        muxa-cli v2 [--bridge CMD] review [TERMINAL] [--note TEXT]
@@ -423,6 +424,10 @@ fn inbox_action(words: &[&str], minutes: Option<u32>) -> Result<inbox::Action, l
         [] => Action::List,
         ["done", i] => Action::Done(item(i)),
         ["reopen", i] => Action::Reopen(item(i)),
+        ["delete-older", n] => Action::DeleteOlder(
+            n.parse()
+                .map_err(|_| lexopt::Error::from(format!("{n:?} is not a number of days")))?,
+        ),
         ["delete", i] => Action::Delete(item(i)),
         ["move", i, n] => Action::Move {
             item: item(i),
@@ -934,6 +939,11 @@ mod tests {
             action(&["dismiss", "i6"]),
             json!({"type": "inbox-suggestion", "item": "i6", "accept": false})
         );
+        assert_eq!(
+            action(&["inbox", "delete-older", "3"]),
+            json!({"type": "inbox-delete-older", "days": 3})
+        );
+        assert!(parse(args(&["inbox", "delete-older", "soon"])).is_err());
         assert_eq!(parse(args(&["request-changes", "i3"])).unwrap(), None);
         assert_eq!(
             parse(args(&["workspaces", "--json"])).unwrap(),

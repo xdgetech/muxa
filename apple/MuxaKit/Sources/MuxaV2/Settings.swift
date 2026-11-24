@@ -440,8 +440,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     public var description: String?
     public var worker: String?
-    /// Nil: 3.
-    public var dailyItems: UInt32?
     public var enabled: Bool
     /// A team lead's members (ADR 0085): Bots of the same Workspace that lead
     /// no team themselves.
@@ -460,13 +458,12 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
             && name.allSatisfy { ($0.isASCII && ($0.isLowercase || $0.isNumber)) || $0 == "-" || $0 == "_" }
     }
 
-    public init(name: String, description: String? = nil, worker: String? = nil, dailyItems: UInt32? = nil,
+    public init(name: String, description: String? = nil, worker: String? = nil,
                 enabled: Bool = true, members: [String] = [], handoffsPerDay: UInt32? = nil, commands: [String] = []) {
         self.commands = commands
         self.name = name
         self.description = description
         self.worker = worker
-        self.dailyItems = dailyItems
         self.enabled = enabled
         self.members = members
         self.handoffsPerDay = handoffsPerDay
@@ -474,7 +471,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case name, description, worker, enabled, members, commands
-        case dailyItems = "daily_items"
         case handoffsPerDay = "handoffs_per_day"
     }
 
@@ -483,7 +479,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         try c.encode(name, forKey: .name)
         try c.encodeIfPresent(description, forKey: .description)
         try c.encodeIfPresent(worker, forKey: .worker)
-        try c.encodeIfPresent(dailyItems, forKey: .dailyItems)
         try c.encode(enabled, forKey: .enabled)
         // As the host spells it: no `members` for a Bot that leads no team.
         if !members.isEmpty { try c.encode(members, forKey: .members) }
@@ -496,7 +491,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         description = try c.decodeIfPresent(String.self, forKey: .description)
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
-        dailyItems = try c.decodeIfPresent(UInt32.self, forKey: .dailyItems)
         enabled = try c.decode(.enabled, or: true)
         members = try c.decode(.members, or: [])
         handoffsPerDay = try c.decodeIfPresent(UInt32.self, forKey: .handoffsPerDay)

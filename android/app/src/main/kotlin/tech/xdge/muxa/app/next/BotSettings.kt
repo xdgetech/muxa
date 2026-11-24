@@ -54,18 +54,17 @@ fun BotSettings(editor: SettingsEditor, ws: SettingsWorkspace, counts: List<BotC
         CardDivider()
         ActionRow("Set up a Bot by talking", "settings.bot.talk", true) { settingUp = true }
     }
-    SettingsNote("A Bot owns Routines. Each run starts from its Soul and Memory, and adds at most its daily items to the Inbox.")
+    SettingsNote("A Bot owns Routines. Each run starts from its Soul and Memory, and adds what it finds to the Inbox.")
     editing?.let { BotDialog(editor, ws, talk, it) { editing = null } }
     if (settingUp) TalkSetupDialog(talk) { settingUp = false }
 }
 
-/** "2 Routines · 3 a day · 4 done · 1 deleted"; the counts only when the Inbox knows them. */
+/** "2 Routines · 4 done · 1 deleted"; the counts only when the Inbox knows them. */
 fun botSummary(b: SettingsBot, ws: SettingsWorkspace, counts: List<BotCount>): String {
     val routines = ws.routines.count { it.bot == b.name }
     val count = counts.firstOrNull { it.workspace == ws.name && it.bot == b.name }
     return listOfNotNull(
         if (routines == 1) "1 Routine" else "$routines Routines",
-        "${b.dailyItems ?: DEFAULT_DAILY_ITEMS} a day",
         b.members.takeIf { it.isNotEmpty() }?.let { "Leads " + it.joinToString(", ") },
         count?.let { "${it.done} done · ${it.deleted} deleted" },
     ).joinToString(" · ")
@@ -93,8 +92,6 @@ private fun BotDialog(
             BotRename(editor, workspace, d.name, ws.bots.map { it.name }) { d = d.copy(name = it) }
         }
         Field(d.description, { d = d.copy(description = it) }, "Description", "bot.description", placeholder = "Watches open PRs")
-        Field(d.dailyItems, { d = d.copy(dailyItems = it) }, "Daily items", "bot.daily", number = true,
-            placeholder = "$DEFAULT_DAILY_ITEMS", help = "At most this many Inbox items a day, from 1 to 50.")
         SwitchField("Enabled", "bot.enabled", d.enabled) { d = d.copy(enabled = it) }
         // ADR 0087: no worker; a Bot has its Workspace's connections and MCP servers.
         Text("Runs with $workspace's access.", Modifier.testTag("bot.access"), style = MaterialTheme.typography.bodySmall)
@@ -226,6 +223,5 @@ private enum class BotAsk(val action: String, val text: String) {
 }
 
 private val MEMORY_SHAPE = RoundedCornerShape(8.dp)
-const val DEFAULT_DAILY_ITEMS = 3
 private const val DEFAULT_HANDOFFS = 10
 private const val SOUL_LINES = 8
