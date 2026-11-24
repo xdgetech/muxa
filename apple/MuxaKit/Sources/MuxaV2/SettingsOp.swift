@@ -14,7 +14,8 @@ public enum SettingsOp: Equatable, Sendable {
     case workspaceAdd(name: String, root: String, repos: [String] = [])
     case workspaceUpdate(workspace: String, root: String? = nil, repos: [String]? = nil,
                          agentCommand: FieldChange<String> = .keep, parkAfter: FieldChange<String> = .keep,
-                         hiddenRepos: [String]? = nil, claudeConnectors: Bool? = nil, botRules: BotRules? = nil)
+                         hiddenRepos: [String]? = nil, claudeConnectors: Bool? = nil, botRules: BotRules? = nil,
+                         subscriptions: [String]? = nil)
     /// Also removes the Keychain secrets of its connections; its folder stays.
     case workspaceRemove(workspace: String)
     case envSet(workspace: String, key: String, value: String)
@@ -46,7 +47,14 @@ public enum SettingsOp: Equatable, Sendable {
     /// Renames a Bot with its Routines, teams, folder and Inbox items (ADR 0089).
     case botRename(workspace: String, from: String, to: String)
     /// The Capture assistant (ADR 0084). `soulText` replaces its `soul.md`.
-    case assistantUpdate(enabled: Bool, worker: String? = nil, soulText: String? = nil)
+    /// `subscriptions` nil keeps the list; an array replaces it (ADR 0091).
+    case assistantUpdate(enabled: Bool, worker: String? = nil, soulText: String? = nil, subscriptions: [String]? = nil)
+    /// A named agent login (ADR 0091). The login itself stays with the agent.
+    case subscriptionAdd(subscription: SubscriptionSpec)
+    /// Replaces the subscription named `subscription.name`.
+    case subscriptionUpdate(subscription: SubscriptionSpec)
+    /// Refused while a Workspace lists it.
+    case subscriptionRemove(name: String)
     case workerAdd(worker: WorkerSpec)
     /// Replaces the worker named `worker.name`.
     case workerUpdate(worker: WorkerSpec)
@@ -78,6 +86,9 @@ public enum SettingsOp: Equatable, Sendable {
         case .botMemoryRestore: "bot-memory-restore"
         case .botRename: "bot-rename"
         case .assistantUpdate: "assistant-update"
+        case .subscriptionAdd: "subscription-add"
+        case .subscriptionUpdate: "subscription-update"
+        case .subscriptionRemove: "subscription-remove"
         case .workerAdd: "worker-add"
         case .workerUpdate: "worker-update"
         case .workerRemove: "worker-remove"
@@ -94,6 +105,7 @@ extension SettingsOp: Codable {
     enum CodingKeys: String, CodingKey {
         case from, to
         case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot
+        case subscription, subscriptions
         case claudeConnectors = "claude_connectors"
         case botRules = "bot_rules"
         case version
@@ -113,8 +125,10 @@ extension SettingsOp: Codable {
             try c.encode(name, forKey: .name)
             try c.encode(root, forKey: .root)
             try c.encode(repos, forKey: .repos)
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
+                                  subscriptions):
             try c.encode(workspace, forKey: .workspace)
+            try c.encodeIfPresent(subscriptions, forKey: .subscriptions)
             try c.encodeIfPresent(botRules, forKey: .botRules)
             try c.encodeIfPresent(root, forKey: .root)
             try c.encodeIfPresent(repos, forKey: .repos)
@@ -162,10 +176,15 @@ extension SettingsOp: Codable {
             try c.encode(workspace, forKey: .workspace)
             try c.encode(name, forKey: .name)
             try c.encode(version, forKey: .version)
-        case let .assistantUpdate(enabled, worker, text):
+        case let .assistantUpdate(enabled, worker, text, subscriptions):
             try c.encode(enabled, forKey: .enabled)
             try c.encodeIfPresent(worker, forKey: .worker)
             try c.encodeIfPresent(text, forKey: .soulText)
+            try c.encodeIfPresent(subscriptions, forKey: .subscriptions)
+        case let .subscriptionAdd(subscription), let .subscriptionUpdate(subscription):
+            try c.encode(subscription, forKey: .subscription)
+        case let .subscriptionRemove(name):
+            try c.encode(name, forKey: .name)
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(mcp, forKey: .mcp)
@@ -195,7 +214,8 @@ extension SettingsOp: Codable {
                 agentCommand: try FieldChange(c, .agentCommand), parkAfter: try FieldChange(c, .parkAfter),
                 hiddenRepos: try c.decodeIfPresent([String].self, forKey: .hiddenRepos),
                 claudeConnectors: try c.decodeIfPresent(Bool.self, forKey: .claudeConnectors),
-                botRules: try c.decodeIfPresent(BotRules.self, forKey: .botRules))
+                botRules: try c.decodeIfPresent(BotRules.self, forKey: .botRules),
+                subscriptions: try c.decodeIfPresent([String].self, forKey: .subscriptions))
         case "workspace-remove": self = .workspaceRemove(workspace: try ws())
         case "env-set": self = .envSet(workspace: try ws(), key: try s(.key), value: try s(.value))
         case "env-unset": self = .envUnset(workspace: try ws(), key: try s(.key))
@@ -236,7 +256,13 @@ extension SettingsOp: Codable {
         case "assistant-update":
             self = .assistantUpdate(enabled: try c.decode(Bool.self, forKey: .enabled),
                                     worker: try c.decodeIfPresent(String.self, forKey: .worker),
-                                    soulText: try c.decodeIfPresent(String.self, forKey: .soulText))
+                                    soulText: try c.decodeIfPresent(String.self, forKey: .soulText),
+                                    subscriptions: try c.decodeIfPresent([String].self, forKey: .subscriptions))
+        case "subscription-add":
+            self = .subscriptionAdd(subscription: try c.decode(SubscriptionSpec.self, forKey: .subscription))
+        case "subscription-update":
+            self = .subscriptionUpdate(subscription: try c.decode(SubscriptionSpec.self, forKey: .subscription))
+        case "subscription-remove": self = .subscriptionRemove(name: try s(.name))
         case "worker-add": self = .workerAdd(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-update": self = .workerUpdate(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-remove": self = .workerRemove(name: try s(.name))
@@ -275,12 +301,14 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
     public var description: String {
         switch self {
         case let .workspaceAdd(name, root, repos): "\(self.name)(\(name), root: \(root), repos: \(repos))"
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
+                                  subscriptions):
             "\(name)(\(workspace), root: \(root ?? "keep"), repos: \(repos.map { "\($0)" } ?? "keep"), "
                 + "agent_command: \(agentCommand), park_after: \(parkAfter), "
                 + "hidden_repos: \(hiddenRepos.map { "\($0)" } ?? "keep"), "
                 + "claude_connectors: \(claudeConnectors.map { "\($0)" } ?? "keep"), "
-                + "bot_rules: \(botRules.map { "\($0.allow.count) allow, \($0.deny.count) deny" } ?? "keep"))"
+                + "bot_rules: \(botRules.map { "\($0.allow.count) allow, \($0.deny.count) deny" } ?? "keep"), "
+                + "subscriptions: \(subscriptions.map { "\($0)" } ?? "keep"))"
         case let .workspaceRemove(workspace): "\(name)(\(workspace))"
         case let .envSet(workspace, key, _): "\(name)(\(workspace), \(key)=\(Self.hidden))"
         case let .envUnset(workspace, key): "\(name)(\(workspace), \(key))"
@@ -297,9 +325,12 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
             "\(name)(\(workspace), \(bot), soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
         case let .botMemoryRestore(workspace, n, version): "\(name)(\(workspace), \(n), version: \(version))"
         case let .botRename(workspace, from, to): "\(name)(\(workspace), \(from) → \(to))"
-        case let .assistantUpdate(enabled, worker, text):
+        case let .assistantUpdate(enabled, worker, text, subscriptions):
             "\(name)(enabled: \(enabled), worker: \(worker ?? "default"), "
-                + "soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
+                + "soul_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"), "
+                + "subscriptions: \(subscriptions.map { "\($0)" } ?? "keep"))"
+        case let .subscriptionAdd(subscription), let .subscriptionUpdate(subscription): "\(name)(\(subscription))"
+        case let .subscriptionRemove(n): "\(name)(\(n))"
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp): "\(name)(\(workspace), \(mcp))"
         case let .routineAdd(workspace, routine, text), let .routineUpdate(workspace, routine, text):
             "\(name)(\(workspace), \(routine), instructions_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"

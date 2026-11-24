@@ -263,13 +263,19 @@ extension DemoContent {
                         spec: RoutineSpec(name: "weekly-review", at: "18:00", timezone: "Europe/Berlin",
                                           instructions: "routines/weekly-review.md"),
                         instructionsText: "Sum up the week's Done items.\n"),
-                ]),
+                ],
+                subscriptions: ["claude-personal", "claude-spare"]),
         ],
         workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
         assistant: SettingsAssistant(
             enabled: true,
             soulText: "I sort what you capture: the Workspace, a due date, and whether a Bot can help.\n",
-            memoryText: "Release items go to app. Personal errands have no Workspace.\n"))
+            memoryText: "Release items go to app. Personal errands have no Workspace.\n"),
+        subscriptions: [
+            SubscriptionSpec(name: "claude-personal", agent: "claude-code", home: "~/.claude", plan: "Max 20x"),
+            SubscriptionSpec(name: "claude-spare", agent: "claude-code", home: "~/.claude-spare", plan: "Max 5x"),
+            SubscriptionSpec(name: "chatgpt", agent: "codex", home: "~/.codex", plan: "Plus"),
+        ])
 
     private static let plan = """
         # Plan

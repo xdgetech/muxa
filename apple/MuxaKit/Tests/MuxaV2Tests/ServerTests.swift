@@ -145,7 +145,9 @@ struct ServerTests {
                         instructionsText: "Summarize the day.\n")],
                     foundRepos: ["app", "docs"], hiddenRepos: ["docs"]),
             ],
-            workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")]))
+            workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
+            subscriptions: [SubscriptionSpec(name: "claude-work", agent: "claude-code", home: "~/.claude-work",
+                                             plan: "Max 20x")]))
         await c.close()
     }
 

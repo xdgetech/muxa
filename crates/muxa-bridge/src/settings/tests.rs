@@ -746,3 +746,76 @@ fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
 
 #[path = "tests_bots.rs"]
 mod bots;
+
+/// ADR 0091: the onboarding's "Add all" in one update. The Workspace's env
+/// login becomes a subscription it lists, and the loader still accepts it.
+#[test]
+fn a_login_becomes_a_subscription_that_workspaces_bots_and_the_assistant_use() {
+    let h = host("subscriptions");
+    let rev = h.store.view().unwrap().revision;
+    let add = json!({"op": "subscription-add", "subscription":
+        {"name": "work", "agent": "claude-code", "home": "~/.claude-work", "plan": "Max 20x"}});
+    // Both the env and the list would pick a login: refused, nothing written.
+    let before = text(&h);
+    let refused = h.store.update(
+        &rev,
+        vec![
+            op(add.clone()),
+            op(json!({"op": "workspace-update", "workspace": "Work", "subscriptions": ["work"]})),
+        ],
+    );
+    assert!(
+        matches!(&refused, Err(SettingsError::Invalid(m)) if m.contains("env CLAUDE_CONFIG_DIR and subscriptions")),
+        "{refused:?}"
+    );
+    assert_eq!(text(&h), before);
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![
+                op(add),
+                op(json!({"op": "env-unset", "workspace": "Work", "key": "CLAUDE_CONFIG_DIR"})),
+                op(json!({"op": "workspace-update", "workspace": "Work", "subscriptions": ["work"]})),
+                op(json!({"op": "bot-add", "workspace": "Work",
+                    "bot": {"name": "triage", "enabled": true, "subscriptions": ["work"]}})),
+                op(json!({"op": "assistant-update", "enabled": false, "subscriptions": ["work"]})),
+            ],
+        )
+        .unwrap();
+    assert_eq!(s.subscriptions.len(), 1);
+    assert_eq!(s.subscriptions[0].plan.as_deref(), Some("Max 20x"));
+    let work = &s.workspaces[0];
+    assert_eq!(work.subscriptions, ["work"]);
+    assert_eq!(work.bots[0].spec.subscriptions, ["work"]);
+    assert_eq!(s.assistant.as_ref().unwrap().subscriptions, ["work"]);
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert_eq!(loaded.subscriptions()[0].home, h.dir.join(".claude-work"));
+    assert_eq!(
+        loaded.bot("Work", "triage").unwrap().subscriptions,
+        ["work"]
+    );
+    assert!(text(&h).contains("# My workspaces."), "comments stay");
+
+    // Listed by a Workspace: it stays. Unlisted: it goes.
+    let removed = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "subscription-remove", "name": "work"}))],
+    );
+    assert!(
+        matches!(removed, Err(SettingsError::Invalid(_))),
+        "{removed:?}"
+    );
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![
+                op(json!({"op": "workspace-update", "workspace": "Work", "subscriptions": []})),
+                op(json!({"op": "subscription-remove", "name": "work"})),
+            ],
+        )
+        .unwrap();
+    assert!(s.subscriptions.is_empty() && s.workspaces[0].subscriptions.is_empty());
+    assert!(!text(&h).contains("[[subscription]]"));
+}

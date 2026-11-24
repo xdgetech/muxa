@@ -18,6 +18,7 @@ fn ws() -> SettingsWorkspace {
             members: Vec::new(),
             handoffs_per_day: None,
             commands: Vec::new(),
+            subscriptions: Vec::new(),
         },
         soul_text: Some("I watch PRs.".into()),
         memory_text: Some("PR 3 seen.".into()),

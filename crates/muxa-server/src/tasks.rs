@@ -39,6 +39,9 @@ pub const MCP: &str = "muxa.mcp";
 pub const CHECKOUT: &str = "muxa.checkout";
 /// The Bot a talk Task talks with (ADR 0083).
 pub const BOT: &str = "muxa.bot";
+/// The subscription, a named login, the agent runs on (ADR 0091). A restart
+/// keeps it: the conversation lives in that login's folder.
+pub const SUBSCRIPTION: &str = "muxa.subscription";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
@@ -104,6 +107,8 @@ pub struct Prepared {
     pub env: BTreeMap<String, String>,
     /// The Bot of a talk Task (ADR 0083).
     pub bot: Option<String>,
+    /// The subscription the agent runs on (ADR 0091).
+    pub subscription: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -377,6 +382,9 @@ fn labels(p: &Prepared) -> Labels {
     }
     if let Some(bot) = &p.bot {
         labels.insert(BOT.to_owned(), bot.clone());
+    }
+    if let Some(name) = &p.subscription {
+        labels.insert(SUBSCRIPTION.to_owned(), name.clone());
     }
     if let Ok(places) = serde_json::to_string(&p.places) {
         labels.insert(PLACES.to_owned(), places);

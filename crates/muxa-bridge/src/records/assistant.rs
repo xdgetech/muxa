@@ -4,7 +4,8 @@
 use std::path::Path;
 
 use super::bots::SoulFiles;
-use super::workers::{self, Worker};
+use super::subscriptions::{self, Subscription};
+use super::workers::{self, Worker, WorkerAgent};
 
 pub const DIR: &str = "assistant";
 
@@ -13,11 +14,18 @@ pub struct Assistant {
     pub enabled: bool,
     /// None: the default agent.
     pub worker: Option<String>,
+    /// The Claude logins it runs on, in order (ADR 0091). Empty: the
+    /// default login.
+    pub subscriptions: Vec<String>,
 }
 
 /// Reads `[assistant]`. Keys of the removed assistant layer (ADR 0066) are
 /// ignored, so an old file still loads.
-pub(super) fn parse(value: Option<&toml::Value>, workers: &[Worker]) -> Result<Assistant, String> {
+pub(super) fn parse(
+    value: Option<&toml::Value>,
+    workers: &[Worker],
+    all: &[Subscription],
+) -> Result<Assistant, String> {
     let Some(table) = value.and_then(toml::Value::as_table) else {
         return Ok(Assistant::default());
     };
@@ -40,10 +48,33 @@ pub(super) fn parse(value: Option<&toml::Value>, workers: &[Worker]) -> Result<A
             }
         }
     };
-    if table.keys().any(|k| k != "enabled" && k != "worker") {
-        tracing::warn!("[assistant] keys other than enabled and worker are not used; remove them");
+    let wanted = match table.get("subscriptions") {
+        None => Vec::new(),
+        Some(v) => v
+            .as_array()
+            .and_then(|a| a.iter().map(|n| n.as_str().map(str::to_owned)).collect())
+            .ok_or("[assistant] subscriptions must be a list of names")?,
+    };
+    // It has no Workspace and no connections, so any Claude login may run it.
+    let claude: Vec<&str> = all
+        .iter()
+        .filter(|s| s.agent == WorkerAgent::ClaudeCode)
+        .map(|s| s.name.as_str())
+        .collect();
+    let subscriptions = subscriptions::keep_known(wanted, &claude, "[assistant]");
+    if table
+        .keys()
+        .any(|k| !["enabled", "worker", "subscriptions"].contains(&k.as_str()))
+    {
+        tracing::warn!(
+            "[assistant] keys other than enabled, worker and subscriptions are not used; remove them"
+        );
     }
-    Ok(Assistant { enabled, worker })
+    Ok(Assistant {
+        enabled,
+        worker,
+        subscriptions,
+    })
 }
 
 /// `assistant/` beside the config file; None when its folder cannot be

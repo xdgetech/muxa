@@ -17,6 +17,7 @@ use super::is_valid_id;
 use super::loops::{Checks, command_shape};
 use super::mcp::{self, McpServer, RawMcp};
 use super::routines::{self, Routine, RoutineGate, RoutineProblem};
+use super::subscriptions::{self, RawSubscription, Subscription};
 use super::workers::{RawWorker, Worker};
 
 /// In characters.
@@ -79,6 +80,9 @@ pub struct Workspace {
     pub claude_connectors: bool,
     /// Permission rules for this Workspace's Bots only (ADR 0087).
     pub bot_rules: super::bots::BotRules,
+    /// The logins its agents use, in order (ADR 0091). Empty: as before,
+    /// the env's `CLAUDE_CONFIG_DIR` or `CODEX_HOME`, else the default login.
+    pub subscriptions: Vec<String>,
 }
 
 /// The configured workspaces, in file order.
@@ -93,6 +97,8 @@ pub struct Workspaces {
     codex_threads: bool,
     /// `[assistant]` (ADR 0084).
     assistant: Assistant,
+    /// `[[subscription]]` (ADR 0091), in file order.
+    subscriptions: Vec<Subscription>,
 }
 
 #[derive(Deserialize)]
@@ -102,6 +108,8 @@ struct RawConfig {
     workspace: Vec<RawWorkspace>,
     #[serde(default)]
     worker: Vec<RawWorker>,
+    #[serde(default)]
+    subscription: Vec<RawSubscription>,
     /// Refused: Routines moved to each workspace (ADR 0036).
     #[serde(default)]
     routine: Vec<toml::Value>,
@@ -140,6 +148,8 @@ struct RawWorkspace {
     #[serde(default)]
     claude_connectors: bool,
     bots: Option<super::bots::RawBotRules>,
+    #[serde(default)]
+    subscriptions: Vec<String>,
     /// `[workspace.assistant]` and `memory` of the removed assistant layer
     /// (ADR 0066): read so an older file still loads, not used.
     assistant: Option<toml::Value>,
@@ -227,6 +237,7 @@ impl Workspaces {
                 routines::ROUTINES_FILE
             )));
         }
+        let subscriptions = subscriptions::check_all(raw.subscription, home).map_err(invalid)?;
         let mut names = HashSet::new();
         let mut list = Vec::with_capacity(raw.workspace.len());
         for w in raw.workspace {
@@ -266,6 +277,20 @@ impl Workspaces {
             if w.assistant.is_some() || w.memory.is_some() {
                 tracing::warn!(workspace = %w.name, "[workspace.assistant] and memory are no longer used; remove them");
             }
+            subscriptions::check_list(&w.subscriptions, &subscriptions)
+                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
+            if !w.subscriptions.is_empty()
+                && let Some(key) = agent.as_ref().and_then(|a| {
+                    super::agent_env::PATH_KEYS
+                        .into_iter()
+                        .find(|k| a.env(k).is_some())
+                })
+            {
+                return Err(invalid(format!(
+                    "workspace {:?}: env {key} and subscriptions both pick a login; keep subscriptions",
+                    w.name
+                )));
+            }
             let bot_rules = w
                 .bots
                 .unwrap_or_default()
@@ -285,6 +310,7 @@ impl Workspaces {
                 mcp,
                 claude_connectors: w.claude_connectors,
                 bot_rules,
+                subscriptions: w.subscriptions,
             });
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);
@@ -297,7 +323,8 @@ impl Workspaces {
             }
             workers.push(worker);
         }
-        let assistant = assistant::parse(raw.assistant.as_ref(), &workers).map_err(invalid)?;
+        let assistant =
+            assistant::parse(raw.assistant.as_ref(), &workers, &subscriptions).map_err(invalid)?;
         let mut all_routines = Vec::new();
         let mut all_bots = Vec::new();
         let mut problems = Vec::new();
@@ -322,7 +349,27 @@ impl Workspaces {
             problems,
             codex_threads,
             assistant,
+            subscriptions,
         })
+    }
+
+    pub fn subscriptions(&self) -> &[Subscription] {
+        &self.subscriptions
+    }
+
+    /// Every folder the agent with `key` (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`)
+    /// keeps a login in: the Workspaces' env, then every subscription that
+    /// sets the variable (ADR 0016, 0091). No duplicates.
+    pub fn agent_dirs(&self, key: &str) -> Vec<PathBuf> {
+        let mut out =
+            super::agent_env::dirs_of(self.list.iter().filter_map(|w| w.agent.as_ref()), key);
+        for (k, v) in self.subscriptions.iter().filter_map(Subscription::env) {
+            let dir = PathBuf::from(v);
+            if k == key && !out.contains(&dir) {
+                out.push(dir);
+            }
+        }
+        out
     }
 
     pub fn assistant(&self) -> &Assistant {

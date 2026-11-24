@@ -21,7 +21,8 @@ use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
 use muxa_protocol::settings::{
     Access, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SecretState, Settings, SettingsAgent,
-    SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine, SettingsWorkspace, WorkerSpec,
+    SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine, SettingsWorkspace,
+    SubscriptionSpec, WorkerSpec,
 };
 use muxa_protocol::v2::{
     ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
@@ -70,6 +71,7 @@ impl Host for FakeHost {
             connections: spec.connections.clone(),
             mcp: spec.mcp.clone(),
             bot: spec.bot.clone(),
+            subscription: None,
         })
     }
 
@@ -284,6 +286,12 @@ fn start_settings() -> Settings {
         revision: "1".into(),
         read_only: false,
         problem: None,
+        subscriptions: vec![SubscriptionSpec {
+            name: "claude-work".into(),
+            agent: "claude-code".into(),
+            home: "~/.claude-work".into(),
+            plan: Some("Max 20x".into()),
+        }],
         workers: vec![WorkerSpec {
             name: "reviewer".into(),
             description: Some("Reviews diffs".into()),
@@ -314,6 +322,7 @@ fn start_settings() -> Settings {
             direct_writes: false,
             claude_connectors: false,
             bot_rules: Default::default(),
+            subscriptions: Vec::new(),
             connections: vec![SettingsConnection {
                 spec: ConnectionSpec {
                     name: "github".into(),

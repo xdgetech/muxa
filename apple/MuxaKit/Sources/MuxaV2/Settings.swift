@@ -16,9 +16,12 @@ public struct Settings: Codable, Equatable, Sendable {
     public var workers: [WorkerSpec]
     /// The Capture assistant (ADR 0084); nil from an older server.
     public var assistant: SettingsAssistant?
+    /// `[[subscription]]`: named agent logins (ADR 0091).
+    public var subscriptions: [SubscriptionSpec]
 
     public init(revision: String, readOnly: Bool = false, problem: String? = nil, workspaces: [SettingsWorkspace] = [],
-                workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil) {
+                workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil, subscriptions: [SubscriptionSpec] = []) {
+        self.subscriptions = subscriptions
         self.revision = revision
         self.readOnly = readOnly
         self.problem = problem
@@ -28,7 +31,7 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case revision, problem, workspaces, workers, assistant
+        case revision, problem, workspaces, workers, assistant, subscriptions
         case readOnly = "read_only"
     }
 
@@ -40,7 +43,32 @@ public struct Settings: Codable, Equatable, Sendable {
         workspaces = try c.decode(.workspaces, or: [])
         workers = try c.decode(.workers, or: [])
         assistant = try c.decodeIfPresent(SettingsAssistant.self, forKey: .assistant)
+        subscriptions = try c.decode(.subscriptions, or: [])
     }
+}
+
+/// `[[subscription]]` (ADR 0091): an agent login muxa names. The login stays
+/// with the agent; muxa keeps the name and the folder.
+public struct SubscriptionSpec: Codable, Equatable, Sendable, Identifiable {
+    /// Lowercase letters, digits, `-` and `_`, as a Bot's name.
+    public var name: String
+    /// `claude-code` or `codex`.
+    public var agent: String
+    /// As written, `~/` included.
+    public var home: String
+    /// A label only.
+    public var plan: String?
+
+    public var id: String { name }
+
+    public init(name: String, agent: String, home: String, plan: String? = nil) {
+        self.name = name
+        self.agent = agent
+        self.home = home
+        self.plan = plan
+    }
+
+    enum CodingKeys: String, CodingKey { case name, agent, home, plan }
 }
 
 /// `[assistant]` in `workspaces.toml`: the Capture assistant, with no
@@ -53,8 +81,12 @@ public struct SettingsAssistant: Codable, Equatable, Sendable {
     public var soulText: String?
     /// `assistant/memory.md`, which the assistant writes.
     public var memoryText: String?
+    /// The Claude subscriptions it runs on, in order (ADR 0091).
+    public var subscriptions: [String]
 
-    public init(enabled: Bool = false, worker: String? = nil, soulText: String? = "", memoryText: String? = "") {
+    public init(enabled: Bool = false, worker: String? = nil, soulText: String? = "", memoryText: String? = "",
+                subscriptions: [String] = []) {
+        self.subscriptions = subscriptions
         self.enabled = enabled
         self.worker = worker
         self.soulText = soulText
@@ -62,7 +94,7 @@ public struct SettingsAssistant: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case enabled, worker
+        case enabled, worker, subscriptions
         case soulText = "soul_text"
         case memoryText = "memory_text"
     }
@@ -73,6 +105,7 @@ public struct SettingsAssistant: Codable, Equatable, Sendable {
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
         soulText = try c.decodeIfPresent(String.self, forKey: .soulText)
         memoryText = try c.decodeIfPresent(String.self, forKey: .memoryText)
+        subscriptions = try c.decode(.subscriptions, or: [])
     }
 }
 
@@ -96,6 +129,8 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var claudeConnectors: Bool
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     public var botRules: BotRules
+    /// The subscriptions its agents use, in order (ADR 0091).
+    public var subscriptions: [String] = []
     public var connections: [SettingsConnection]
     public var mcp: [McpSpec]
     /// Also while `routinesEnabled` is false.
@@ -111,7 +146,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
                 loop: WorkspaceLoop? = nil, routinesEnabled: Bool = false, directWrites: Bool = false,
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
                 routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = [],
-                botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false) {
+                botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false,
+                subscriptions: [String] = []) {
+        self.subscriptions = subscriptions
         self.bots = bots
         self.botRules = botRules
         self.claudeConnectors = claudeConnectors
@@ -132,7 +169,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, root, repos, agent, loop, connections, mcp, routines, bots
+        case name, root, repos, agent, loop, connections, mcp, routines, bots, subscriptions
         case parkAfter = "park_after"
         case routinesEnabled = "routines_enabled"
         case directWrites = "direct_writes"
@@ -157,6 +194,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         directWrites = try c.decode(.directWrites, or: false)
         claudeConnectors = try c.decode(.claudeConnectors, or: false)
         botRules = try c.decode(.botRules, or: BotRules())
+        subscriptions = try c.decode(.subscriptions, or: [])
         connections = try c.decode(.connections, or: [])
         mcp = try c.decode(.mcp, or: [])
         routines = try c.decode(.routines, or: [])
@@ -451,6 +489,9 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     /// Shell commands only this Bot may run (ADR 0088): the inside of a
     /// Claude Code `Bash(...)` rule, such as `/path/collect.sh delivery:*`.
     public var commands: [String]
+    /// Its own order of its Workspace's subscriptions (ADR 0091). Empty: the
+    /// Workspace's.
+    public var subscriptions: [String]
 
     public var id: String { name }
 
@@ -461,7 +502,9 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     }
 
     public init(name: String, description: String? = nil, worker: String? = nil, dailyItems: UInt32? = nil,
-                enabled: Bool = true, members: [String] = [], handoffsPerDay: UInt32? = nil, commands: [String] = []) {
+                enabled: Bool = true, members: [String] = [], handoffsPerDay: UInt32? = nil, commands: [String] = [],
+                subscriptions: [String] = []) {
+        self.subscriptions = subscriptions
         self.commands = commands
         self.name = name
         self.description = description
@@ -473,7 +516,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, description, worker, enabled, members, commands
+        case name, description, worker, enabled, members, commands, subscriptions
         case dailyItems = "daily_items"
         case handoffsPerDay = "handoffs_per_day"
     }
@@ -489,6 +532,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         if !members.isEmpty { try c.encode(members, forKey: .members) }
         try c.encodeIfPresent(handoffsPerDay, forKey: .handoffsPerDay)
         if !commands.isEmpty { try c.encode(commands, forKey: .commands) }
+        if !subscriptions.isEmpty { try c.encode(subscriptions, forKey: .subscriptions) }
     }
 
     public init(from decoder: any Decoder) throws {
@@ -501,6 +545,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         members = try c.decode(.members, or: [])
         handoffsPerDay = try c.decodeIfPresent(UInt32.self, forKey: .handoffsPerDay)
         commands = try c.decode(.commands, or: [])
+        subscriptions = try c.decode(.subscriptions, or: [])
     }
 }
 

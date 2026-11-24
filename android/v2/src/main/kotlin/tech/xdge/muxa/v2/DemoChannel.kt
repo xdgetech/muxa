@@ -923,6 +923,7 @@ private val DEMO_SETTINGS = Settings(
                     instructionsText = "Sum up the week's Done items.\n",
                 ),
             ),
+            subscriptions = listOf("claude-personal", "claude-spare"),
         ),
     ),
     workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
@@ -930,6 +931,11 @@ private val DEMO_SETTINGS = Settings(
         enabled = true,
         soulText = "Sort what I capture. Name the Workspace and a due date only when the item says so.\n",
         memoryText = "- Items about the login go to app.\n",
+    ),
+    subscriptions = listOf(
+        SubscriptionSpec("claude-personal", "claude-code", "~/.claude", plan = "Max 20x"),
+        SubscriptionSpec("claude-spare", "claude-code", "~/.claude-spare", plan = "Max 5x"),
+        SubscriptionSpec("chatgpt", "codex", "~/.codex", plan = "Plus"),
     ),
 )
 private const val MAX_SHELLS = 3

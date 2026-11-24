@@ -341,3 +341,86 @@ async fn migrate_adds_each_open_task_once_and_resume_adopts_its_place() {
     assert_eq!(found["existing"], true, "{found}");
     assert_eq!(backend.list().await.unwrap().len(), 1);
 }
+
+/// `w` with two Claude logins (ADR 0091) and an agent of `claude`.
+fn with_logins(f: &Fixture) -> (String, String) {
+    let home = |n: &str| f.base.join(n).to_string_lossy().into_owned();
+    std::fs::write(
+        f.base.join("workspaces.toml"),
+        format!(
+            "[[subscription]]\nname = \"work\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[subscription]]\nname = \"spare\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[workspace]]\nname = \"w\"\nroot = \"{}\"\nsubscriptions = [\"work\", \"spare\"]\n",
+            home("claude-work"),
+            home("claude-spare"),
+            f.root.display()
+        ),
+    )
+    .unwrap();
+    (home("claude-work"), home("claude-spare"))
+}
+
+#[tokio::test]
+async fn a_task_runs_on_its_workspaces_first_login() {
+    let f = Fixture::new("login");
+    let (work, _) = with_logins(&f);
+    let dir = f.root.join("tasks/fix-login-t-00000c");
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = f.host(None).prepare(&existing(&dir)).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("work"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&work));
+}
+
+#[tokio::test]
+async fn an_adopted_place_resumes_on_the_login_that_holds_its_conversation() {
+    let f = Fixture::new("login-adopt");
+    let (_, spare) = with_logins(&f);
+    let dir = f.root.join("tasks/fix-login-t-00000d");
+    std::fs::create_dir_all(&dir).unwrap();
+    let escaped: String = dir
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let kept = PathBuf::from(&spare).join("projects").join(escaped);
+    std::fs::create_dir_all(&kept).unwrap();
+    std::fs::write(kept.join("c.jsonl"), "{}\n").unwrap();
+    let p = f.host(None).prepare(&existing(&dir)).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("spare"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&spare));
+    assert!(p.argv[2].ends_with("--continue"), "{:?}", p.argv);
+}
+
+#[tokio::test]
+async fn a_restart_keeps_its_login_and_falls_back_when_it_is_gone() {
+    let f = Fixture::new("login-restart");
+    let (work, spare) = with_logins(&f);
+    let dir = f.root.join("tasks/fix-login-t-00000e");
+    std::fs::create_dir_all(&dir).unwrap();
+    let ended = |login: &str| muxa_backend::TerminalInfo {
+        id: muxa_backend::TerminalId::new("t9"),
+        name: Some("Fix login".into()),
+        live: false,
+        labels: muxa_backend::Labels::from([
+            (muxa_server::tasks::WORKSPACE.to_owned(), "w".to_owned()),
+            (
+                muxa_server::tasks::DIR.to_owned(),
+                dir.display().to_string(),
+            ),
+            (
+                muxa_server::tasks::SUBSCRIPTION.to_owned(),
+                login.to_owned(),
+            ),
+        ]),
+        status: None,
+        size: muxa_backend::Size { cols: 80, rows: 24 },
+        exit: None,
+    };
+    let host = f.host(None);
+    let p = host.restart(&ended("spare")).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("spare"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&spare));
+    let p = host.restart(&ended("removed")).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("work"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&work));
+}

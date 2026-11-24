@@ -11,6 +11,7 @@ pub mod loops;
 pub mod mcp;
 pub mod repos;
 pub mod routines;
+pub mod subscriptions;
 pub mod workers;
 pub mod workspaces;
 

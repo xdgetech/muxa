@@ -94,6 +94,7 @@ impl Host for WorkTasks {
             connections: spec.connections.clone(),
             mcp: spec.mcp.clone(),
             bot: None,
+            subscription: None,
         })
     }
 

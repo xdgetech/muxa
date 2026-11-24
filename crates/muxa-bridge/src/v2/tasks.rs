@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use muxa_protocol::v2::{Place, PlaceKind};
-use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, WORKSPACE};
+use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, SUBSCRIPTION, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::adopt::{self, AgentLookup};
@@ -17,6 +17,7 @@ use super::runner::Runner;
 use super::task_loop::TaskLoops;
 use crate::records::Workspace;
 use crate::records::mcp::McpServer;
+use crate::records::subscriptions::{self, Login};
 use crate::records::workers::LaunchCommand;
 use crate::routines::runs::{StartError, When};
 use crate::settings::{SettingsError, SettingsStore};
@@ -111,12 +112,51 @@ impl BridgeHost {
     }
 
     /// Claude Code kept a conversation for `dir`, so `--continue` resumes it.
-    fn resumes(&self, ws: &Workspace, line: &str, dir: &Path) -> bool {
+    /// With a login, only its folder counts: the agent reads no other.
+    fn resumes(&self, ws: &Workspace, line: &str, dir: &Path, login: Option<&Login>) -> bool {
+        let dirs = match login {
+            Some(l) => vec![l.home.clone()],
+            None => adopt::claude_dirs(ws, &self.claude_dirs),
+        };
         crate::launch::is_claude_code(&LaunchCommand::Shell(line.to_owned()))
-            && crate::agents::claude::has_conversation(
-                &adopt::claude_dirs(ws, &self.claude_dirs),
-                dir,
-            )
+            && crate::agents::claude::has_conversation(&dirs, dir)
+    }
+
+    /// The login an agent started with `line` runs on (ADR 0091): a talk's
+    /// Bot list when it has one, else the Workspace's. `keep` wins while it
+    /// exists; an adopted place keeps the login that holds its conversation.
+    async fn login(
+        &self,
+        ws: &Workspace,
+        bot: Option<&str>,
+        line: &str,
+        keep: Option<String>,
+        adopted: Option<PathBuf>,
+    ) -> Result<Option<Login>, TaskError> {
+        let (records, ws, bot, line) = (
+            Arc::clone(&self.records),
+            ws.clone(),
+            bot.map(str::to_owned),
+            line.to_owned(),
+        );
+        blocking(move || {
+            let all = records.load_workspaces()?;
+            let names = bot
+                .and_then(|b| all.bot(&ws.name, &b).map(|b| b.subscriptions.clone()))
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| ws.subscriptions.clone());
+            let keep = keep.or_else(|| {
+                let dir = adopted?;
+                subscriptions::holding(all.subscriptions(), &ws.subscriptions, &dir)
+            });
+            Ok(subscriptions::login(
+                all.subscriptions(),
+                &names,
+                &LaunchCommand::Shell(line),
+                keep.as_deref(),
+            ))
+        })
+        .await
     }
 
     fn agent_command(&self, ws: &Workspace) -> String {
@@ -330,6 +370,7 @@ fn prepared(
     made: places::Made,
     line: String,
     given: Given,
+    login: Option<Login>,
 ) -> Prepared {
     if let Some(a) = &ws.agent {
         // Keys only: values may be tokens.
@@ -347,9 +388,12 @@ fn prepared(
         mcp: given.mcp,
         argv: shell_line(line),
         bot: None,
+        subscription: login.as_ref().map(|l| l.name.clone()),
         env: {
             let mut env = ws.agent.map(|a| a.env).unwrap_or_default();
             crate::connections::merge(&mut env, given.env);
+            // The loader refuses a login variable beside subscriptions.
+            env.extend(login.and_then(|l| l.env));
             env.into_iter().collect()
         },
     }
@@ -398,7 +442,11 @@ impl Host for BridgeHost {
         ops: Vec<muxa_protocol::v2::SettingsOp>,
     ) -> Result<muxa_protocol::v2::Settings, TaskError> {
         let (store, revision) = (self.settings_store()?, revision.to_owned());
-        settings_call(move || store.update(&revision, ops)).await
+        let updated = settings_call(move || store.update(&revision, ops)).await?;
+        if let Some(chats) = &self.chats {
+            chats.reload_agents().await;
+        }
+        Ok(updated)
     }
 
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
@@ -451,14 +499,18 @@ impl Host for BridgeHost {
             line = talk_line(&ws, made.working(), line, commands).await?;
         }
         let adopts = spec.existing().is_some() || spec.checkout().is_some();
-        if adopts && self.resumes(&ws, &line, made.working()) {
+        let adopted = adopts.then(|| made.working().to_owned());
+        let login = self
+            .login(&ws, spec.bot.as_deref(), &line, None, adopted)
+            .await?;
+        if adopts && self.resumes(&ws, &line, made.working(), login.as_ref()) {
             line.push_str(" --continue");
         }
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
-        let mut prepared = prepared(ws, title, made, line, given);
+        let mut prepared = prepared(ws, title, made, line, given, login);
         prepared.checkout = spec.checkout().map(str::to_owned);
         prepared.bot = spec.bot.clone();
         Ok(prepared)
@@ -493,7 +545,11 @@ impl Host for BridgeHost {
             .clone()
             .or_else(|| made.branch.clone())
             .unwrap_or_else(|| "Task".into());
-        let mut prepared = prepared(ws, &title, made, line, given);
+        // The conversation lives in the ended agent's login (ADR 0091 §5).
+        let keep = ended.labels.get(SUBSCRIPTION).cloned();
+        let bot = ended.labels.get(BOT).cloned();
+        let login = self.login(&ws, bot.as_deref(), &line, keep, None).await?;
+        let mut prepared = prepared(ws, &title, made, line, given, login);
         prepared.checkout = ended.labels.get(CHECKOUT).cloned();
         prepared.bot = ended.labels.get(BOT).cloned();
         Ok(prepared)

@@ -6,7 +6,8 @@
 use std::collections::BTreeMap;
 
 use muxa_protocol::settings::{
-    Access, BotSpec, ConnectionSpec, McpSpec, RoutineSpec, SettingsOp, WorkerSpec, WriteOnly,
+    Access, BotSpec, ConnectionSpec, McpSpec, RoutineSpec, SettingsOp, SubscriptionSpec,
+    WorkerSpec, WriteOnly,
 };
 use muxa_protocol::v2::LoopChecks;
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, value};
@@ -63,8 +64,12 @@ pub fn apply(
             park_after,
             claude_connectors,
             bot_rules,
+            subscriptions,
         } => {
             let t = find_ws(workspaces, &workspace)?;
+            if let Some(names) = subscriptions {
+                set_list(t, "subscriptions", &names);
+            }
             if let Some(on) = claude_connectors {
                 set_bool(t, "claude_connectors", on, false);
             }
@@ -335,6 +340,7 @@ pub fn apply(
             enabled,
             worker,
             soul_text,
+            subscriptions,
         } => {
             let t = workspaces
                 .as_table_mut()
@@ -344,11 +350,42 @@ pub fn apply(
                 .ok_or("assistant is not a table; edit it by hand")?;
             set_bool(t, "enabled", enabled, true);
             set_str(t, "worker", worker.as_deref());
+            if let Some(names) = subscriptions {
+                set_list(t, "subscriptions", &names);
+            }
             if let Some(text) = soul_text {
                 check_soul(&text)?;
                 effects.assistant_soul = Some(text);
             }
             Ok(())
+        }
+        SettingsOp::SubscriptionAdd { subscription } => {
+            let root = workspaces.as_table_mut();
+            if find_named(root, "subscription", &subscription.name)?.is_some() {
+                return Err(format!(
+                    "subscription {:?} exists already",
+                    subscription.name
+                ));
+            }
+            let mut t = Table::new();
+            t.insert("name", value(subscription.name.clone()));
+            write_subscription(&mut t, &subscription);
+            aot(root, "subscription")?.push(t);
+            Ok(())
+        }
+        SettingsOp::SubscriptionUpdate { subscription } => {
+            let t = find_named(
+                workspaces.as_table_mut(),
+                "subscription",
+                &subscription.name,
+            )?
+            .ok_or_else(|| format!("there is no subscription {:?}", subscription.name))?;
+            write_subscription(t, &subscription);
+            Ok(())
+        }
+        // A Workspace that still lists it makes the loader refuse the result.
+        SettingsOp::SubscriptionRemove { name } => {
+            remove_named(workspaces.as_table_mut(), "subscription", &name)
         }
         SettingsOp::WorkerAdd { worker } => {
             let root = workspaces.as_table_mut();
@@ -713,6 +750,13 @@ fn write_bot(t: &mut Table, b: &BotSpec) {
     } else {
         set_list(t, "commands", &b.commands);
     }
+    set_list(t, "subscriptions", &b.subscriptions);
+}
+
+fn write_subscription(t: &mut Table, s: &SubscriptionSpec) {
+    set_str(t, "agent", Some(&s.agent));
+    set_str(t, "home", Some(&s.home));
+    set_str(t, "plan", s.plan.as_deref());
 }
 
 fn write_worker(t: &mut Table, w: &WorkerSpec) {

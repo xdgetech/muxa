@@ -21,6 +21,7 @@ use super::git as brief;
 use super::{bot_run, mcp};
 use crate::loops::CheckEnd;
 use crate::records::routines::Routine;
+use crate::records::subscriptions;
 use crate::records::workers::{LaunchCommand, WorkerChoice};
 use crate::records::{Workspaces, is_valid_id, now};
 use crate::routines::check::{self, RunAt};
@@ -33,6 +34,7 @@ const RUN: &str = "muxa.run";
 const ROUTINE: &str = "muxa.routine";
 const OCCURRENCE: &str = "muxa.occurrence";
 const BOT: &str = "muxa.bot";
+use muxa_server::tasks::SUBSCRIPTION;
 pub(crate) const START_PROMPT: &str = "Read .muxa/TASK.md and start.";
 /// A run that has not published by then fails and its agent ends.
 const RUN_LIMIT: u64 = 2 * 60 * 60;
@@ -74,6 +76,8 @@ struct Ready {
     /// The names of the connections and MCP servers the agent gets.
     connections: Vec<String>,
     mcp: Vec<String>,
+    /// The subscription the agent runs on (ADR 0091).
+    subscription: Option<String>,
 }
 
 impl Runner {
@@ -455,18 +459,33 @@ fn made(
     let mut rules = bot_run::deny_rules(ws, &routine, &dir);
     rules.extend(extra.read_dirs.iter().map(|d| bot_run::deny(d)));
     // A Bot's run is Claude Code with its Workspace's Bot rules (ADR 0087).
-    let agent = if let Some(name) = routine.bot.as_deref() {
-        let commands = workspaces
-            .bot(&routine.workspace, name)
-            .map(|b| b.commands.clone())
-            .unwrap_or_default();
+    let bot = routine
+        .bot
+        .as_deref()
+        .and_then(|n| workspaces.bot(&routine.workspace, n));
+    let (agent, login) = if let Some(name) = routine.bot.as_deref() {
+        let commands = bot.map(|b| b.commands.clone()).unwrap_or_default();
         let (rules, allow) = bot_run::bot_rules(ws, &commands, rules, &dir, &extra.read_dirs);
         let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
-        bot_agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?
+        let login = login_for(workspaces, ws, bot, &command);
+        tracing::debug!(bot = name, "bot run prepared");
+        (
+            bot_agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?,
+            login,
+        )
     } else {
-        agent_in(ws, resolved.command, &dir, &rules, &[], &extra.read_dirs)?
+        let login = login_for(workspaces, ws, None, &resolved.command);
+        (
+            agent_in(ws, resolved.command, &dir, &rules, &[], &extra.read_dirs)?,
+            login,
+        )
     };
     crate::connections::merge(&mut resolved.environment.env, agent.env);
+    // The loader refuses a login variable beside subscriptions (ADR 0091).
+    resolved
+        .environment
+        .env
+        .extend(login.as_ref().and_then(|l| l.env.clone()));
     let (connections, mcp) = crate::usage::given(ws);
     Ok(Ready {
         argv: agent.argv,
@@ -477,7 +496,23 @@ fn made(
         occurrence,
         run,
         dir,
+        subscription: login.map(|l| l.name),
     })
+}
+
+/// The login a background agent of `ws` runs on: its Bot's list when it has
+/// one, else the Workspace's (ADR 0091 §4).
+pub(crate) fn login_for(
+    workspaces: &Workspaces,
+    ws: &crate::records::Workspace,
+    bot: Option<&crate::records::bots::Bot>,
+    command: &LaunchCommand,
+) -> Option<subscriptions::Login> {
+    let names = bot
+        .map(|b| &b.subscriptions)
+        .filter(|n| !n.is_empty())
+        .unwrap_or(&ws.subscriptions);
+    subscriptions::login(workspaces.subscriptions(), names, command, None)
 }
 
 /// How a background agent of `ws` starts in `dir`.
@@ -573,6 +608,9 @@ fn labels(r: &Ready) -> Labels {
     // Clients find a Bot's runs by this label, as they find its talks (ADR 0086).
     if let Some(bot) = &r.routine.bot {
         labels.insert(BOT.to_owned(), bot.clone());
+    }
+    if let Some(name) = &r.subscription {
+        labels.insert(SUBSCRIPTION.to_owned(), name.clone());
     }
     labels
 }

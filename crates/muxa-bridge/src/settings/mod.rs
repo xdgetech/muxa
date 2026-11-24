@@ -198,6 +198,7 @@ impl SettingsStore {
             workspaces,
             workers: config.worker,
             assistant: Some(assistant),
+            subscriptions: config.subscription,
         })
     }
 

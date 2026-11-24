@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use muxa_protocol::settings::{
     BotRules, BotSpec, ConnectionSpec, EnvKey, McpSpec, MemoryVersion, RoutineSpec, SettingsAgent,
     SettingsAssistant, SettingsBot, SettingsConnection, SettingsLoop, SettingsRoutine,
-    SettingsWorkspace, WorkerSpec,
+    SettingsWorkspace, SubscriptionSpec, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
 use serde::Deserialize;
@@ -26,6 +26,8 @@ pub struct FileConfig {
     #[serde(default)]
     pub worker: Vec<WorkerSpec>,
     pub assistant: Option<toml::Value>,
+    #[serde(default)]
+    pub subscription: Vec<SubscriptionSpec>,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +51,8 @@ pub struct FileWorkspace {
     claude_connectors: bool,
     #[serde(default)]
     bots: FileBotRules,
+    #[serde(default)]
+    subscriptions: Vec<String>,
 }
 
 /// `[workspace.bots]`; with no `allow` the Bots get the defaults (ADR 0090),
@@ -189,6 +193,15 @@ pub fn assistant(
             .map(str::to_owned),
         soul_text: text(SOUL_FILE, MAX_SOUL),
         memory_text: text(MEMORY_FILE, MAX_MEMORY),
+        subscriptions: get("subscriptions")
+            .and_then(toml::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(toml::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -346,6 +359,7 @@ pub fn workspace(
                 .unwrap_or_else(crate::records::bots::default_allow),
             deny: w.bots.deny,
         },
+        subscriptions: w.subscriptions,
         connections,
         mcp: w.mcp,
         routines: list,

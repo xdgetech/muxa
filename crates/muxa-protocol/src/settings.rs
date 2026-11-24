@@ -39,6 +39,23 @@ pub struct Settings {
     /// The Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant: Option<SettingsAssistant>,
+    /// `[[subscription]]`: named agent logins (ADR 0091).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<SubscriptionSpec>,
+}
+
+/// `[[subscription]]` (ADR 0091): an agent login muxa names. The login
+/// itself stays with the agent; muxa keeps the name and the folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubscriptionSpec {
+    pub name: String,
+    /// `claude-code` or `codex`.
+    pub agent: String,
+    /// As written, `~/` included.
+    pub home: String,
+    /// A label only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
 }
 
 /// The Capture assistant: no Workspace, no connections (ADR 0084).
@@ -55,6 +72,9 @@ pub struct SettingsAssistant {
     /// `assistant/memory.md`, read only: the assistant writes it.
     #[serde(default)]
     pub memory_text: Option<String>,
+    /// The Claude subscriptions it runs on, in order (ADR 0091).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +107,9 @@ pub struct SettingsWorkspace {
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     #[serde(default, skip_serializing_if = "BotRules::is_empty")]
     pub bot_rules: BotRules,
+    /// The subscriptions its agents use, in order (ADR 0091).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<String>,
     #[serde(default)]
     pub connections: Vec<SettingsConnection>,
     #[serde(default)]
@@ -238,6 +261,10 @@ pub struct BotSpec {
     /// without the wrapper, e.g. `/path/collect.sh delivery:*` (ADR 0088).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,
+    /// Its own order of its Workspace's subscriptions (ADR 0091). Empty:
+    /// the Workspace's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -356,6 +383,8 @@ pub enum SettingsOp {
         claude_connectors: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bot_rules: Option<BotRules>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subscriptions: Option<Vec<String>>,
     },
     WorkspaceRemove {
         workspace: String,
@@ -466,6 +495,20 @@ pub enum SettingsOp {
         worker: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         soul_text: Option<String>,
+        /// Absent keeps the list; present replaces it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subscriptions: Option<Vec<String>>,
+    },
+    /// A named agent login (ADR 0091).
+    SubscriptionAdd {
+        subscription: SubscriptionSpec,
+    },
+    SubscriptionUpdate {
+        subscription: SubscriptionSpec,
+    },
+    /// Refused while a Workspace lists it.
+    SubscriptionRemove {
+        name: String,
     },
     WorkerAdd {
         worker: WorkerSpec,
@@ -505,6 +548,9 @@ impl SettingsOp {
             Self::BotRename { .. } => "bot-rename",
             Self::BotMemoryRestore { .. } => "bot-memory-restore",
             Self::AssistantUpdate { .. } => "assistant-update",
+            Self::SubscriptionAdd { .. } => "subscription-add",
+            Self::SubscriptionUpdate { .. } => "subscription-update",
+            Self::SubscriptionRemove { .. } => "subscription-remove",
             Self::WorkerAdd { .. } => "worker-add",
             Self::WorkerUpdate { .. } => "worker-update",
             Self::WorkerRemove { .. } => "worker-remove",
@@ -537,6 +583,9 @@ impl SettingsOp {
             | Self::BotRename { workspace, .. }
             | Self::BotMemoryRestore { workspace, .. } => Some(workspace),
             Self::AssistantUpdate { .. }
+            | Self::SubscriptionAdd { .. }
+            | Self::SubscriptionUpdate { .. }
+            | Self::SubscriptionRemove { .. }
             | Self::WorkerAdd { .. }
             | Self::WorkerUpdate { .. }
             | Self::WorkerRemove { .. } => None,

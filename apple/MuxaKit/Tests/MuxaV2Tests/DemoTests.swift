@@ -324,6 +324,32 @@ struct DemoTests {
         #expect(s.workers.map(\.name) == ["reviewer"])
     }
 
+    /// ADR 0091: a login is named once and Workspaces list it; one that a
+    /// Workspace lists cannot go.
+    @Test(.timeLimit(.minutes(1)))
+    func subscriptionsAreAddedListedAndKeptWhileListed() async throws {
+        let c = try await open()
+        let before = try await c.settings()
+        #expect(before.subscriptions.map(\.name) == ["claude-personal", "claude-spare", "chatgpt"])
+        #expect(before.workspaces[1].subscriptions == ["claude-personal", "claude-spare"])
+        let after = try await c.settingsUpdate(revision: "1", ops: [
+            .subscriptionAdd(subscription: SubscriptionSpec(name: "claude-work", agent: "claude-code",
+                                                            home: "~/.claude-work")),
+            .envUnset(workspace: "app", key: "CLAUDE_CONFIG_DIR"),
+            .workspaceUpdate(workspace: "app", subscriptions: ["claude-work"]),
+            .assistantUpdate(enabled: true, subscriptions: ["claude-spare"]),
+        ])
+        #expect(after.workspaces[0].subscriptions == ["claude-work"])
+        #expect(after.assistant?.subscriptions == ["claude-spare"])
+        await #expect(throws: V2Error.self) {
+            _ = try await c.settingsUpdate(revision: after.revision, ops: [.subscriptionRemove(name: "claude-work")])
+        }
+        await #expect(throws: V2Error.self) {
+            _ = try await c.settingsUpdate(revision: after.revision,
+                                           ops: [.workspaceUpdate(workspace: "app", subscriptions: ["nope"])])
+        }
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func settingsUpdateAppliesTheOpsInOrder() async throws {
         let c = try await open()

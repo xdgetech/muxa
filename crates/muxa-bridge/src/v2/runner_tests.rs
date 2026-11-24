@@ -542,3 +542,49 @@ async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     assert!(deny.contains(&json!("Bash")), "{deny:?}");
     assert!(deny.len() > 1, "muxa's own deny rule stays: {deny:?}");
 }
+
+/// ADR 0091: a run takes its Workspace's first login, a Bot's run its own
+/// list's, with the login's variable and a `muxa.subscription` label.
+#[tokio::test]
+async fn a_run_gets_its_login_and_a_bot_run_its_bots_login() {
+    let h = Host::with(
+        "login",
+        "[[routine]]\nname = \"Watch\"\ninstructions = \"brief.md\"\nenabled = true\nbot = \"triage\"\n\
+         [[bot]]\nname = \"triage\"\nenabled = true\nsubscriptions = [\"spare\"]\n",
+    );
+    let home = |n: &str| h.base.join(n).to_string_lossy().into_owned();
+    std::fs::write(
+        h.base.join("workspaces.toml"),
+        format!(
+            "[[subscription]]\nname = \"work\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[subscription]]\nname = \"spare\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[workspace]]\nname = \"w\"\nroot = \"{}\"\nsubscriptions = [\"work\", \"spare\"]\n\
+             [workspace.routines]\nenabled = true\n",
+            home(".claude-work"),
+            home(".claude-spare"),
+            h.base.join("root").display()
+        ),
+    )
+    .unwrap();
+    let backend = FakeBackend::new();
+    let plain = h.started(&backend).await;
+    assert_eq!(plain.labels[SUBSCRIPTION], "work");
+    assert_eq!(
+        backend.launches()[0].env.get("CLAUDE_CONFIG_DIR"),
+        Some(&home(".claude-work"))
+    );
+    h.runner
+        .start(&backend, "w", "Watch", When::Now(now()))
+        .await
+        .unwrap();
+    let launches = backend.launches();
+    let bot = launches
+        .iter()
+        .find(|l| l.labels.get(BOT).map(String::as_str) == Some("triage"))
+        .unwrap();
+    assert_eq!(bot.labels[SUBSCRIPTION], "spare");
+    assert_eq!(
+        bot.env.get("CLAUDE_CONFIG_DIR"),
+        Some(&home(".claude-spare"))
+    );
+}

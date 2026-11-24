@@ -205,21 +205,30 @@ fn member_launch(
         &[],
     );
     let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
+    let login = runner::login_for(workspaces, ws, Some(member), &command);
     let agent = runner::bot_agent_in(ws, command, &dir, &rules, &allow, &[])?;
     crate::connections::merge(&mut resolved.environment.env, agent.env);
+    resolved
+        .environment
+        .env
+        .extend(login.as_ref().and_then(|l| l.env.clone()));
+    let mut labels = Labels::from([
+        ("muxa.kind".to_owned(), KIND.to_owned()),
+        ("muxa.role".to_owned(), "agent".to_owned()),
+        ("muxa.dir".to_owned(), dir.to_string_lossy().into_owned()),
+        ("muxa.workspace".to_owned(), workspace.to_owned()),
+        (MEMBER.to_owned(), member.name.clone()),
+        (LEAD_DIR.to_owned(), lead_dir.to_string_lossy().into_owned()),
+        (LEAD.to_owned(), lead.to_owned()),
+    ]);
+    if let Some(l) = login {
+        labels.insert(muxa_server::tasks::SUBSCRIPTION.to_owned(), l.name);
+    }
     Ok(Launch {
         argv: agent.argv,
         cwd: Some(dir.clone()),
         name: Some(format!("{} for {lead}", member.name)),
-        labels: Labels::from([
-            ("muxa.kind".to_owned(), KIND.to_owned()),
-            ("muxa.role".to_owned(), "agent".to_owned()),
-            ("muxa.dir".to_owned(), dir.to_string_lossy().into_owned()),
-            ("muxa.workspace".to_owned(), workspace.to_owned()),
-            (MEMBER.to_owned(), member.name.clone()),
-            (LEAD_DIR.to_owned(), lead_dir.to_string_lossy().into_owned()),
-            (LEAD.to_owned(), lead.to_owned()),
-        ]),
+        labels,
         env: resolved.environment.env.into_iter().collect(),
     })
 }

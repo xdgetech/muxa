@@ -569,6 +569,34 @@ class DemoTest {
         }
     }
 
+    /** ADR 0091: a login is named once and Workspaces list it; one a Workspace lists cannot go. */
+    @Test
+    fun subscriptionsAreAddedListedAndKeptWhileListed() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings()
+            assertEquals(listOf("claude-personal", "claude-spare", "chatgpt"), before.subscriptions.map { it.name })
+            assertEquals(listOf("claude-personal", "claude-spare"), before.workspaces[1].subscriptions)
+            val s = c.settingsUpdate(
+                "1",
+                listOf(
+                    SettingsOp.SubscriptionAdd(SubscriptionSpec("claude-work", "claude-code", "~/.claude-work")),
+                    SettingsOp.EnvUnset("app", "CLAUDE_CONFIG_DIR"),
+                    SettingsOp.WorkspaceUpdate("app", subscriptions = listOf("claude-work")),
+                    SettingsOp.AssistantUpdate(true, subscriptions = listOf("claude-spare")),
+                ),
+            )
+            assertEquals(listOf("claude-work"), s.workspaces[0].subscriptions)
+            assertEquals(listOf("claude-spare"), s.assistant?.subscriptions)
+            assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.SubscriptionRemove("claude-work"))) }.code)
+            assertEquals(
+                "bad-request",
+                refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", subscriptions = listOf("nope")))) }.code,
+            )
+            c.close()
+        }
+    }
+
     @Test
     fun aTeamLeadsOnlyBotsThatLeadNone() = runBlocking {
         withTimeout(10_000) {

@@ -63,6 +63,7 @@ impl Host for FakeTasks {
             connections: vec!["github".into()],
             mcp: vec!["docs".into()],
             bot: None,
+            subscription: None,
         })
     }
 
