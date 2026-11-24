@@ -19,8 +19,19 @@ struct KeyBytesTests {
     }
 
     @Test func aMessageOfSeveralLinesIsOnePaste() {
-        #expect(KeyBytes.message("Fix it.") == "Fix it.\r")
-        #expect(KeyBytes.message("Fix it.\nAnd add a test.") == "\u{1b}[200~Fix it.\nAnd add a test.\u{1b}[201~\r")
+        let line = KeyBytes.message("Fix it.")
+        #expect(line.text == "Fix it." && line.submit == "\r")
+        let lines = KeyBytes.message("Fix it.\nAnd add a test.")
+        #expect(lines.text == "\u{1b}[200~Fix it.\nAnd add a test.\u{1b}[201~" && lines.submit == "\r")
+    }
+
+    /// A long line with its Return in the same write reaches Claude Code as a
+    /// paste with a new line in it: the Return is never part of the text.
+    @Test func aMessageKeepsItsReturnApart() {
+        let long = String(repeating: "x", count: 300)
+        #expect(!KeyBytes.message(long).text.contains("\r"))
+        #expect(KeyBytes.message(long).submit == "\r")
+        #expect(KeyBytes.submitPause >= .milliseconds(50))
     }
 
     @Test func controlAndMetaCharacters() {

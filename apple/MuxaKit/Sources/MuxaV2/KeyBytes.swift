@@ -2,13 +2,19 @@
 /// `BSpace`), turned into the bytes an xterm sends. Protocol v2 carries bytes;
 /// the key names stay the app's vocabulary for keys.
 public enum KeyBytes {
-    /// A message typed into an agent and sent with Return. Several lines go
-    /// as one bracketed paste, as the server types a comment (ADR 0072), so
-    /// the agent does not send each line on its own.
-    public static func message(_ text: String) -> String {
-        guard text.contains("\n") else { return text + "\r" }
-        return "\u{1b}[200~" + text + "\u{1b}[201~\r"
+    /// A message typed into an agent: its text, then Return as a write of its
+    /// own after `submitPause`. Claude Code reads a burst of about 65 bytes or
+    /// more as a paste, and a Return inside a paste is a new line, not a send
+    /// (docs/findings/claude-code-input.md). Several lines go as one
+    /// bracketed paste, as the server types a comment (ADR 0072), so the agent
+    /// does not send each line on its own.
+    public static func message(_ text: String) -> (text: String, submit: String) {
+        guard text.contains("\n") else { return (text, "\r") }
+        return ("\u{1b}[200~" + text + "\u{1b}[201~", "\r")
     }
+
+    /// The wait between a message and its Return; the server waits as long.
+    public static let submitPause: Duration = .milliseconds(200)
 
     /// The bytes for one key name; nil for a name no terminal sends.
     public static func bytes(_ name: String) -> [UInt8]? {

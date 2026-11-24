@@ -589,6 +589,16 @@ final class NextModel {
         await input(ch, Array(text.utf8))
     }
 
+    /// Types a message and sends it: the text, then Return on its own
+    /// after a pause, so the agent never reads the Return as pasted text.
+    func sendMessage(_ text: String, to terminal: String) async {
+        let message = KeyBytes.message(text)
+        await send(message.text, to: terminal)
+        guard requestError == nil else { return }
+        try? await Task.sleep(for: KeyBytes.submitPause)
+        await send(message.submit, to: terminal)
+    }
+
     // MARK: Task Loop
 
     /// Starts or restarts the loop of a Task's agent.

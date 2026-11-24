@@ -109,8 +109,7 @@ struct ChatView: View {
                 .lineLimit(1...8)
                 .textFieldStyle(.plain)
                 .focused($fieldFocused)
-                .onSubmit(sendDraft)
-                .newlineOnShiftReturn()
+                .returnSends($draft, send: sendDraft)
                 .onChange(of: draft) { _, typed in
                     guard let sent else { return }
                     if typed.trimmingCharacters(in: .whitespacesAndNewlines) == sent { draft = "" } else if !typed.isEmpty { self.sent = nil }
@@ -134,7 +133,7 @@ struct ChatView: View {
         fieldFocused = false
         sent = text
         draft = ""
-        send(KeyBytes.message(text))
+        Task { await model.sendMessage(text, to: terminal.id) }
         Task { @MainActor in
             draft = ""
             fieldFocused = true
