@@ -43,6 +43,17 @@ class DemoTest {
     }
 
     @Test
+    fun laterMovesAnItemToTheBottom() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.inbox().items.map { it.id }
+            val after = c.inbox(V2Request.InboxLater(before[0])).items.map { it.id }
+            assertEquals(before.drop(1) + before[0], after)
+            c.close()
+        }
+    }
+
+    @Test
     fun turnedOffRoutinesAreReportedUntilTurnedOn() = runBlocking {
         withTimeout(10_000) {
             val c = open()

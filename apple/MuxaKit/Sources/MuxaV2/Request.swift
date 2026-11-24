@@ -18,8 +18,8 @@ public enum V2Request: Sendable {
     case parseCapture(text: String, today: String)
     case inboxAdd(Capture, note: String? = nil)
     case inboxMove(item: String, index: Int)
-    /// `until` is Unix seconds.
-    case inboxLater(item: String, until: Int64)
+    /// Moves the item to the bottom (ADR 0091).
+    case inboxLater(item: String)
     case inboxDone(item: String)
     case inboxReopen(item: String)
     case inboxDelete(item: String)
@@ -80,7 +80,7 @@ public enum V2Request: Sendable {
             set("inbox-add", ["kind": c.kind.rawValue, "title": c.title, "workspace": c.workspace,
                               "due": c.due, "note": note])
         case let .inboxMove(item, index): set("inbox-move", ["item": item, "index": index])
-        case let .inboxLater(item, until): set("inbox-later", ["item": item, "until": until])
+        case let .inboxLater(item): set("inbox-later", ["item": item])
         case let .inboxDone(item): set("inbox-done", ["item": item])
         case let .inboxReopen(item): set("inbox-reopen", ["item": item])
         case let .inboxDelete(item): set("inbox-delete", ["item": item])

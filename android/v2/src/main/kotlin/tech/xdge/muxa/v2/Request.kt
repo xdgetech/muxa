@@ -35,8 +35,8 @@ sealed interface V2Request {
     data class InboxAdd(val capture: Capture, val note: String? = null) : V2Request
     data class InboxMove(val item: String, val index: Int) : V2Request
 
-    /** [until] is Unix seconds. */
-    data class InboxLater(val item: String, val until: Long) : V2Request
+    /** Moves the item to the bottom (ADR 0091). */
+    data class InboxLater(val item: String) : V2Request
     data class InboxDone(val item: String) : V2Request
     data class InboxReopen(val item: String) : V2Request
     data class InboxDelete(val item: String) : V2Request
@@ -116,7 +116,7 @@ sealed interface V2Request {
                 opt("workspace", r.capture.workspace); opt("due", r.capture.due); opt("note", r.note)
             }
             is InboxMove -> { type("inbox-move"); put("item", r.item); put("index", r.index) }
-            is InboxLater -> { type("inbox-later"); put("item", r.item); put("until", r.until) }
+            is InboxLater -> { type("inbox-later"); put("item", r.item) }
             is InboxDone -> { type("inbox-done"); put("item", r.item) }
             is InboxReopen -> { type("inbox-reopen"); put("item", r.item) }
             is InboxDelete -> { type("inbox-delete"); put("item", r.item) }

@@ -238,6 +238,9 @@ struct ServerTests {
         let seen = await Self.next(&events) { if case .inbox = $0 { false } else { true } }
         guard case .inbox(let pushed) = seen else { Issue.record("no inbox event"); return }
         #expect(pushed == inbox)
+        let second = try await mac.inbox(.inboxAdd(Capture(kind: .todo, title: "milk")))
+        let later = try await mac.inbox(.inboxLater(item: second.items[0].id))
+        #expect(later.items.map(\.title) == ["to the bank", "milk"])
         do {
             _ = try await mac.inbox(.inboxDone(item: "nope"))
             Issue.record("done on a missing item")

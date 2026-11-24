@@ -39,11 +39,10 @@ class BotWorkTest {
         val inbox = field<Inbox>("inbox")
         val terminals = field<List<Terminal>>("terminals")
         val routines = field<List<Routine>>("routines")
-        val now = field<Long>("now")
         val cases = field<List<Case>>("cases")
         assertEquals(7, cases.size)
         for (c in cases) {
-            val w = BotWork.of(c.bot, c.workspace, c.enabled, inbox, terminals, routines, now)
+            val w = BotWork.of(c.bot, c.workspace, c.enabled, inbox, terminals, routines)
             val name = "${c.workspace}/${c.bot}"
             assertEquals("$name items", c.items, w.items.map { it.id })
             assertEquals("$name terminals", c.terminals, w.terminals.map { it.id })
@@ -84,7 +83,7 @@ class BotWorkTest {
             val inbox = c.inbox()
             val (routines, _) = c.routines()
             val bot = c.settings().workspaces.first { it.name == "app" }.bots.single()
-            val w = BotWork.of("pr-watch", "app", bot.enabled, inbox, c.terminals(), routines, 1_764_000_000)
+            val w = BotWork.of("pr-watch", "app", bot.enabled, inbox, c.terminals(), routines)
             assertEquals(listOf("t7", "t8"), w.terminals.map { it.id })
             assertEquals("t7", inbox.items.first { it.id == "d12" }.terminal)
             assertEquals(listOf("scan"), w.planned.map { it.name })

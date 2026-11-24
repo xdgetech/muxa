@@ -60,8 +60,7 @@ fun BotsScreen(model: NextModel, nav: Nav) {
     LaunchedEffect(editor, model.inbox.revision) { editor.load() }
     LaunchedEffect(Unit) { model.refreshRoutines() }
     var creating by remember { mutableStateOf(false) }
-    val now = System.currentTimeMillis() / 1000
-    val entries = botEntries(editor.settings, model.inbox, model.terminals, model.routines, now)
+    val entries = botEntries(editor.settings, model.inbox, model.terminals, model.routines)
     val bots = nav.bots
     val entry = entries.firstOrNull { it.pick == bots.pick }
     val routine = model.routines.firstOrNull { it.id == bots.routine }

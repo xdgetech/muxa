@@ -35,7 +35,7 @@ class BotsNavTest {
         fun r(name: String, bot: String? = null) = Routine("app", name, enabled = true, nextDue = 10, bot = bot)
         val routines = listOf(r("digest"), r("scan", "pr-watch"), r("triage", "issues"), r("backup", "pr-watch"))
         val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("issues"), SettingsBot("pr-watch")))
-        val entries = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, emptyList(), routines, 0)
+        val entries = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, emptyList(), routines)
         assertEquals(
             mapOf("issues" to listOf("triage"), "pr-watch" to listOf("scan", "backup")),
             entries.associate { e -> e.name to e.work.planned.map { it.name } },
@@ -61,7 +61,7 @@ class BotsNavTest {
         val talk = t("t7", "muxa.kind" to "task", "muxa.role" to "agent", "muxa.bot" to "pr-watch")
         val run = t("t8", "muxa.kind" to "routine", "muxa.role" to "agent", "muxa.bot" to "pr-watch", "muxa.routine" to "scan")
         val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("pr-watch")))
-        val e = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, listOf(talk, run), emptyList(), 0).single()
+        val e = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, listOf(talk, run), emptyList()).single()
         assertEquals(listOf("t7") to listOf("t8"), e.talks.map { it.id } to e.runs.map { it.id })
         assertEquals("chat" to "run of scan", talk.botRole("pr-watch") to run.botRole("pr-watch"))
     }
@@ -93,7 +93,7 @@ class BotsNavTest {
 
     private fun entry(vararg terminals: Terminal): BotEntry {
         val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("pr-watch")))
-        return botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, terminals.toList(), emptyList(), 0).single()
+        return botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, terminals.toList(), emptyList()).single()
     }
 
     @Test

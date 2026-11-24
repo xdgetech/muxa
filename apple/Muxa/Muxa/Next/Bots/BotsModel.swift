@@ -42,12 +42,12 @@ struct BotEntry: Identifiable {
 extension NextModel {
     /// Every Bot of the host's settings, Workspace by Workspace, with its work
     /// grouped as PROTOCOL-v2.md, "A Bot's work", says.
-    func botEntries(now: Int64 = Int64(Date().timeIntervalSince1970)) -> [BotEntry] {
+    func botEntries() -> [BotEntry] {
         (settings.settings?.workspaces ?? []).flatMap { w in
             w.bots.map { b in
                 BotEntry(workspace: w, bot: b, work: BotWork(
                     bot: b.name, workspace: w.name, enabled: b.spec.enabled, inbox: inbox, terminals: terminals,
-                    routines: routines, now: now))
+                    routines: routines))
             }
         }
     }

@@ -14,10 +14,8 @@ pub enum Action {
         item: String,
         index: usize,
     },
-    Later {
-        item: String,
-        minutes: u32,
-    },
+    /// Moves an item to the bottom (ADR 0091).
+    Later(String),
     /// Closes the Task of a Review item; `force` removes worktrees that hold work.
     Approve {
         item: String,
@@ -43,7 +41,7 @@ pub enum Action {
 }
 
 /// The request for `action`; a Capture first needs [`capture_add`].
-pub fn request(action: &Action, now: i64) -> Value {
+pub fn request(action: &Action) -> Value {
     match action {
         Action::List => json!({"type": "inbox"}),
         Action::Capture(text) => json!({"type": "parse-capture", "text": text,
@@ -52,9 +50,7 @@ pub fn request(action: &Action, now: i64) -> Value {
         Action::Reopen(item) => json!({"type": "inbox-reopen", "item": item}),
         Action::Delete(item) => json!({"type": "inbox-delete", "item": item}),
         Action::Move { item, index } => json!({"type": "inbox-move", "item": item, "index": index}),
-        Action::Later { item, minutes } => {
-            json!({"type": "inbox-later", "item": item, "until": now + i64::from(*minutes) * 60})
-        }
+        Action::Later(item) => json!({"type": "inbox-later", "item": item}),
         Action::Approve { item, force } => {
             let worktree = if *force { "force" } else { "remove" };
             json!({"type": "inbox-approve", "item": item, "worktree": worktree})
@@ -81,8 +77,8 @@ pub fn capture_add(parsed: &Value) -> Value {
     add
 }
 
-/// `id  kind  title  [#workspace] [due D] [later]`, open items in order.
-pub fn rows(inbox: &Value, now: i64) -> Vec<String> {
+/// `id  kind  title  [#workspace] [due D]`, open items in order.
+pub fn rows(inbox: &Value) -> Vec<String> {
     inbox["items"]
         .as_array()
         .into_iter()
@@ -100,9 +96,6 @@ pub fn rows(inbox: &Value, now: i64) -> Vec<String> {
             if let Some(d) = i["due"].as_str() {
                 row.push_str(&format!("\tdue {d}"));
             }
-            if i["later_until"].as_i64().is_some_and(|t| t > now) {
-                row.push_str("\tlater");
-            }
             row
         })
         .collect()
@@ -116,26 +109,22 @@ mod tests {
     fn rows_show_what_the_item_asks() {
         let inbox = json!({"items": [
             {"id": "i2", "kind": "reply", "title": "the bank", "workspace": "Personal", "due": "2026-11-27"},
-            {"id": "i1", "kind": "todo", "title": "milk", "later_until": 200}]});
+            {"id": "i1", "kind": "todo", "title": "milk"}]});
         assert_eq!(
-            rows(&inbox, 100),
+            rows(&inbox),
             [
                 "i2\treply\tthe bank\t#Personal\tdue 2026-11-27",
-                "i1\ttodo\tmilk\tlater"
+                "i1\ttodo\tmilk"
             ]
         );
     }
 
     #[test]
-    fn later_counts_from_now() {
-        let r = request(
-            &Action::Later {
-                item: "i1".into(),
-                minutes: 30,
-            },
-            1000,
+    fn later_sends_no_time_and_capture_adds_the_parsed_fields() {
+        assert_eq!(
+            request(&Action::Later("i1".into())),
+            json!({"type": "inbox-later", "item": "i1"})
         );
-        assert_eq!(r["until"], 2800);
         let add = capture_add(&json!({"capture": {"kind": "read", "title": "RFC"}}));
         assert_eq!(
             add,

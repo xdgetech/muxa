@@ -8,7 +8,6 @@ struct HomeInboxRow: View {
     /// From 1; nil for a Done item.
     let position: Int?
     let selected: Bool
-    let now: Int64
     /// False when a filter or Done makes the order partial.
     var draggable = true
 
@@ -38,13 +37,6 @@ struct HomeInboxRow: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if item.isLater(now: now) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.textTertiary)
-                        .padding(.top, 3)
-                        .accessibilityLabel("Later")
-                }
                 if let due = item.due { DuePill(due: due).padding(.top, 1) }
             }
             .padding(.vertical, 7)

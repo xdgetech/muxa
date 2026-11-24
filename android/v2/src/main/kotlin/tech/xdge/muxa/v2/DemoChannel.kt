@@ -186,8 +186,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 }
             }
             "inbox-later" -> change(id) { i ->
-                if (i.items.none { it.id == item }) return@change null
-                i.copy(items = i.items.map { if (it.id == item) it.copy(laterUntil = m.long("until")) else it })
+                val moved = i.items.firstOrNull { it.id == item } ?: return@change null
+                i.copy(items = i.items - moved + moved)
             }
             "inbox-done" -> change(id) { i ->
                 val done = i.items.firstOrNull { it.id == item } ?: return@change null

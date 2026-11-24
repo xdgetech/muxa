@@ -159,7 +159,7 @@ actor DemoServer {
             let new = InboxItem(
                 id: "d\(nextItem)", kind: ItemKind(rawValue: m["kind"] as? String ?? "") ?? .todo,
                 title: m["title"] as? String ?? "", note: m["note"] as? String,
-                workspace: m["workspace"] as? String, due: m["due"] as? String, laterUntil: nil,
+                workspace: m["workspace"] as? String, due: m["due"] as? String,
                 created: Int64(Date().timeIntervalSince1970), source: "capture")
             nextItem += 1
             change(id) { $0.items.insert(new, at: 0) }
@@ -172,10 +172,9 @@ actor DemoServer {
                 return true
             }
         case "inbox-later":
-            let until = (m["until"] as? NSNumber)?.int64Value
             change(id) { inbox in
                 guard let at = inbox.items.firstIndex(where: { $0.id == item }) else { return false }
-                inbox.items[at].laterUntil = until
+                inbox.items.append(inbox.items.remove(at: at))
                 return true
             }
         case "inbox-done":
@@ -197,7 +196,7 @@ actor DemoServer {
             let t = content.terminals.first { $0.id == m["terminal"] as? String }
             let review = InboxItem(
                 id: "d\(nextItem)", kind: .review, title: "Review \(t?.branch ?? "the Task")",
-                note: m["note"] as? String, workspace: nil, due: nil, laterUntil: nil,
+                note: m["note"] as? String, workspace: nil, due: nil,
                 created: Int64(Date().timeIntervalSince1970), source: "task", terminal: t?.id)
             nextItem += 1
             change(id) { $0.items.insert(review, at: 0) }
@@ -371,7 +370,7 @@ actor DemoServer {
         let parts = accept ? s.split.map { title -> InboxItem in
             defer { nextItem += 1 }
             return InboxItem(id: "d\(nextItem)", kind: s.kind ?? found.kind, title: title,
-                             workspace: s.workspace ?? found.workspace, due: s.due ?? found.due, laterUntil: nil,
+                             workspace: s.workspace ?? found.workspace, due: s.due ?? found.due,
                              created: now, source: "capture")
         } : []
         change(id) { inbox in

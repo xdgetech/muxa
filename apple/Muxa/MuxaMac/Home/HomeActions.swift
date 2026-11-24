@@ -79,7 +79,7 @@ struct HomeActions: View {
                 .buttonStyle(ActionButtonStyle())
                 .accessibilityIdentifier("detail.maketask")
         }
-        laterMenu
+        later
         if item.closesTask {
             Button { Task { await act(.inboxDone(item: item.id)) } } label: {
                 ActionLabel(title: "Done", key: Shortcut.done.display)
@@ -98,16 +98,11 @@ struct HomeActions: View {
             .accessibilityIdentifier("detail.reopen")
     }
 
-    private var laterMenu: some View {
-        Menu {
-            ForEach(LaterChoice.allCases) { choice in
-                Button(choice.title) { Task { await act(.inboxLater(item: item.id, until: choice.until())) } }
-            }
-        } label: {
+    /// Moves the item to the bottom of the Inbox (ADR 0091).
+    private var later: some View {
+        Button { Task { await act(.inboxLater(item: item.id)) } } label: {
             ActionLabel(title: "Later", key: Shortcut.later.display)
         }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
         .buttonStyle(ActionButtonStyle())
         .fixedSize()
         .accessibilityIdentifier("detail.later")
@@ -125,10 +120,10 @@ struct HomeActions: View {
         .fixedSize()
     }
 
-    /// `⌘L`: Later until tomorrow morning, the usual choice. `⌘⌫`: Done.
+    /// `⌘L`: Later. `⌘⌫`: Done.
     private var hiddenKeys: some View {
         Group {
-            Button("") { Task { await act(.inboxLater(item: item.id, until: LaterChoice.tomorrow.until())) } }
+            Button("") { Task { await act(.inboxLater(item: item.id)) } }
                 .keyboardShortcut("l", modifiers: .command)
             Button("") { Task { await act(.inboxDone(item: item.id)) } }
                 .keyboardShortcut(.delete, modifiers: .command)

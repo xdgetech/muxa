@@ -2,15 +2,14 @@ import MuxaV2
 import SwiftUI
 
 /// The Inbox's filter as the mock's chips: All and each kind with its count,
-/// then the Workspace and Later/Done as small menus.
+/// then the Workspace and Done as small menus.
 struct InboxFilterChips: View {
     @Binding var filter: InboxFilter
     let items: [InboxItem]
-    let now: Int64
 
     var body: some View {
         // Counts ignore the kind, so each chip says what picking it shows.
-        let pool = InboxFilter(workspace: filter.workspace, showLater: filter.showLater).apply(items, now: now)
+        let pool = InboxFilter(workspace: filter.workspace).apply(items)
         ChipFlow(spacing: 6) {
             chip("All", count: pool.count, on: filter.kind == nil, id: "inbox.filter.all") { filter.kind = nil }
             ForEach(kinds(in: pool), id: \.self) { kind in
@@ -60,22 +59,12 @@ struct InboxFilterChips: View {
 
     private var showMenu: some View {
         Menu {
-            Toggle("Show Later Items", isOn: $filter.showLater)
             Toggle("Show Done", isOn: $filter.showDone)
         } label: {
-            Text(showTitle).chipFrame(on: false)
+            Text(filter.showDone ? "Done ▾" : "Show ▾").chipFrame(on: false)
         }
         .chipMenu()
         .accessibilityIdentifier("inbox.filter")
-    }
-
-    private var showTitle: String {
-        switch (filter.showLater, filter.showDone) {
-        case (true, true): "Later, Done ▾"
-        case (true, false): "Later ▾"
-        case (false, true): "Done ▾"
-        case (false, false): "Show ▾"
-        }
     }
 }
 

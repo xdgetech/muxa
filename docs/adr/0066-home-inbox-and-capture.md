@@ -4,6 +4,8 @@
 
 Proposed (2026-11-21). Product description: `docs/next.md`.
 
+ADR 0091 changes §7's Later: it moves an item to the bottom, and nothing is hidden.
+
 The removal is done (2026-11-22, plan C3). Two decisions came with it:
 
 - Workspace memory (ADR 0053) is removed too. Its copy into a run's folder and its `memory` items ran through the assistant's notes code. ADR 0053 is superseded.

@@ -1,11 +1,10 @@
 {
-  "now": 1000,
   "inbox": {
     "revision": 1,
     "items": [
       {"id": "i1", "kind": "decide", "title": "Approve PR 57?", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch"},
-      {"id": "i2", "kind": "read", "title": "Back at 2000", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch", "later_until": 2000},
-      {"id": "i3", "kind": "read", "title": "Back already", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch", "later_until": 500},
+      {"id": "i2", "kind": "read", "title": "Weekly notes", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch"},
+      {"id": "i3", "kind": "read", "title": "From an older server", "created": 900, "source": "routine", "workspace": "app", "bot": "pr-watch", "later_until": 2000},
       {"id": "i4", "kind": "todo", "title": "Other Workspace", "created": 900, "source": "routine", "workspace": "Personal", "bot": "pr-watch"},
       {"id": "i5", "kind": "todo", "title": "Captured", "created": 900, "source": "capture", "workspace": "app"}
     ],
@@ -41,7 +40,7 @@
   ],
   "cases": [
     {"bot": "pr-watch", "workspace": "app", "enabled": true,
-     "items": ["i1", "i3"], "terminals": ["t1", "t2"], "needs_you": ["i1", "i3", "t2"], "in_progress": ["t1"],
+     "items": ["i1", "i2", "i3"], "terminals": ["t1", "t2"], "needs_you": ["i1", "i2", "i3", "t2"], "in_progress": ["t1"],
      "planned": ["sweep", "scan", "review"], "recent": ["i9"], "status": "needs-you"},
     {"bot": "weekly", "workspace": "app", "enabled": true,
      "items": [], "terminals": ["t5", "t6"], "needs_you": ["t6"], "in_progress": ["t5"],
