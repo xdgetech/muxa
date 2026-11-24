@@ -60,6 +60,8 @@ struct BotDraft: Identifiable {
     var handoffs = ""
     /// Shell commands only this Bot may run (ADR 0088).
     var commands: [EditableLine] = []
+    /// Its own order of its Workspace's subscriptions (ADR 0091); empty: the Workspace's.
+    var subscriptions: [String] = []
     var soul = ""
     /// The Soul as read; nil when it could not be read.
     var readSoul: String?
@@ -77,6 +79,7 @@ struct BotDraft: Identifiable {
         members = b.spec.members
         handoffs = b.spec.handoffsPerDay.map(String.init) ?? ""
         commands = b.spec.commands.map(EditableLine.init)
+        subscriptions = b.spec.subscriptions
         soul = b.soulText ?? ""
         readSoul = b.soulText
     }
@@ -87,7 +90,7 @@ struct BotDraft: Identifiable {
         return BotSpec(name: name, description: Lines.optional(description), worker: Lines.optional(worker),
                        dailyItems: UInt32(Lines.trimmed(dailyItems)), enabled: enabled, members: members,
                        handoffsPerDay: members.isEmpty ? nil : UInt32(Lines.trimmed(handoffs)),
-                       commands: commands.map { Lines.trimmed($0.text) })
+                       commands: commands.map { Lines.trimmed($0.text) }, subscriptions: subscriptions)
     }
 
     /// Why a command cannot be saved: the host takes the inside of `Bash(…)`, 500 bytes at most.
@@ -256,6 +259,22 @@ struct BotSettingsSections: View {
         }
         team
         commands
+        logins
+    }
+
+    /// A Bot runs on its Workspace's logins only (ADR 0091 §4): a login carries
+    /// connectors and settings, and the Workspace is the boundary.
+    @ViewBuilder
+    private var logins: some View {
+        if !workspace.subscriptions.isEmpty {
+            Section {
+                SubscriptionOrder(names: $draft.subscriptions, available: workspace.subscriptions, id: "bot.subs")
+            } header: {
+                Text("Subscriptions")
+            } footer: {
+                Text("Empty: \(workspace.name)'s order. To run it on another login, add that login to \(workspace.name) first.")
+            }
+        }
     }
 
     /// A team lead hands work to its members (ADR 0085). A member leads no team.

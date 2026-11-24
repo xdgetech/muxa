@@ -86,19 +86,40 @@ struct TaskPlacesSection: View {
 
 /// What every agent of the Workspace gets (ADR 0075); Settings changes it.
 struct TaskToolsSection: View {
+    @Environment(NextModel.self) private var model
     let workspace: Workspace
 
     var body: some View {
-        if let line = Self.line(for: workspace) {
+        let login = Self.login(for: workspace, settings: model.settings)
+        if Self.line(for: workspace) != nil || login != nil {
             Section {
-                Text(line)
-                    .font(.callout)
-                    .foregroundStyle(Palette.textSecondary)
-                    .accessibilityIdentifier("task.tools")
+                if let line = Self.line(for: workspace) {
+                    Text(line)
+                        .font(.callout)
+                        .foregroundStyle(Palette.textSecondary)
+                        .accessibilityIdentifier("task.tools")
+                }
+                if let login {
+                    Text(login)
+                        .font(.callout)
+                        .foregroundStyle(Palette.textSecondary)
+                        .accessibilityIdentifier("task.subscription")
+                }
             } footer: {
                 Text("Change them in Settings.")
             }
         }
+    }
+
+    /// "Runs on claude-work · 82% of 5 h" (ADR 0091 §7): the first of the
+    /// Workspace's subscriptions for its agent, as the host picks it. No
+    /// picker: the order is the Workspace's.
+    static func login(for ws: Workspace, settings: SettingsModel) -> String? {
+        guard let names = settings.workspace(ws.name)?.subscriptions, !names.isEmpty else { return nil }
+        let kind = ws.agent?.hasSuffix("codex") == true ? "codex" : "claude-code"
+        let subs = settings.settings?.subscriptions ?? []
+        guard let name = names.first(where: { n in subs.contains { $0.name == n && $0.agent == kind } }) else { return nil }
+        return "Runs on \(name) · \(PlanWindow.line(settings.limits(name)))"
     }
 
     /// "This Workspace's agents get: github, linear · MCP: docs", or nil when it has neither.

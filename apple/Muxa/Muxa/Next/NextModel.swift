@@ -408,6 +408,17 @@ final class NextModel {
         return started
     }
 
+    /// The login terminal of a subscription (ADR 0091 §7), kept at once so Focus shows it.
+    func startLogin(_ subscription: String) async -> Terminal? {
+        var started: Terminal?
+        await run { c in
+            let (t, _) = try await c.loginStart(subscription)
+            if let at = self.terminals.firstIndex(where: { $0.id == t.id }) { self.terminals[at] = t } else { self.terminals.append(t) }
+            started = t
+        }
+        return started
+    }
+
     func closeShell(_ terminal: String) async {
         await run { c in
             try await c.closeTerminal(terminal)

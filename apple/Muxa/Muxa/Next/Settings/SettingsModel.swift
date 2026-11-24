@@ -11,6 +11,8 @@ final class SettingsModel {
     private(set) var settings: Settings?
     /// The `workspaces` reply by name, for `used_by` and `last_used`.
     private(set) var usage: [String: Workspace] = [:]
+    /// What each subscription's agents last reported of its plan limits (ADR 0091).
+    private(set) var planUsage: [SubscriptionUsage] = []
     /// Why the settings could not be read.
     private(set) var loadError: String?
     /// Shown above the settings until the next save: a conflict or a lock.
@@ -41,9 +43,21 @@ final class SettingsModel {
             if let list = try? await c.workspaces() {
                 usage = Dictionary(list.map { ($0.name, $0) }) { _, b in b }
             }
+            await loadPlanUsage()
         } catch {
             loadError = NextModel.describe(error)
         }
+    }
+
+    /// Reads the plan limits again; an older host answers none.
+    func loadPlanUsage() async {
+        guard let c = try? client() else { return }
+        planUsage = (try? await c.subscriptions()) ?? []
+    }
+
+    /// The last report of subscription `name`.
+    func limits(_ name: String) -> SubscriptionUsage? {
+        planUsage.first { $0.name == name }
     }
 
     /// Sends `ops` with the current revision. Returns nil when they applied,
@@ -75,6 +89,7 @@ final class SettingsModel {
     func reset() {
         settings = nil
         usage = [:]
+        planUsage = []
         loadError = nil
         notice = nil
         locked = false

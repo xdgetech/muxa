@@ -9,10 +9,12 @@ struct WorkspaceAgentForm: View {
     @State private var command: String
     @State private var env: EnvDraft?
     @State private var error: String?
+    @State private var subscriptions: [String]
 
     init(workspace: SettingsWorkspace) {
         self.workspace = workspace
         _command = State(initialValue: workspace.agent.command ?? "")
+        _subscriptions = State(initialValue: workspace.subscriptions)
     }
 
     var body: some View {
@@ -41,6 +43,7 @@ struct WorkspaceAgentForm: View {
         } footer: {
             Text("Empty: the daemon's --task-command, usually claude.")
         }
+        logins
         environment
         SaveError(text: error, id: "settings.error")
         LoopChecksSection(workspace: workspace)
@@ -67,6 +70,33 @@ struct WorkspaceAgentForm: View {
         } footer: {
             Text("Every agent of the Workspace gets these. Values are write-only: the host never sends them back.")
         }
+    }
+
+    /// The subscriptions its agents use, in order (ADR 0091): each agent takes
+    /// the first of its kind. A login its env names is adopted from here.
+    private var logins: some View {
+        Section {
+            SubscriptionOrder(names: $subscriptions, available: model.settings.subscriptionNames(), id: "ws.subs")
+            if subscriptions != workspace.subscriptions {
+                Button("Save Subscriptions") { save([.workspaceUpdate(workspace: workspace.name, subscriptions: subscriptions)]) }
+                    .accessibilityIdentifier("ws.subs.save")
+            }
+            ForEach(envLogins, id: \.self) { f in
+                Button("Make Its Env Login a Subscription", systemImage: "arrow.down.doc") { save([Found.op(f)]) }
+                    .accessibilityIdentifier("ws.subs.adopt")
+            }
+        } header: {
+            Text("Subscriptions")
+        } footer: {
+            Text(envLogins.isEmpty
+                ? "Each agent takes the first subscription of its kind. Empty: the agent's default login."
+                : "Its env names a login. As a subscription, it shows its usage and the Workspace can list a second one.")
+        }
+        .onChange(of: workspace.subscriptions) { _, new in subscriptions = new }
+    }
+
+    private var envLogins: [FoundLogin] {
+        (model.settings.settings?.foundLogins ?? []).filter { $0.workspace == workspace.name }
     }
 
     private func save(_ ops: [SettingsOp]) {
