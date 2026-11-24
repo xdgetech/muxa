@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -247,4 +248,4 @@ private fun ProposalBar(model: NextModel, item: InboxItem, modifier: Modifier) {
 }
 
 private val SHAPE = RoundedCornerShape(12.dp)
-private val PROPOSAL = Palette.accent.copy(alpha = 0.12f)
+private val PROPOSAL: Color get() = Palette.accent.copy(alpha = 0.12f)

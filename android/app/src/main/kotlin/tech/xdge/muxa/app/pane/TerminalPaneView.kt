@@ -3,7 +3,6 @@ package tech.xdge.muxa.app.pane
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.text.InputType
@@ -19,6 +18,7 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.OverScroller
 import androidx.core.graphics.withTranslation
+import tech.xdge.muxa.app.ui.ThemeStore
 import tech.xdge.muxa.session.Composition
 import tech.xdge.muxa.session.KeyBar
 import tech.xdge.muxa.session.KeyMap
@@ -100,11 +100,20 @@ class TerminalPaneView(context: Context) : View(context) {
     private val scroller = OverScroller(context)
     private var dragging = false
 
+    /** The theme's terminal colors; Compose sets new ones when the pick changes. */
+    var colors: TerminalColors = TerminalColors(ThemeStore.current.resolved.terminal)
+        set(value) {
+            if (value === field) return
+            field = value
+            setBackgroundColor(value.background)
+            invalidate()
+        }
+
     init {
         isFocusable = true
         isFocusableInTouchMode = true
         contentDescription = "Pane"
-        setBackgroundColor(Palette.BACKGROUND)
+        setBackgroundColor(colors.background)
     }
 
     /** The screen as text, for accessibility and UI tests. */
@@ -255,7 +264,7 @@ class TerminalPaneView(context: Context) : View(context) {
         }
         if (s.cursorVisible && !composition.isComposing) {
             val (l, t, r, b) = cursorRect().toList()
-            fill.color = CURSOR
+            fill.color = colors.cursor
             canvas.drawRect(l, t, r, b, fill)
         }
         if (composition.isComposing) drawComposition(canvas)
@@ -263,12 +272,12 @@ class TerminalPaneView(context: Context) : View(context) {
 
     private fun drawRun(canvas: Canvas, run: tech.xdge.muxa.terminal.Run, top: Float) {
         val style = run.style
-        var fg = Palette.foreground(style.foreground, style.bold)
-        var bg = Palette.background(style.background)
+        var fg = colors.foreground(style.foreground, style.bold)
+        var bg = colors.background(style.background)
         if (style.inverse) fg = bg.also { bg = fg }
-        if (style.dim) fg = Palette.dim(fg)
+        if (style.dim) fg = TerminalColors.dim(fg)
         val x0 = run.column * cellWidth
-        if (bg != Palette.BACKGROUND) {
+        if (bg != colors.background) {
             fill.color = bg
             canvas.drawRect(x0, top, x0 + run.text.length * cellWidth, top + cellHeight, fill)
         }
@@ -291,9 +300,9 @@ class TerminalPaneView(context: Context) : View(context) {
         val w = paint.measureText(text)
         val (l, t, _, _) = cursorRect().toList()
         val x = min(l, max(0f, gridWidth - w))
-        fill.color = Palette.BACKGROUND
+        fill.color = colors.background
         canvas.drawRect(x, t, x + w, t + cellHeight, fill)
-        paint.color = Palette.FOREGROUND
+        paint.color = colors.foreground
         paint.isFakeBoldText = false
         paint.textSkewX = 0f
         paint.isUnderlineText = true
@@ -581,8 +590,6 @@ class TerminalPaneView(context: Context) : View(context) {
     }
 
     private companion object {
-        val CURSOR = Color.argb(160, 220, 220, 220)
-
         /** How far, in rows, a drag pulls down past the top before the scrollback opens. */
         const val PULL_ROWS = 3
 

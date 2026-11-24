@@ -1,6 +1,7 @@
 package tech.xdge.muxa.app
 
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.KeyboardShortcutGroup
@@ -10,10 +11,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.next.NextModel
 import tech.xdge.muxa.app.next.NextRoot
+import tech.xdge.muxa.app.ui.AppTheme
 import tech.xdge.muxa.app.ui.MuxaTheme
+import tech.xdge.muxa.app.ui.ThemeStore
+import tech.xdge.muxa.session.ThemeToken
 
 /**
  * One app window on protocol v2: Home and Focus (ADR 0066, 0067). Each window has
@@ -26,8 +32,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // The design is dark only, so the bars keep light icons whatever the system setting.
-        enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
+        follow(ThemeStore.current)
         windowId = app.windows.claim(savedInstanceState?.getString(KEY_WINDOW) ?: intent.getStringExtra(EXTRA_WINDOW))
         model = app.windows.model(windowId)
         // Debug builds only, for the UI tests: `adb shell am start ... --ez demo true`.
@@ -37,7 +42,25 @@ class MainActivity : ComponentActivity() {
             // The app's start or a new window: connect to the host last used.
             model.scope.launch { model.resumeOrLastHost() }
         }
-        setContent { MuxaTheme { NextRoot(model) } }
+        setContent {
+            val theme = ThemeStore.current
+            LaunchedEffect(theme) { follow(theme) }
+            MuxaTheme { NextRoot(model) }
+        }
+    }
+
+    /**
+     * What Compose does not draw: the window behind it, seen during a resize, and the
+     * system bars' icons, which follow the theme's appearance, not the system's.
+     */
+    private fun follow(theme: AppTheme) {
+        window.setBackgroundDrawable(ColorDrawable(theme[ThemeToken.ground].toArgb()))
+        val bars = if (theme.isDark) {
+            SystemBarStyle.dark(Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(bars, bars)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

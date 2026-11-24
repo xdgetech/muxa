@@ -209,7 +209,7 @@ private fun UploadButton(model: NextModel, terminal: Terminal) {
 }
 
 /** Covers the terminal, and keeps touches from reaching it. */
-private val Cover = Modifier.fillMaxSize().background(Palette.ground).pointerInput(Unit) {}
+private val Cover: Modifier get() = Modifier.fillMaxSize().background(Palette.ground).pointerInput(Unit) {}
 
 @Composable
 private fun Header(

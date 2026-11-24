@@ -76,18 +76,23 @@ fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
 
 /**
  * The host, then its settings (ADR 0074): the Workspaces list or one Workspace, the workers and the
- * Capture assistant. A talk with a Bot opens its Task with [open].
+ * Capture assistant; last, this device's Appearance (ADR 0091). A talk with a Bot opens its Task with [open].
  */
 @Composable
 private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
     val editor = remember(model) { SettingsEditor(model.settingsHost) }
     var usage by remember { mutableStateOf<List<Workspace>>(emptyList()) }
     var openWorkspace by remember { mutableStateOf<String?>(null) }
+    var appearance by remember { mutableStateOf(false) }
     LaunchedEffect(editor) { editor.load() }
     // Tasks that start or end change who uses what: ask again when the live terminals change.
     val live = model.terminals.filter { it.live }.map { it.id }
     LaunchedEffect(live) { model.workspaces()?.let { usage = it } }
 
+    if (appearance) {
+        Column(Modifier.padding(bottom = 16.dp)) { AppearanceSettings { appearance = false } }
+        return
+    }
     Column(Modifier.padding(bottom = 16.dp)) {
         val settings = editor.settings
         val ws = settings?.workspaces?.firstOrNull { it.name == openWorkspace }
@@ -106,6 +111,8 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
                 AssistantSection(editor)
             }
         }
+        // The theme is the device's, so it shows even when the host's settings do not load.
+        if (ws == null) AppearanceRow { appearance = true }
     }
 }
 
