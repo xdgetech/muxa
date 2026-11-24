@@ -191,11 +191,11 @@ extension DemoContent {
     }()
 
     /// What pr-watch proposed in a talk: a turned-off Routine of its own and
-    /// more items a day, against the demo's first settings revision.
+    /// the commands it may run, against the demo's first settings revision.
     private static let proposal: InboxItem = {
         let sweep = RoutineSpec(name: "nightly-sweep", at: "02:30", timezone: "Europe/Berlin",
                                 instructions: "routines/nightly-sweep.md", enabled: false, bot: "pr-watch", readOnly: true)
-        let watch = BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me", dailyItems: 5,
+        let watch = BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me",
                             commands: ["gh pr list:*", "gh pr diff:*"])
         var i = InboxItem(
             id: "d12", kind: .decide, title: "pr-watch proposes: a nightly sweep of stale PRs",

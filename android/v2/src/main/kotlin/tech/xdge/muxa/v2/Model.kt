@@ -103,7 +103,7 @@ data class BotCount(
     val deleted: Long,
     /** The host's local date of [added], `YYYY-MM-DD`; empty from older servers (ADR 0086). */
     val day: String = "",
-    /** Items that counted against the Bot's daily limit on [day]. */
+    /** Items the Bot's runs added on [day]. */
     val added: Long = 0,
 )
 

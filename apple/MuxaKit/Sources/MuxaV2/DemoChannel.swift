@@ -193,6 +193,16 @@ actor DemoServer {
                 inbox.done.removeAll { $0.id == item }
                 return inbox.items.count + inbox.done.count < before
             }
+        case "inbox-delete-older":
+            guard let days = (m["days"] as? NSNumber)?.int64Value, (1...3650).contains(days) else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "days must be 1 to 3650"])
+            }
+            let cutoff = Int64(Date().timeIntervalSince1970) - days * 86_400
+            change(id) { inbox in
+                inbox.items.removeAll { $0.created < cutoff }
+                inbox.done.removeAll { $0.created < cutoff }
+                return true
+            }
         case "task-review":
             let t = content.terminals.first { $0.id == m["terminal"] as? String }
             let review = InboxItem(

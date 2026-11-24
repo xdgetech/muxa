@@ -65,7 +65,7 @@ struct BotPage: View {
                         .padding(.vertical, 2)
                         .background(status.badgeBackground, in: RoundedRectangle(cornerRadius: 6))
                         .accessibilityIdentifier("bot.status")
-                    Text("\(entry.workspace.name) · \(entry.bot.spec.dailyItems ?? 3) items a day")
+                    Text(entry.workspace.name)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.textSecondary)
                         .lineLimit(1)

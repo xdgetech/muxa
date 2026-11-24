@@ -13,12 +13,15 @@ struct HomeInboxColumn: View {
     var open: (InboxItem) -> Void
     @FocusState private var focused: Bool
     @State private var dropTarget: String?
+    @State private var deleteOlder: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Inbox").font(.system(size: 22, weight: .bold))
                 Text(lead).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                Spacer(minLength: 0)
+                moreMenu
             }
             captureButton
             InboxFilterChips(filter: $filter, items: model.inbox.items, now: now)
@@ -26,6 +29,21 @@ struct HomeInboxColumn: View {
         }
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 10, trailing: 16))
         .background { ReorderKeys(selected: selected) }
+        .inboxDeleteOlder($deleteOlder)
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            InboxDeleteOlderMenu(days: $deleteOlder)
+        } label: {
+            Image(systemName: "ellipsis.circle").foregroundStyle(Palette.textSecondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(!model.isConnected)
+        .help("Inbox actions")
+        .accessibilityIdentifier("inbox.more")
     }
 
     var visible: [InboxItem] { filter.apply(model.inbox.items, now: now) }

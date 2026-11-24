@@ -157,6 +157,24 @@ class ServerTest {
     }
 
     @Test
+    fun deleteOlderKeepsANewItemAndRefusesDaysOutOfRange() = runBlocking {
+        withTimeout(10_000) {
+            val mac = connect()
+            mac.inbox(V2Request.InboxAdd(Capture(ItemKind.TODO, "fresh")))
+            assertTrue(mac.inbox(V2Request.InboxDeleteOlder(1)).items.any { it.title == "fresh" })
+            for (days in listOf(0, 3651)) {
+                try {
+                    mac.inbox(V2Request.InboxDeleteOlder(days))
+                    fail("$days days")
+                } catch (e: V2Error.Refused) {
+                    assertEquals("bad-request", e.code)
+                }
+            }
+            mac.close()
+        }
+    }
+
+    @Test
     fun workspacesListTheHostsWorkspace() = runBlocking {
         withTimeout(10_000) {
             val c = connect()

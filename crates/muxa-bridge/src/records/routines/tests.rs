@@ -304,14 +304,14 @@ fn a_bot_owns_routines_that_run_as_the_workspaces_agent() {
     let config = f
         .load(
             "[[bot]]\nname = 'pr-watch'\ndescription = 'Watches my PRs'\n\
-             worker = 'Researcher'\nenabled = true\n\
+             worker = 'Researcher'\nenabled = true\ndaily_items = 0\n\
              [[routine]]\nname = 'Scan'\ninstructions = 'scan.md'\nenabled = true\n\
              bot = 'pr-watch'\nread_only = true\nschedule = '*/30 9-18 * * 1-5'\ntimezone = 'UTC'\n\
              [[routine]]\nname = 'Plain'\ninstructions = 'p.md'\nenabled = true\n",
         )
         .unwrap();
     let bot = config.bot("Company", "pr-watch").unwrap();
-    assert_eq!(bot.daily_items, crate::records::bots::DEFAULT_DAILY_ITEMS);
+    // ADR 0091: a `daily_items` from before, even out of its old range, loads.
     assert_eq!(bot.description.as_deref(), Some("Watches my PRs"));
     let scan = config.routine("Company", "Scan").unwrap();
     assert_eq!(scan.bot.as_deref(), Some("pr-watch"));
@@ -349,10 +349,6 @@ fn bad_bots_break_only_their_file() {
         (
             "[[bot]]\nname = 'b'\nenabled = true\n[[bot]]\nname = 'b'\nenabled = true\n",
             "appears twice",
-        ),
-        (
-            "[[bot]]\nname = 'b'\nenabled = true\ndaily_items = 0\n",
-            "daily_items must be",
         ),
         (
             "[[bot]]\nname = 'b'\nenabled = true\nworker = 'Nobody'\n",

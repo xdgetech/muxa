@@ -52,6 +52,7 @@ struct FrameTests {
             == #"{"comment":"more","id":1,"item":"i3","type":"inbox-request-changes"}"#)
         #expect(try wire(.inboxRetry(item: "i3")) == #"{"id":1,"item":"i3","type":"inbox-retry"}"#)
         #expect(try wire(.workspaces) == #"{"id":1,"type":"workspaces"}"#)
+        #expect(try wire(.inboxDeleteOlder(days: 3)) == #"{"days":3,"id":1,"type":"inbox-delete-older"}"#)
     }
 
     @Test func anExistingPlaceMatchesTheSpec() throws {
