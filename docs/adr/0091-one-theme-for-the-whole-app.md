@@ -24,26 +24,34 @@ Today:
 2. **A theme is a small JSON file, and it may be partial.**
 
    ```json
-   { "schema": 1, "id": "dracula", "name": "Dracula", "extends": "muxa-dark",
-     "appearance": "dark",
+   { "schema": 1, "id": "dracula", "name": "Dracula", "appearance": "dark",
      "terminal": { "background": "#282a36", "foreground": "#f8f8f2",
                    "cursor": "#f8f8f2", "selection": "#44475a", "ansi": ["#21222c", "…"] },
      "tokens": { "accent": "#bd93f9" } }
    ```
 
-   - Required: `schema`, `id`, `name`, `terminal.background` and `terminal.foreground`. Everything else is optional.
-   - Unknown keys are ignored. Missing tokens are derived. A file written today still loads after tokens are added, and an older app loads a newer file.
+   Editing one color of Dracula is a file with only that color:
+
+   ```json
+   { "schema": 1, "id": "dracula-pink", "name": "Dracula Pink", "extends": "dracula",
+     "tokens": { "accent": "#ff79c6" } }
+   ```
+
+   - Required: `schema`, `id` and `name`, and a `terminal` with `background` and `foreground` unless the file has `extends`. Everything else is optional.
+   - Unknown keys, unknown token names and an unknown `appearance` are ignored. Missing tokens are derived. A file written today still loads after tokens are added, and an older app loads a newer file.
+   - `schema` is raised only for a change older apps must not read. They refuse such a file and say a newer muxa is needed.
+   - A known token with a value that is not `#rrggbb` makes the file fail to load, with the token's name in the error.
+   - An `id` uses only letters, digits, `.`, `_` and `-`, because it names the file.
    - The app stores a theme file as written. It never stores resolved colors.
 
-3. **Resolving a theme** is one pure function on each platform:
-   1. Resolve the `extends` parent first. A cycle or an unknown parent falls back to `muxa-dark`.
-   2. Take the terminal palette: the file's, else the parent's.
-   3. Derive the base tokens from the palette (decision 5).
-   4. Apply the parent's `tokens` overrides, then the file's, to the base tokens.
-   5. Derive the component tokens from the base tokens.
-   6. Apply the overrides to the component tokens.
+3. **Resolving a theme** is one pure function on each platform (`ThemeRegistry` in `MuxaSession` and in Android's `:session`):
+   1. Follow `extends` to the root. A cycle or an unknown parent ends the chain there. A chain with no terminal colors starts from `muxa-dark`.
+   2. Take the last terminal palette in the chain.
+   3. Collect the `tokens` overrides, the root's first. A later file wins.
+   4. Compute each token in the appendix's order. An override replaces a token before later tokens read it.
 
-   Components come from base tokens, so a change to `accent` alone also changes the info, read and diff-hunk colors.
+   Later tokens are built on earlier ones, so a change to `accent` alone also changes the done, info and read colors.
+   Inheriting from `muxa-dark` keeps all of its colors, because it pins every token. A theme with its own palette has no `extends`.
 
 4. **Two tiers of tokens with stable string keys.**
    - The appendix lists every key, its tier, its rule and its muxa Dark value. It is the contract for Apple, Android and the Reader.
@@ -54,7 +62,7 @@ Today:
    - `mix(a, b, p)` moves each channel of `a` toward `b` by `p` whole percent, rounded half up.
    - `ground` is the terminal background. Surfaces and borders mix the background toward the foreground.
    - `text` is the foreground. `textSecondary` and `textTertiary` mix the foreground toward the background. Each step is 1%, and the mix stops while the contrast on `ground` is still at least WCAG 4.5:1 and 3:1.
-   - Status colors come from ANSI 1–6 only:
+   - Status colors come from ANSI 1–5 only. Each is mixed toward `text` 1% at a time until it has 3:1 contrast on `ground` (4.5:1 for `failure`, which is text):
 
      | ANSI | Tokens |
      |---|---|
@@ -66,11 +74,12 @@ Today:
 
      Bright slots 8–15 are not used, because Solarized's are greys.
    - A palette without ANSI colors uses a fixed derivation fallback set: muxa Dark's status colors. The terminal itself still uses the platform's own ANSI colors, as today.
+   - Contrast uses WCAG 2 relative luminance in doubles. Swift and Kotlin compute it the same way. The shared fixture `apple/MuxaKit/Tests/MuxaSessionTests/Fixtures/themes.json` checks that both give the same bytes.
    - When the file has no `appearance`, a theme is dark if the background's relative luminance is below the foreground's.
-   - When the rules give a poor result, the theme file fixes it with overrides, not with a new rule. Solarized's low text contrast is one such case.
+   - When the rules give a poor result, the theme file fixes it with overrides, not with a new rule. Solarized's foreground has only 4.75:1 contrast and its red only 3.25:1. The derived text levels collapse and the red turns grey. `solarized-dark.json` therefore sets `text`, `textSecondary` and `textTertiary` to Solarized's base1, base0 and base00, and `failure` to its red lifted to 4.5:1.
 
 6. **Where themes come from.**
-   - **Bundled theme files:**
+   - **Bundled theme files** in `apple/MuxaKit/Sources/MuxaSession/Resources/themes/`, listed in order by `index.json`. Android's `:session` reads the same folder.
      - `muxa-dark`, the default, with every token pinned to today's values.
      - `ghostty`, `solarized-dark` and `dracula`.
    - **User theme files** in the app's own storage.
@@ -132,7 +141,8 @@ flowchart LR
 
 How to read the table:
 - `mix(a, b, p)` follows decision 5.
-- The percentages are first estimates. T1 sets them so that the derivation from the muxa palette lands near today's values. muxa Dark pins every value exactly in any case.
+- The rules are the ones `ThemeToken` implements, in this order. muxa Dark pins every value, so its look does not depend on them.
+- "Lifted" means mixed toward `text` 1% at a time until the contrast on `ground` is reached.
 - "Apple" and "Android" give today's names: `Palette.x` unless another type is named. A dash means that platform has no such color today.
 
 ### Base tokens
@@ -147,15 +157,15 @@ How to read the table:
 | `raised` | mix(ground, text, 8) | `#1E232B` | `raised` | `control` |
 | `border` | mix(ground, text, 11) | `#262B33` | `border` | `border` |
 | `text` | terminal foreground | `#E7E9EC` | `text` | `text` |
-| `textSecondary` | contrast step, 4.5:1 | `#A3ABB6` | `textSecondary` | `textSecondary` |
-| `textTertiary` | contrast step, 3:1 | `#8B94A0` | `textTertiary` | `textTertiary` |
-| `accent` | ANSI 4 | `#6AA6FF` | `accent` | `accent` |
-| `working` | ANSI 2 | `#3FC79A` | `TaskState.working` | `StateColors.working` |
-| `needsYou` | ANSI 3 | `#F5A524` | `TaskState.needsYou` | `StateColors.needsYou` |
+| `textSecondary` | mix(text, ground, 31), backed off to 4.5:1 | `#A3ABB6` | `textSecondary` | `textSecondary` |
+| `textTertiary` | mix(text, ground, 42), backed off to 3:1 | `#8B94A0` | `textTertiary` | `textTertiary` |
+| `accent` | ANSI 4, lifted to 3:1 | `#6AA6FF` | `accent` | `accent` |
+| `working` | ANSI 2, lifted to 3:1 | `#3FC79A` | `TaskState.working` | `StateColors.working` |
+| `needsYou` | ANSI 3, lifted to 3:1 | `#F5A524` | `TaskState.needsYou` | `StateColors.needsYou` |
 | `done` | `accent` | `#6AA6FF` | `TaskState.done` | `StateColors.done` |
 | `idle` | `textTertiary` | `#8B94A0` | `TaskState.idle` | `StateColors.idle` |
-| `failure` | ANSI 1, lightened to 4.5:1 | `#FF9B9B` | `late` | `Theme.failure`, `destructive` |
-| `decide` | ANSI 5 | `#CDB6FF` | `ItemKind.decide` text | `KindPalette.decide` content |
+| `failure` | ANSI 1, lifted to 4.5:1 | `#FF9B9B` | `late` | `Theme.failure`, `destructive` |
+| `decide` | ANSI 5, lifted to 3:1 | `#CDB6FF` | `ItemKind.decide` text | `KindPalette.decide` content |
 
 ### Component tokens
 
