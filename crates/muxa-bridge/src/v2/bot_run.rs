@@ -57,14 +57,22 @@ pub fn as_bot(command: LaunchCommand) -> LaunchCommand {
 
 /// Pure. muxa's deny `rules` with the Workspace's Bot rules (ADR 0087) and
 /// the Bot's own `commands` (ADR 0088): the Workspace's deny rules join
-/// muxa's; its allow rules and one `Bash(...)` per command come back.
+/// muxa's. The allow rules give the Bot its Workspace's access, which
+/// `dontAsk` refuses otherwise: edits in its own `dir`, reads in the
+/// Workspace and `read_dirs`, and the Workspace's MCP servers; then the
+/// Workspace's allow rules and one `Bash(...)` per command.
 pub fn bot_rules(
     ws: &Workspace,
     commands: &[String],
     mut rules: Vec<String>,
+    dir: &Path,
+    read_dirs: &[std::path::PathBuf],
 ) -> (Vec<String>, Vec<String>) {
     rules.extend(ws.bot_rules.deny.iter().cloned());
-    let mut allow = ws.bot_rules.allow.clone();
+    let mut allow = vec![path_rule("Edit", dir), path_rule("Read", &ws.root)];
+    allow.extend(read_dirs.iter().map(|d| path_rule("Read", d)));
+    allow.extend(ws.mcp.iter().map(|m| format!("mcp__{}", m.name)));
+    allow.extend(ws.bot_rules.allow.iter().cloned());
     allow.extend(commands.iter().map(|c| format!("Bash({c})")));
     (rules, allow)
 }
@@ -128,7 +136,15 @@ pub fn read_output(path: &Path, max: u64) -> Result<Vec<u8>, String> {
 
 /// Pure. The rule that denies Claude Code's edit tools under `path`.
 pub fn deny(path: &Path) -> String {
-    format!("Edit(/{}/**)", path.to_string_lossy().trim_end_matches('/'))
+    path_rule("Edit", path)
+}
+
+/// Pure. A rule for `tool` on everything under the absolute `path`.
+fn path_rule(tool: &str, path: &Path) -> String {
+    format!(
+        "{tool}(/{}/**)",
+        path.to_string_lossy().trim_end_matches('/')
+    )
 }
 
 /// Blocking. Writes the settings into the run's `.muxa/` and adds the flag

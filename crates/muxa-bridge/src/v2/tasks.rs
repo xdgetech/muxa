@@ -243,7 +243,7 @@ async fn talk_line(
         let muxa = crate::records::routines::routines_dir(&ws)?
             .unwrap_or_else(|| ws.root.join(crate::records::routines::WORKSPACE_DIR));
         let (rules, allow) =
-            super::bot_run::bot_rules(&ws, &commands, vec![super::bot_run::deny(&muxa)]);
+            super::bot_run::bot_rules(&ws, &commands, vec![super::bot_run::deny(&muxa)], &dir, &[]);
         match super::bot_run::with_permissions(launch, &dir, &rules, &allow, &[])? {
             LaunchCommand::Shell(line) => Ok(line),
             LaunchCommand::Native { .. } => Ok(line),

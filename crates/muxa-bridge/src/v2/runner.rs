@@ -460,7 +460,7 @@ fn made(
             .bot(&routine.workspace, name)
             .map(|b| b.commands.clone())
             .unwrap_or_default();
-        let (rules, allow) = bot_run::bot_rules(ws, &commands, rules);
+        let (rules, allow) = bot_run::bot_rules(ws, &commands, rules, &dir, &extra.read_dirs);
         let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
         bot_agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?
     } else {

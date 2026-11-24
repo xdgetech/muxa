@@ -482,6 +482,25 @@ async fn a_run_for_a_review_may_read_the_tasks_places() {
 }
 
 #[tokio::test]
+async fn a_bots_run_may_call_its_workspaces_mcp_servers() {
+    let h = Host::with_workspace(
+        "bot-mcp",
+        "bot = \"b\"\n[[bot]]\nname = \"b\"\nenabled = true\n",
+        "[[workspace.mcp]]\nname = \"docs\"\ncommand = \"docs-mcp\"\n",
+    );
+    let backend = FakeBackend::new();
+    let t = h.started(&backend).await;
+    let dir = PathBuf::from(&t.labels["muxa.dir"]);
+    let settings = std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&settings).unwrap();
+    let allow = v["permissions"]["allow"].as_array().unwrap();
+    assert!(
+        allow.contains(&json!("mcp__docs")),
+        "dontAsk refuses a server's tools unless a rule allows them: {allow:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     // The Workspace's agent is Codex, which runs no Routine; a Bot's run is Claude Code anyway.
     let h = Host::with_workspace(
@@ -503,10 +522,17 @@ async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     let dir = PathBuf::from(&t.labels["muxa.dir"]);
     let settings = std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&settings).unwrap();
+    let root = dir.parent().and_then(Path::parent).unwrap();
     assert_eq!(
         v["permissions"]["allow"],
-        json!(["WebSearch", "Bash(/x/collect.sh delivery:*)"]),
-        "the Workspace's rules and the Bot's own command"
+        json!([
+            format!("Edit(/{}/**)", dir.display()),
+            format!("Read(/{}/**)", root.display()),
+            "WebSearch",
+            "Bash(/x/collect.sh delivery:*)"
+        ]),
+        "dontAsk refuses the rest: the run writes its output in its folder and reads its Workspace, \
+         then the Workspace's rules and the Bot's own command"
     );
     assert!(
         line.contains("--permission-mode dontAsk"),

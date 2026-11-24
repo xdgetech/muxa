@@ -58,7 +58,9 @@ pub fn section(name: &str, reach: &Reach, place: Place<'_>) -> String {
     // ADR 0087: a Bot has its Workspace's access. muxa keeps other servers out
     // when the Workspace lists some, unless it lets claude.ai connectors in.
     out.push_str(if reach.claude_connectors {
-        "- The user's claude.ai connectors (such as Calendar or Sheets) load too.\n"
+        "- The user's claude.ai connectors (such as Calendar or Sheets) load too. In a run their tools are \
+         refused unless this Workspace's Bot rules allow them, one rule per connector, such as \
+         `mcp__claude_ai_Google_Calendar`.\n"
     } else if reach.mcp.is_empty() {
         "- No other MCP servers are set for you here; what the Workspace's agent loads by itself may also work.\n"
     } else {

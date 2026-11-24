@@ -197,7 +197,13 @@ fn member_launch(
         .map_err(|e| e.to_string())?;
     let brief = bot_run::brief(member, &[], ws)?;
     super::git::write_file(&dir, "TASK.md", &member_text(&brief, lead, h))?;
-    let (rules, allow) = bot_run::bot_rules(ws, &member.commands, vec![bot_run::deny(&member.dir)]);
+    let (rules, allow) = bot_run::bot_rules(
+        ws,
+        &member.commands,
+        vec![bot_run::deny(&member.dir)],
+        &dir,
+        &[],
+    );
     let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
     let agent = runner::bot_agent_in(ws, command, &dir, &rules, &allow, &[])?;
     crate::connections::merge(&mut resolved.environment.env, agent.env);
