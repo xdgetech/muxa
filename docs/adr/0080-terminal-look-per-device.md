@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-11-23).
+Proposed (2026-11-23). Colors: superseded by [ADR 0091](0091-one-theme-for-the-whole-app.md). The font choice stays.
 
 ## Context
 
