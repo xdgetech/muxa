@@ -51,7 +51,10 @@ struct PaneSplit: View {
             // The terminal stays attached under Chat, at the pane's size: Chat's
             // answers are typed into its channel, which exists only while attached.
             ZStack {
-                TerminalPane(terminal: t, active: active && !chat, focusRequest: nav.focusRequest) { nav.activate(index) }
+                // Under the Reader the pane leaves the keyboard alone; closing the Reader gives it back.
+                TerminalPane(terminal: t, active: active && !chat && !nav.showReader, focusRequest: nav.focusRequest) {
+                    nav.activate(index)
+                }
                     .id(t.id)
                     .allowsHitTesting(!chat)
                     .accessibilityHidden(chat)

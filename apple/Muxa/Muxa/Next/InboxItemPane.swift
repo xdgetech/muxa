@@ -42,13 +42,10 @@ struct InboxItemPane: View {
         .background(Palette.ground)
         .navigationTitle(item.kind.title)
         .inlineTitle()
-        .alert("Remove the worktree anyway?", isPresented: losingWork, presenting: wouldLoseWork) { _ in
-            Button("Remove Anyway", role: .destructive) { Task { await approve(force: true) } }
-                .accessibilityIdentifier("detail.force")
-            Button("Cancel", role: .cancel) {}
-        } message: { message in
-            Text(message)
-        }
+        .dialog("Remove the worktree anyway?", isPresented: losingWork, message: wouldLoseWork,
+                actions: [DialogAction("Remove Anyway", role: .destructive, id: "detail.force") {
+                    Task { await approve(force: true) }
+                }])
     }
 
     private var losingWork: Binding<Bool> {

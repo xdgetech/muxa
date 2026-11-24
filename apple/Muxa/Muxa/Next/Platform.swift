@@ -35,6 +35,24 @@ extension View {
         #endif
     }
 
+    /// Shift+Return puts a new line in a vertical field; Return still submits.
+    /// The Mac's field editor treats both as submit, so the key inserts the
+    /// line itself, at the cursor.
+    func newlineOnShiftReturn() -> some View {
+        #if os(macOS)
+        onKeyPress(.return, phases: .down) { press in
+            guard press.modifiers.contains(.shift) else { return .ignored }
+            // The field editor of the field with the keyboard; the key window first.
+            let windows = [NSApp.keyWindow].compactMap { $0 } + NSApp.windows
+            guard let editor = windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first else { return .ignored }
+            editor.insertText("\n", replacementRange: editor.selectedRange())
+            return .handled
+        }
+        #else
+        self
+        #endif
+    }
+
     func numberEntry() -> some View {
         #if os(iOS)
         keyboardType(.numberPad)

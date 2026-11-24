@@ -1,10 +1,12 @@
+import AppKit
 import MuxaV2
 import SwiftUI
 
 /// The active Task's Reader over the whole window, from the right. Its left
 /// edge drags it wider or narrower, the button fills the window, and Esc
 /// closes it. The width is kept for the next time. It takes the keyboard from
-/// the terminal while open and gives it back when it closes.
+/// the terminal while open and gives it back when it closes. Esc closes it
+/// wherever the keyboard is: a click on the panel leaves it with the window.
 struct ReaderOverlay: View {
     @Environment(NextNavigation.self) private var nav
     let terminal: MuxaV2.Terminal
@@ -28,7 +30,7 @@ struct ReaderOverlay: View {
             }
         }
         .background(Color.black.opacity(fraction < 1 ? 0.25 : 0).allowsHitTesting(false))
-        .onExitCommand { nav.showReader = false }
+        .background(EscapeKey { nav.showReader = false })
         .onAppear(perform: takeKeyboard)
         .onDisappear { nav.refocus() }
     }
@@ -100,5 +102,64 @@ struct ReaderOverlay: View {
                     .onEnded { _ in dragStart = nil }
             )
             .accessibilityHidden(true)
+    }
+}
+
+/// Runs `pressed` on Esc in this view's window, whichever view there has the
+/// keyboard, and keeps the key from it. A sheet or Go to Task over the window
+/// keeps its own Esc.
+private struct EscapeKey: NSViewRepresentable {
+    @Environment(NextNavigation.self) private var nav
+    let pressed: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.pressed = pressed
+        context.coordinator.nav = nav
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(nav: nav, pressed: pressed) }
+
+    @MainActor
+    final class Coordinator {
+        weak var view: NSView?
+        var nav: NextNavigation
+        var pressed: () -> Void
+        private var monitor: Any?
+        private static let escape: UInt16 = 53
+
+        init(nav: NextNavigation, pressed: @escaping () -> Void) {
+            self.nav = nav
+            self.pressed = pressed
+        }
+
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                MainActor.assumeIsolated { self?.handle(event) ?? false } ? nil : event
+            }
+        }
+
+        func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        private func handle(_ event: NSEvent) -> Bool {
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
+            guard event.keyCode == Self.escape, modifiers.isEmpty, let window = view?.window, event.window === window,
+                  window.attachedSheet == nil, !nav.showPalette else { return false }
+            pressed()
+            return true
+        }
     }
 }

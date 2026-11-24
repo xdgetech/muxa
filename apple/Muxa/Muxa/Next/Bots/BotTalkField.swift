@@ -13,9 +13,12 @@ struct BotTalkField: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TextField("Talk to \(entry.name)…", text: $text)
+            TextField("Talk to \(entry.name)…", text: $text, axis: .vertical)
+                .lineLimit(1...8)
+                .textFieldStyle(.plain)
                 .submitLabel(.send)
                 .onSubmit(send)
+                .newlineOnShiftReturn()
                 .padding(.horizontal, 4)
                 .fieldWell(radius: 10)
                 .accessibilityIdentifier("bot.home.talk")

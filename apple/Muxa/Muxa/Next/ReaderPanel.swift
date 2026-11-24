@@ -71,16 +71,20 @@ struct ReaderPanel: View {
             .accessibilityIdentifier("reader.kind")
             .listRowBackground(Color.clear)
             if let list {
-                Section(list.root ?? "Folder") {
+                Section {
                     if list.entries.isEmpty { Text(empty).foregroundStyle(Palette.textSecondary) }
                     rows(list.entries, scope: .uncommitted)
+                } header: {
+                    ReaderSectionTitle(title: list.root ?? "Folder", count: list.entries.count)
                 }
-                .listRowBackground(Palette.card)
+                .readerRowBackground()
                 if let branch = list.branch {
-                    Section("\(branch.commits) commits since \(branch.base)") {
+                    Section {
                         rows(branch.entries, scope: .branch)
+                    } header: {
+                        ReaderSectionTitle(title: "\(branch.commits) commits since \(branch.base)", count: branch.entries.count)
                     }
-                    .listRowBackground(Palette.card)
+                    .readerRowBackground()
                 }
                 if list.truncated == true { Text("More files than shown.").font(.caption).foregroundStyle(Palette.textSecondary) }
             } else if loading {
@@ -106,11 +110,13 @@ struct ReaderPanel: View {
                 DisclosureGroup(isExpanded: expanded(folder, scope: scope)) {
                     ForEach(folder.entries) { row($0, scope: scope, in: folder) }
                 } label: {
-                    HStack {
-                        Label(folder.path, systemImage: "folder").lineLimit(1)
+                    HStack(spacing: ReaderRowLook.iconGap) {
+                        Label(folder.path, systemImage: "folder").lineLimit(1).readerRowName()
                         Spacer()
                         Text("\(folder.entries.count)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                            .readerCount()
                     }
+                    .readerRow(lines: 1)
                     #if os(iOS)
                     // On iOS an identifier on the group also lands on every file row,
                     // and the rows lose their own; it goes on the folder's label there.
@@ -141,18 +147,23 @@ struct ReaderPanel: View {
         return Button {
             path.append(ReaderTarget(kind: kind, path: e.path, scope: scope))
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    if let status = e.status { Text(status.prefix(1).uppercased()).monospaced().foregroundStyle(Palette.textSecondary) }
-                    Text(e.title ?? ReaderFolder.name(of: e.path)).lineLimit(1)
-                    Spacer()
-                    if let added = e.added, let removed = e.removed {
-                        Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
-                    }
-                    Image(systemName: "chevron.forward").font(.caption).foregroundStyle(Palette.textTertiary)
+            HStack(spacing: ReaderRowLook.iconGap) {
+                if let status = e.status {
+                    Text(status.prefix(1).uppercased()).monospaced().foregroundStyle(Palette.textSecondary)
+                } else {
+                    ReaderFileIcon(kind: kind)
                 }
-                if let under { Text(under).font(.caption2).foregroundStyle(Palette.textSecondary).lineLimit(1) }
+                VStack(alignment: .leading, spacing: ReaderRowLook.lineGap) {
+                    Text(e.title ?? ReaderFolder.name(of: e.path)).lineLimit(1).readerRowName()
+                    if let under { Text(under).font(ReaderRowLook.pathFont).foregroundStyle(Palette.textSecondary).lineLimit(1) }
+                }
+                Spacer()
+                if let added = e.added, let removed = e.removed {
+                    Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
+                }
+                Image(systemName: "chevron.forward").font(.caption).foregroundStyle(Palette.textTertiary)
             }
+            .readerRow(lines: under == nil ? 1 : 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

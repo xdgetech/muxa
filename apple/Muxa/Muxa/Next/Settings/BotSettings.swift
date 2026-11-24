@@ -205,15 +205,12 @@ struct BotEditor: View {
         } footer: {
             Text("The Bot writes this after each run. The five before it are kept.")
         }
-        .confirmationDialog("Restore the earlier memory?", isPresented: $confirmRestore, titleVisibility: .visible) {
-            Button("Restore") {
-                let op = SettingsOp.botMemoryRestore(workspace: workspace.name, name: bot.name, version: 1)
-                Task { restoreError = await model.settings.save([op]) }
-            }
-            .accessibilityIdentifier("bot.confirmrestore")
-        } message: {
-            Text("The memory now is kept in its place, so this can be undone.")
-        }
+        .dialog("Restore the earlier memory?", isPresented: $confirmRestore,
+                message: "The memory now is kept in its place, so this can be undone.",
+                actionSheet: true, actions: [DialogAction("Restore", id: "bot.confirmrestore") {
+                    let op = SettingsOp.botMemoryRestore(workspace: workspace.name, name: bot.name, version: 1)
+                    Task { restoreError = await model.settings.save([op]) }
+                }])
     }
 
     private func ops() -> [SettingsOp]? {
@@ -389,19 +386,16 @@ struct BotRemovalSection: View {
         } footer: {
             Text(Self.keepsFiles(bot.name))
         }
-        .confirmationDialog("Remove \(bot.name)?", isPresented: $confirm, titleVisibility: .visible) {
-            Button("Remove \(bot.name)", role: .destructive) {
-                let ops = current.botRemoval(bot.name, movingRoutinesTo: moveTo.isEmpty ? nil : moveTo)
-                Task {
-                    error = await model.settings.save(ops)
-                    if error == nil { onRemoved() }
-                }
-            }
-            .accessibilityIdentifier("editor.confirmremove")
-        } message: {
-            Text(owned.isEmpty ? Self.keepsFiles(bot.name)
-                 : "Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(Self.keepsFiles(bot.name))")
-        }
+        .dialog("Remove \(bot.name)?", isPresented: $confirm,
+                message: owned.isEmpty ? Self.keepsFiles(bot.name)
+                    : "Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(Self.keepsFiles(bot.name))",
+                actionSheet: true, actions: [DialogAction("Remove \(bot.name)", role: .destructive, id: "editor.confirmremove") {
+                    let ops = current.botRemoval(bot.name, movingRoutinesTo: moveTo.isEmpty ? nil : moveTo)
+                    Task {
+                        error = await model.settings.save(ops)
+                        if error == nil { onRemoved() }
+                    }
+                }])
     }
 }
 

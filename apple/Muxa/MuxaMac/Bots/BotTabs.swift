@@ -128,17 +128,13 @@ struct BotFilesTab: View {
                 SaveError(text: error, id: "bot.files.error")
             }
         }
-        .confirmationDialog("Restore memory version \(restoring?.version ?? 0)?", isPresented: restoringBinding,
-                            titleVisibility: .visible) {
-            Button("Restore") {
-                guard let v = restoring else { return }
-                let op = SettingsOp.botMemoryRestore(workspace: entry.workspace.name, name: entry.name, version: v.version)
-                Task { error = await model.settings.save([op]) }
-            }
-            .accessibilityIdentifier("bot.files.confirmrestore")
-        } message: {
-            Text("The memory now is kept in its place, so this can be undone.")
-        }
+        .dialog("Restore memory version \(restoring?.version ?? 0)?", isPresented: restoringBinding,
+                message: "The memory now is kept in its place, so this can be undone.",
+                actions: [DialogAction("Restore", id: "bot.files.confirmrestore") { [v = restoring] in
+                    guard let v else { return }
+                    let op = SettingsOp.botMemoryRestore(workspace: entry.workspace.name, name: entry.name, version: v.version)
+                    Task { error = await model.settings.save([op]) }
+                }])
     }
 
     private var restoringBinding: Binding<Bool> {

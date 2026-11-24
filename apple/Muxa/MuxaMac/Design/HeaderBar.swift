@@ -53,7 +53,10 @@ private struct WindowButtonsInset: NSViewRepresentable {
             observers.forEach(NotificationCenter.default.removeObserver)
             observers = []
             guard let window else { return }
-            let names: [Notification.Name] = [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification]
+            // AppKit lays its title bar out again on each of these, and puts the buttons back.
+            let names: [Notification.Name] = [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification,
+                                              NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification,
+                                              NSWindow.didResignKeyNotification]
             observers = names.map { name in
                 NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.report() }
@@ -73,11 +76,41 @@ private struct WindowButtonsInset: NSViewRepresentable {
         }
 
         private func report() {
+            Self.centreButtons(on: self)
             let inset = Self.inset(of: self)
             guard inset != reported else { return }
             reported = inset
             changed(inset)
         }
+
+        /// Moves the window buttons onto the header's middle line, where the
+        /// logo is; AppKit puts them at the top of its 28 pt title bar. Only
+        /// when they share the header's rows: not in full screen, not under a
+        /// visible title bar. A toolbar would centre them too, but it takes
+        /// every click on the header.
+        static func centreButtons(on header: NSView) {
+            guard let window = header.window, !window.styleMask.contains(.fullScreen),
+                  let close = window.standardWindowButton(.closeButton),
+                  let container = close.superview?.superview else { return }
+            let rows = header.convert(header.bounds, to: nil)
+            let top = (header.bounds.height - close.frame.height) / 2
+            // The title bar from the window's top down to the buttons' lower edge.
+            let height = top + close.frame.height
+            guard rows.maxY >= window.frame.height - 1 else { return }
+            var frame = container.frame
+            frame.size.height = height
+            frame.origin.y = window.frame.height - height
+            container.frame = frame
+            let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+            for (i, type) in buttons.enumerated() {
+                guard let button = window.standardWindowButton(type) else { continue }
+                button.setFrameOrigin(NSPoint(x: buttonLeading + CGFloat(i) * buttonSpacing, y: 0))
+            }
+        }
+
+        /// The buttons' left edge and step, as wide apart as AppKit sets them.
+        private static let buttonLeading: CGFloat = 20
+        private static let buttonSpacing: CGFloat = 23
 
         static func inset(of header: NSView) -> CGFloat {
             guard let window = header.window, !window.styleMask.contains(.fullScreen),

@@ -18,6 +18,11 @@ struct KeyBytesTests {
         #expect(KeyBytes.bytes("Escape") == [0x1b])
     }
 
+    @Test func aMessageOfSeveralLinesIsOnePaste() {
+        #expect(KeyBytes.message("Fix it.") == "Fix it.\r")
+        #expect(KeyBytes.message("Fix it.\nAnd add a test.") == "\u{1b}[200~Fix it.\nAnd add a test.\u{1b}[201~\r")
+    }
+
     @Test func controlAndMetaCharacters() {
         #expect(KeyBytes.bytes("C-c") == [3])
         #expect(KeyBytes.bytes("C-Space") == [0])

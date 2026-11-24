@@ -46,15 +46,8 @@ struct BotDetailPane: View {
         .background(Palette.pane)
         .onAppear { chrome.land(on: entry.id, liveTalk: model.liveTalk(of: entry)) }
         .onChange(of: chrome.botTab) { _, tab in chrome.botTabs[entry.id] = tab }
-        .confirmationDialog("Continue a chat with \(entry.name)?", isPresented: $choosingChat, titleVisibility: .visible) {
-            ForEach(model.talks(of: entry)) { t in
-                Button("Continue \(t.title)") { nav.open(t) }
-            }
-            Button("Start a New Chat") { Task { await startChat() } }
-                .accessibilityIdentifier("bot.chat.new")
-        } message: {
-            Text("A chat keeps its Task until you close it.")
-        }
+        .dialog("New chat with \(entry.name)", isPresented: $choosingChat,
+                message: "A chat keeps its Task until you close it.", choices: chatChoices)
     }
 
     private var heading: some View {
@@ -144,6 +137,18 @@ struct BotDetailPane: View {
         } else {
             choosingChat = true
         }
+    }
+
+    /// ⌘T with live talks: a new chat first, then each talk to continue.
+    private var chatChoices: [DialogChoice] {
+        let start = DialogChoice(id: "bot.chat.new", title: "Start a new chat", verb: "Start") {
+            Task { await startChat() }
+        }
+        let talks = model.talks(of: entry).enumerated().map { i, t in
+            DialogChoice(id: "bot.chat.continue.\(t.id)", title: t.title, detail: t.botRole(of: entry.name),
+                         section: i == 0 ? "Continue" : nil, verb: "Continue") { nav.open(t) }
+        }
+        return [start] + talks
     }
 
     private func startChat() async {

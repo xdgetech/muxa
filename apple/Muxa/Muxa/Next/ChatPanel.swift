@@ -105,17 +105,20 @@ struct ChatView: View {
 
     private var composer: some View {
         HStack(spacing: 8) {
-            TextField("Message the agent", text: $draft)
+            TextField("Message the agent", text: $draft, axis: .vertical)
+                .lineLimit(1...8)
+                .textFieldStyle(.plain)
                 .focused($fieldFocused)
                 .onSubmit(sendDraft)
+                .newlineOnShiftReturn()
                 .onChange(of: draft) { _, typed in
                     guard let sent else { return }
-                    if typed.trimmingCharacters(in: .whitespaces) == sent { draft = "" } else if !typed.isEmpty { self.sent = nil }
+                    if typed.trimmingCharacters(in: .whitespacesAndNewlines) == sent { draft = "" } else if !typed.isEmpty { self.sent = nil }
                 }
                 .padding(.horizontal, 4)
                 .fieldWell(radius: minTouch / 2)
                 .accessibilityIdentifier("chat.field")
-            SendButton(disabled: draft.trimmingCharacters(in: .whitespaces).isEmpty, action: sendDraft)
+            SendButton(disabled: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, action: sendDraft)
                 .accessibilityIdentifier("chat.send")
         }
         .padding(.horizontal, 10)
@@ -123,7 +126,7 @@ struct ChatView: View {
     }
 
     private func sendDraft() {
-        let text = draft.trimmingCharacters(in: .whitespaces)
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         // A field still composing (Japanese input) writes its marked text back
         // after a clear. Leaving the field makes it commit now; the clear then
@@ -131,7 +134,7 @@ struct ChatView: View {
         fieldFocused = false
         sent = text
         draft = ""
-        send(text + "\r")
+        send(KeyBytes.message(text))
         Task { @MainActor in
             draft = ""
             fieldFocused = true

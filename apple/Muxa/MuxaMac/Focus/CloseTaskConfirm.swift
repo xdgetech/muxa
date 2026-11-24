@@ -11,28 +11,25 @@ struct CloseTaskConfirm: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert(
+            .dialog(
                 chrome.closingTask.map(title) ?? "",
                 isPresented: Binding(get: { chrome.closingTask != nil }, set: { if !$0 { chrome.closingTask = nil } }),
-                presenting: chrome.closingTask
-            ) { task in
-                Button(task.isTalk ? "Close Chat" : "Close Task", role: .destructive) { Task { await close(task, force: false) } }
-                    .accessibilityIdentifier("closetask.confirm")
-                Button("Cancel", role: .cancel) {}
-            } message: { task in
-                Text(message(task)).accessibilityIdentifier("closetask.message")
-            }
-            .alert(
+                message: chrome.closingTask.map(message),
+                actions: [DialogAction(chrome.closingTask?.isTalk == true ? "Close Chat" : "Close Task", role: .destructive,
+                                       id: "closetask.confirm") { [task = chrome.closingTask] in
+                    guard let task else { return }
+                    Task { await close(task, force: false) }
+                }]
+            )
+            .dialog(
                 "Remove the worktree anyway?",
                 isPresented: Binding(get: { wouldLoseWork != nil }, set: { if !$0 { wouldLoseWork = nil } }),
-                presenting: wouldLoseWork
-            ) { pending in
-                Button("Remove Anyway", role: .destructive) { Task { await close(pending.task, force: true) } }
-                    .accessibilityIdentifier("closetask.force")
-                Button("Cancel", role: .cancel) {}
-            } message: { pending in
-                Text(pending.why)
-            }
+                message: wouldLoseWork?.why,
+                actions: [DialogAction("Remove Anyway", role: .destructive, id: "closetask.force") { [pending = wouldLoseWork] in
+                    guard let pending else { return }
+                    Task { await close(pending.task, force: true) }
+                }]
+            )
     }
 
     private func title(_ task: MuxaV2.Terminal) -> String {

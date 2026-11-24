@@ -319,6 +319,20 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testEscClosesTheReaderAfterAClickInIt() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let kind = app.radioGroups["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        // A click on the panel's title leaves the keyboard with the window, not a view.
+        app.staticTexts["Reader"].firstMatch.click()
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(waitForGone(kind))
+    }
+
+    @MainActor
     func testTheReaderGroupsFilesUnderTheirFolder() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()

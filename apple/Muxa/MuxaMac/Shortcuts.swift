@@ -53,8 +53,9 @@ struct Shortcut: Identifiable {
     static let nextTask = Shortcut("next-task", .go, "Next Task", KeyChord(.tab, .control))
     static let previousNeedsYou = Shortcut("previous-needs-you", .go, "Previous Task that needs you", KeyChord("j", [.command, .shift]))
     static let previousTask = Shortcut("previous-task", .go, "Previous Task", KeyChord(.tab, [.control, .shift]))
-    static let sidebar = Shortcut("sidebar", .go, "Toggle sidebar", KeyChord("b", .command))
-    static let bots = Shortcut("bots", .go, "Bots", KeyChord("b", [.command, .shift]))
+    // ⌘B is Bots, as users expect (ADR 0092); the sidebar takes macOS's own ⌃⌘S.
+    static let sidebar = Shortcut("sidebar", .go, "Toggle sidebar", KeyChord("s", [.command, .control]))
+    static let bots = Shortcut("bots", .go, "Bots", KeyChord("b", .command))
     // The Routines page became part of Bots (ADR 0086); its key opens Bots.
     static let routines = Shortcut("routines", .go, "Bots (Routines)", KeyChord("o", [.command, .shift]))
     static let capture = Shortcut("capture", .capture, "Capture", KeyChord("n", .command))

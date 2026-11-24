@@ -4,8 +4,16 @@ import MuxaV2
 import SwiftUI
 
 // The menu bar's items as views. A View's body tracks the @Observable model
-// and navigation it reads, so `.disabled` and the titles follow them; read
-// directly in the App's `commands`, they were computed once (ADR 0070, 0078).
+// and navigation it reads, so the titles follow them; read directly in the
+// App's `commands`, they were computed once (ADR 0070, 0078).
+
+/// Runs `action` when `allowed`, else beeps. The Go and Pane menus check here
+/// instead of `.disabled`: an item kept its first disabled state until
+/// its menu was opened, so after Home its key did nothing in Focus.
+@MainActor
+private func when(_ allowed: Bool, _ action: () -> Void) {
+    if allowed { action() } else { NSSound.beep() }
+}
 
 /// File → Close: the active shell in Focus, else the key window.
 struct CloseItem: View {
@@ -59,8 +67,7 @@ struct GoMenuItems: View {
             .shortcut(.home)
         Button("Focus") { nav.focus = true }
             .shortcut(.focus)
-        // Never disabled, like Home and Focus: Bots shows its own state when not connected,
-        // and a disabled key here did nothing until the menu was opened once.
+        // Bots shows its own state when not connected.
         Button("Bots") { nav.focus = false; nav.tab = .bots }
             .shortcut(.bots)
         Button("Routines in Bots") { nav.focus = false; nav.tab = .bots }
@@ -68,40 +75,31 @@ struct GoMenuItems: View {
         Divider()
         Button("Next Task That Needs You") { openNext(in: model.needsYou) }
             .shortcut(.nextNeedsYou)
-            .disabled(model.needsYou.isEmpty)
         Button("Next Task") { openNext(in: model.needsYou + model.liveTasks) }
             .shortcut(.nextTask)
-            .disabled(model.liveTasks.isEmpty && model.needsYou.isEmpty)
         Button("Previous Task That Needs You") { openNext(in: model.needsYou, step: -1) }
             .shortcut(.previousNeedsYou)
-            .disabled(model.needsYou.isEmpty)
         Button("Previous Task") { openNext(in: model.needsYou + model.liveTasks, step: -1) }
             .shortcut(.previousTask)
-            .disabled(model.liveTasks.isEmpty && model.needsYou.isEmpty)
         Divider()
-        Button(nav.showInbox ? "Hide Inbox Panel" : "Show Inbox Panel") { nav.showInbox.toggle() }
+        Button(nav.showInbox ? "Hide Inbox Panel" : "Show Inbox Panel") { when(nav.focus) { nav.showInbox.toggle() } }
             .shortcut(.inboxPanel)
-            .disabled(!nav.focus)
-        Button(nav.showReader ? "Hide Reader Panel" : "Show Reader Panel") { nav.showReader.toggle() }
+        Button(nav.showReader ? "Hide Reader Panel" : "Show Reader Panel") { when(nav.focus) { nav.showReader.toggle() } }
             .shortcut(.readerPanel)
-            .disabled(!nav.focus)
-        Button(nav.showChat ? "Hide Chat Panel" : "Show Chat Panel") { nav.showChat.toggle() }
+        Button(nav.showChat ? "Hide Chat Panel" : "Show Chat Panel") { when(nav.focus) { nav.showChat.toggle() } }
             .shortcut(.chatPanel)
-            .disabled(!nav.focus)
-        Button("Toggle Sidebar") { nav.toggleSidebar() }
+        Button("Toggle Sidebar") { when(nav.focus) { nav.toggleSidebar() } }
             .shortcut(.sidebar)
-            .disabled(!nav.focus)
         Divider()
-        Button("Go to Task…") { nav.showPalette = true }
+        Button("Go to Task…") { when(model.isConnected) { nav.showPalette = true } }
             .shortcut(.goToTask)
-            .disabled(!model.isConnected)
     }
 
     /// Opens the Task after (or with `step` -1, before) the one Focus shows,
     /// from `list`. It wraps around, so each press moves on.
     private func openNext(in list: [Terminal], step: Int = 1) {
         let unique = list.reduce(into: [Terminal]()) { if !$0.contains($1) { $0.append($1) } }
-        guard !unique.isEmpty else { return }
+        guard !unique.isEmpty else { return NSSound.beep() }
         let at = unique.firstIndex { $0.id == nav.terminal } ?? (step > 0 ? -1 : 0)
         nav.open(unique[(at + step + unique.count) % unique.count])
     }
@@ -115,32 +113,34 @@ struct PaneMenuItems: View {
 
     var body: some View {
         // The keys work in Focus only, so Home keeps them for its own use.
-        Button("Split Pane") { pane(.split) }
+        Button("Split Pane") { when(PaneCommands.canSplit(nav: nav, model: model)) { pane(.split) } }
             .shortcut(.split)
-            .disabled(!PaneCommands.canSplit(nav: nav, model: model))
-        Button("Next Pane") { pane(.next) }
+        Button("Next Pane") { when(severalPanes) { pane(.next) } }
             .shortcut(.nextPane)
-            .disabled(!nav.focus || nav.panes.count < 2)
-        Button("Previous Pane") { pane(.previous) }
+        Button("Previous Pane") { when(severalPanes) { pane(.previous) } }
             .shortcut(.previousPane)
-            .disabled(!nav.focus || nav.panes.count < 2)
-        Button("Close Other Shells") { pane(.closeOthers) }
+        Button("Close Other Shells") { when(severalPanes) { pane(.closeOthers) } }
             .shortcut(.closeOtherPanes)
-            .disabled(!nav.focus || nav.panes.count < 2)
         Divider()
-        Button("Close Task…") { chrome.closingTask = focusedTask }
+        Button("Close Task…") { when(focusedTask != nil) { chrome.closingTask = focusedTask } }
             .shortcut(.closeTask)
-            .disabled(focusedTask == nil)
         Divider()
         // In Bots the first keys pick the Bot's tab instead (ADR 0086).
         ForEach(1...9, id: \.self) { n in
             Button(inBots ? (BotTab(rawValue: n)?.title ?? "Pane \(n)") : "Pane \(n)") {
-                if inBots, let tab = BotTab(rawValue: n) { chrome.botTab = tab } else { pane(.pane(n)) }
+                if !inBots {
+                    when(nav.focus && n <= nav.panes.count) { pane(.pane(n)) }
+                } else if let tab = BotTab(rawValue: n) {
+                    chrome.botTab = tab
+                } else {
+                    NSSound.beep()
+                }
             }
             .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
-            .disabled(inBots ? BotTab(rawValue: n) == nil : n > nav.panes.count)
         }
     }
+
+    private var severalPanes: Bool { nav.focus && nav.panes.count > 1 }
 
     /// The Bots page shows: `⌘1`… are its tabs.
     private var inBots: Bool { !nav.focus && (nav.tab == .bots || nav.tab == .routines) }

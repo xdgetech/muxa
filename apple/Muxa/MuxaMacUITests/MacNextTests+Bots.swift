@@ -6,7 +6,7 @@ extension MacNextTests {
     @MainActor
     func testBotsOpensOnPrWatchsHome() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
         XCTAssertTrue(bot.waitForExistence(timeout: 10))
         bot.click()
@@ -26,7 +26,7 @@ extension MacNextTests {
     @MainActor
     func testAnItemOnABotsHomeOpensInHome() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         let row = app.descendants(matching: .any)["bot.item.d10"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.click()
@@ -38,7 +38,7 @@ extension MacNextTests {
     @MainActor
     func testAProposalIsAppliedFromItsChatOnTheBotPage() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         let talk = app.descendants(matching: .any)["bot.terminal.t7"]
         XCTAssertTrue(talk.waitForExistence(timeout: 10))
         talk.click()
@@ -67,7 +67,7 @@ extension MacNextTests {
     @MainActor
     func testNewBotStartsItsFirstChatOnItsPage() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         let new = app.buttons["bots.new"]
         XCTAssertTrue(new.waitForExistence(timeout: 10))
         new.click()
@@ -86,7 +86,7 @@ extension MacNextTests {
     @MainActor
     func testARoutineIsEditedInASheetOnTheBotPage() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["bot.app.pr-watch"].waitForExistence(timeout: 10))
         app.typeKey("3", modifierFlags: .command)
         let edit = app.buttons["bot.routine.edit.scan"]
@@ -110,7 +110,7 @@ extension MacNextTests {
     @MainActor
     func testABotsSettingsAreEditedOnItsPage() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["bot.app.pr-watch"].waitForExistence(timeout: 10))
         app.typeKey("5", modifierFlags: .command)
         let save = app.buttons["bot.settings.save"]
@@ -137,7 +137,7 @@ extension MacNextTests {
     @MainActor
     func testABotIsRenamedOnItsPage() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["bot.app.pr-watch"].waitForExistence(timeout: 10))
         app.typeKey("5", modifierFlags: .command)
         let field = app.textFields["bot.rename.name"]
@@ -159,7 +159,7 @@ extension MacNextTests {
     @MainActor
     func testABotWithALiveTalkLandsOnIt() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         let bot = app.descendants(matching: .any)["bot.app.scout"]
         XCTAssertTrue(bot.waitForExistence(timeout: 10))
         bot.click()
@@ -171,7 +171,7 @@ extension MacNextTests {
     @MainActor
     func testABotWithoutATalkStartsOneFromItsHome() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
         XCTAssertTrue(bot.waitForExistence(timeout: 10))
         bot.click()
@@ -185,12 +185,32 @@ extension MacNextTests {
     }
 }
 
+/// ⌘T on a Bot with a live talk asks in muxa's popup: Return starts a new chat.
+extension MacNextTests {
+    @MainActor
+    func testNewChatOffersToContinueATalk() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: .command)
+        let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 10))
+        bot.click()
+        app.buttons["bot.tab.home"].click()
+        app.typeKey("t", modifierFlags: .command)
+        let start = app.buttons["bot.chat.new"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'bot.chat.continue.'")).count > 0)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(waitForGone(start))
+        XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 10))
+    }
+}
+
 /// Chat's field is empty and Send off after a send, by Return or the button.
 extension MacNextTests {
     @MainActor
     func testChatEmptiesItsFieldAfterASend() throws {
         let app = launch()
-        app.typeKey("b", modifierFlags: [.command, .shift])
+        app.typeKey("b", modifierFlags: .command)
         let bot = app.descendants(matching: .any)["bot.app.scout"]
         XCTAssertTrue(bot.waitForExistence(timeout: 10))
         bot.click()
@@ -207,6 +227,24 @@ extension MacNextTests {
         send.click()
         XCTAssertTrue(waitForEmpty(field), "the field empties after Send")
         XCTAssertFalse(send.isEnabled)
+    }
+
+    @MainActor
+    func testShiftReturnPutsANewLineInChat() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: .command)
+        let bot = app.descendants(matching: .any)["bot.app.scout"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 10))
+        bot.click()
+        let field = app.textFields["chat.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.click()
+        field.typeText("First line")
+        field.typeKey(.return, modifierFlags: .shift)
+        field.typeText("Second line")
+        XCTAssertEqual(field.value as? String, "First line\nSecond line", "Shift+Return does not send")
+        field.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(waitForEmpty(field), "Return sends both lines")
     }
 
     func waitForEmpty(_ field: XCUIElement) -> Bool {

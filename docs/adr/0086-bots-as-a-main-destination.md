@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-11-23). Amends ADR 0012 and 0070 (navigation), and ADR 0082 (where Bots show). Builds on ADR 0083 to 0085. Wire: `protocol/PROTOCOL-v2.md`, "A Bot's work", the `muxa.bot` and `muxa.lead` labels, `SettingsBot.memory_history`.
+Proposed (2026-11-23). Amended by ADR 0092: Bots is `⌘B`. Amends ADR 0012 and 0070 (navigation), and ADR 0082 (where Bots show). Builds on ADR 0083 to 0085. Wire: `protocol/PROTOCOL-v2.md`, "A Bot's work", the `muxa.bot` and `muxa.lead` labels, `SettingsBot.memory_history`.
 
 ## Context
 

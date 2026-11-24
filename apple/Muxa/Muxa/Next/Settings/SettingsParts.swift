@@ -92,12 +92,10 @@ struct SettingsEditor<Content: View>: View {
                         .accessibilityIdentifier("editor.save")
                 }
             }
-            .confirmationDialog("Remove \(title)?", isPresented: $confirmRemove, titleVisibility: .visible) {
-                Button("Remove", role: .destructive) { Task { await save(remove.map { [$0.op] }) } }
-                    .accessibilityIdentifier("editor.confirmremove")
-            } message: {
-                Text(remove?.warning ?? "")
-            }
+            .dialog("Remove \(title)?", isPresented: $confirmRemove, message: remove?.warning,
+                    actionSheet: true, actions: [DialogAction("Remove", role: .destructive, id: "editor.confirmremove") {
+                        Task { await save(remove.map { [$0.op] }) }
+                    }])
         }
         .presentationBackground(Palette.ground)
         #if os(macOS)

@@ -24,11 +24,10 @@ struct HomeActions: View {
                 if live { buttons } else { reopen }
             }
         }
-        .alert("Remove the worktree anyway?", isPresented: losingWork, presenting: wouldLoseWork) { _ in
-            Button("Remove Anyway", role: .destructive) { Task { await approve(force: true) } }
-                .accessibilityIdentifier("detail.force")
-            Button("Cancel", role: .cancel) {}
-        } message: { Text($0) }
+        .dialog("Remove the worktree anyway?", isPresented: losingWork, message: wouldLoseWork,
+                actions: [DialogAction("Remove Anyway", role: .destructive, id: "detail.force") {
+                    Task { await approve(force: true) }
+                }])
     }
 
     @ViewBuilder

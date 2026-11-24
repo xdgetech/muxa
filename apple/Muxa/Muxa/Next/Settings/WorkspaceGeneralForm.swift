@@ -18,13 +18,12 @@ struct WorkspaceGeneralForm: View {
 
     var body: some View {
         SettingsPage { sections }
-            .confirmationDialog("Remove \(workspace.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
-                Button("Remove Workspace", role: .destructive) { save(.workspaceRemove(workspace: workspace.name)) }
-                    .accessibilityIdentifier("ws.confirmremove")
-            } message: {
-                Text("muxa forgets the Workspace and deletes its connections' secrets from the Keychain. "
-                    + "Its folder, its repos and .muxa/ stay on the host.")
-            }
+            .dialog("Remove \(workspace.name)?", isPresented: $confirmRemove,
+                    message: "muxa forgets the Workspace and deletes its connections' secrets from the Keychain. "
+                        + "Its folder, its repos and .muxa/ stay on the host.",
+                    actionSheet: true, actions: [DialogAction("Remove Workspace", role: .destructive, id: "ws.confirmremove") {
+                        save(.workspaceRemove(workspace: workspace.name))
+                    }])
     }
 
     @ViewBuilder

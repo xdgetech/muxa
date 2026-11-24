@@ -182,20 +182,17 @@ struct NewBotTalk: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert("The talk did not start", isPresented: failed, presenting: failure) { _ in
-                Button("OK", role: .cancel) {}
-            } message: { Text($0) }
-            .alert("Set up a Bot by talking", isPresented: $isPresented) {
+            .dialog("The talk did not start", isPresented: failed, message: failure, cancel: "OK")
+            .dialog("Set up a Bot by talking", isPresented: $isPresented,
+                    message: "Lowercase letters, digits, - and _. The Bot proposes its settings; you apply them from the Inbox.",
+                    actions: [DialogAction("Talk", id: "bot.talkstart", disabled: !BotSpec.isValidName(Lines.trimmed(name))) {
+                        Task { await start() }
+                    }]) {
                 TextField("Name, e.g. triage", text: $name)
                     .plainEntry()
                     .accessibilityIdentifier("bot.talkname")
-                Button("Talk") { Task { await start() } }
-                    .disabled(!BotSpec.isValidName(Lines.trimmed(name)))
-                    .accessibilityIdentifier("bot.talkstart")
-                Button("Cancel", role: .cancel) { name = "" }
-            } message: {
-                Text("Lowercase letters, digits, - and _. The Bot proposes its settings; you apply them from the Inbox.")
             }
+            .onChange(of: isPresented) { _, open in if !open { name = "" } }
     }
 
     private func start() async {
