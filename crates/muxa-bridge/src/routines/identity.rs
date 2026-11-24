@@ -2,11 +2,10 @@
 //! member (ADR 0086): that it is a muxa Bot, what it can use and set, and
 //! what it may not do. One text, so the three briefs cannot drift.
 
-/// What the Bot can reach and how much it may publish.
+/// What the Bot can reach.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Reach {
     pub workspace: String,
-    pub daily_items: u32,
     /// Connection names with their environment variables, as `name ($ENV)`.
     pub connections: Vec<String>,
     pub mcp: Vec<String>,
@@ -96,11 +95,13 @@ pub fn section(name: &str, reach: &Reach, place: Place<'_>) -> String {
         Place::Member { lead } => out.push_str(&format!(
             "- You run as a member of the team \"{lead}\" leads. You report to your lead; you never write to the Inbox.\n"
         )),
-        Place::Run | Place::Talk => out.push_str(&format!(
-            "- Your items reach the user's Inbox, at most {} a day; the rest go into one \"N more\" item. \
-             One item per key: a key published before is skipped, so an item is never rewritten.\n",
-            reach.daily_items
-        )),
+        // ADR 0094: no daily limit; the Bot's own judgment and its Routines'
+        // items per run keep the Inbox readable.
+        Place::Run | Place::Talk => out.push_str(
+            "- Each item you publish reaches the user's Inbox. muxa sets no daily limit, so publish only \
+             what the user needs to see or act on, and nothing they saw before. One item per key: a key \
+             published before is skipped, so an item is never rewritten.\n",
+        ),
     }
     out.push_str(
         "- You never edit the Workspace's `.muxa/` folder, and you never change connections, MCP servers, \
@@ -109,14 +110,14 @@ pub fn section(name: &str, reach: &Reach, place: Place<'_>) -> String {
     match place {
         Place::Talk => out.push_str(
             "- In this talk you may propose changes to yourself and your Routines, as shown below: your \
-             description, daily items (1 to 50), on or off, team members and handoffs a day, your \
+             description, on or off, team members and handoffs a day, your \
              Soul, and each Routine's schedule or time or review trigger, timezone, read only, items per run \
              and instructions. The user applies them. When the user asks you for Inbox items, write them \
              to `items` in `.muxa/bot.json` (see the end of this brief), never another way: they \
              reach the Inbox at once.\n",
         ),
         Place::Run | Place::Member { .. } => out.push_str(
-            "- You cannot change your settings in a run. When one holds you back (too few daily items, a \
+            "- You cannot change your settings in a run. When one holds you back (too few items per run, a \
              missing connection), say so in a briefing; the user changes it by talking with you on your \
              page in muxa.\n",
         ),
@@ -137,7 +138,6 @@ mod tests {
     fn reach() -> Reach {
         Reach {
             workspace: "Lisk".into(),
-            daily_items: 20,
             connections: vec!["linear ($LINEAR_API_KEY)".into()],
             mcp: vec![],
             claude_connectors: true,
@@ -188,14 +188,17 @@ mod tests {
     #[test]
     fn only_a_talk_may_propose_and_only_a_member_skips_the_inbox() {
         let talk = section("scout", &reach(), Place::Talk);
-        assert!(talk.contains("you may propose") && talk.contains("at most 20 a day"));
+        assert!(talk.contains("you may propose") && talk.contains("no daily limit"));
+        assert!(!talk.contains("daily items") && !talk.contains("\"N more\""));
         let run = section("scout", &reach(), Place::Run);
         assert!(run.contains("cannot change your settings in a run"));
         assert!(
             run.contains("is refused, not asked") && talk.contains("propose bot-update with it")
         );
         let member = section("scout", &reach(), Place::Member { lead: "lead" });
-        assert!(member.contains("never write to the Inbox") && !member.contains("a day;"));
+        assert!(
+            member.contains("never write to the Inbox") && !member.contains("One item per key")
+        );
         assert!(talk.contains("Good Inbox items") && talk.contains("draft answer"));
         assert!(
             !run.contains("Good Inbox items"),

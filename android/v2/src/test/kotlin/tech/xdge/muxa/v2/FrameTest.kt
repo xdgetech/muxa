@@ -52,6 +52,7 @@ class FrameTest {
         assertEquals(null, plain["mcp"])
         val resume = V2Request.StartTask("app", "Tidy", places = listOf(PlaceSpec.Existing("/w/tasks/tidy"))).json(7)
         assertEquals("""[{"kind":"existing","path":"/w/tasks/tidy"}]""", resume["places"].toString())
+        assertEquals("""{"id":8,"type":"inbox-delete-older","days":3}""", V2Request.InboxDeleteOlder(3).json(8).toString())
     }
 
     @Test

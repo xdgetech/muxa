@@ -23,6 +23,8 @@ public enum V2Request: Sendable {
     case inboxDone(item: String)
     case inboxReopen(item: String)
     case inboxDelete(item: String)
+    /// Deletes every open and done item older than `days`, 1 to 3650 (ADR 0095).
+    case inboxDeleteOlder(days: Int)
     /// Closes the Review item's Task. `worktree` nil means `remove`.
     case inboxApprove(item: String, worktree: WorktreeChoice? = nil)
     /// Types `comment` into the Review item's Task agent and resolves the item.
@@ -84,6 +86,7 @@ public enum V2Request: Sendable {
         case let .inboxDone(item): set("inbox-done", ["item": item])
         case let .inboxReopen(item): set("inbox-reopen", ["item": item])
         case let .inboxDelete(item): set("inbox-delete", ["item": item])
+        case let .inboxDeleteOlder(days): set("inbox-delete-older", ["days": days])
         case let .inboxApprove(item, worktree):
             set("inbox-approve", ["item": item, "worktree": worktree?.rawValue])
         case let .inboxRequestChanges(item, comment):

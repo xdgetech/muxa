@@ -13,8 +13,6 @@ use super::workers::{self, Worker};
 pub const BOTS_DIR: &str = "bots";
 pub const SOUL_FILE: &str = "soul.md";
 pub const MEMORY_FILE: &str = "memory.md";
-pub const DEFAULT_DAILY_ITEMS: u32 = 3;
-pub const MAX_DAILY_ITEMS: u32 = 50;
 /// Bytes. The Soul and the Memory both go into the run's `.muxa/TASK.md`.
 pub const MAX_SOUL: usize = 12 * 1024;
 pub const MAX_MEMORY: usize = 16 * 1024;
@@ -36,7 +34,6 @@ pub struct Bot {
     pub description: Option<String>,
     /// None: the workspace default agent.
     pub worker: Option<String>,
-    pub daily_items: u32,
     pub enabled: bool,
     /// The canonical `.muxa/` folder its files must stay in.
     pub dir: PathBuf,
@@ -53,7 +50,9 @@ pub(super) struct RawBot {
     name: String,
     description: Option<String>,
     worker: Option<String>,
-    daily_items: Option<u32>,
+    /// Ignored (ADR 0094): files from before it still load.
+    #[serde(default, rename = "daily_items")]
+    _daily_items: Option<toml::Value>,
     enabled: bool,
     #[serde(default)]
     members: Vec<String>,
@@ -100,10 +99,6 @@ impl RawBot {
                 Some(w.to_owned())
             }
         };
-        let daily_items = self.daily_items.unwrap_or(DEFAULT_DAILY_ITEMS);
-        if !(1..=MAX_DAILY_ITEMS).contains(&daily_items) {
-            return Err(at(&format!("daily_items must be 1 to {MAX_DAILY_ITEMS}")));
-        }
         if self.members.len() > MAX_MEMBERS {
             return Err(at(&format!("members has at most {MAX_MEMBERS} Bots")));
         }
@@ -117,7 +112,6 @@ impl RawBot {
             name: self.name,
             description: self.description,
             worker,
-            daily_items,
             enabled: self.enabled,
             dir: dir.to_owned(),
             members: self.members,
@@ -341,7 +335,6 @@ mod tests {
             name: "triage".into(),
             description: None,
             worker: None,
-            daily_items: 3,
             enabled: true,
             dir: dir.canonicalize().unwrap(),
             members: Vec::new(),

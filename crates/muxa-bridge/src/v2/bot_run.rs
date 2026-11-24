@@ -20,7 +20,6 @@ pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, Strin
     Ok(BotBrief {
         reach: Reach {
             workspace: ws.name.clone(),
-            daily_items: bot.daily_items,
             connections: ws
                 .connections
                 .iter()

@@ -252,3 +252,60 @@ extension MacNextTests {
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: field)], timeout: 10) == .completed
     }
 }
+
+/// A Bot has no daily item limit (ADR 0094); the Inbox deletes old items in
+/// one step (ADR 0095). Each test keeps a screenshot for the review.
+extension MacNextTests {
+    @MainActor
+    func testABotsSettingsHaveNoDailyItems() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.bots")
+        let bot = app.descendants(matching: .any)["settings.bot.pr-watch"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 5))
+        bot.click()
+        XCTAssertTrue(app.textFields["bot.description"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["bot.daily"].exists)
+        keep(app, "bot-settings")
+    }
+
+    @MainActor
+    func testABotsHomeSaysItsItemsTodayWithNoLimit() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: [.command, .shift])
+        let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 10))
+        bot.click()
+        XCTAssertTrue(app.staticTexts["bot.title"].waitForExistence(timeout: 5))
+        let perDay = NSPredicate(format: "label CONTAINS 'items a day' OR label CONTAINS ' of '")
+        XCTAssertEqual(app.staticTexts.matching(perDay).count, 0)
+        keep(app, "bot-home")
+    }
+
+    @MainActor
+    func testDeleteOlderAsksThenClearsTheInbox() throws {
+        let app = launch()
+        let more = app.descendants(matching: .any)["inbox.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.click()
+        let submenu = app.menuItems["Delete Older Than"]
+        XCTAssertTrue(submenu.waitForExistence(timeout: 5))
+        submenu.hover()
+        let oneDay = app.menuItems["1 day"]
+        XCTAssertTrue(oneDay.waitForExistence(timeout: 5))
+        oneDay.click()
+        // The demo's items are from 2025, so every one is older than a day.
+        let delete = app.buttons["inbox.deleteOlder.confirm"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        keep(app, "inbox-delete-older")
+        delete.click()
+        XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
+    }
+
+    @MainActor
+    private func keep(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+}

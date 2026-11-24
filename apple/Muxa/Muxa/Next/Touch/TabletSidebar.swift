@@ -14,6 +14,7 @@ struct TabletSidebar: View {
     @Binding var filter: InboxFilter
     let now: Int64
     @State private var reordering = false
+    @State private var deleteOlder: Int?
     @State private var showOthers = false
     @State private var addingBot = false
 
@@ -24,7 +25,8 @@ struct TabletSidebar: View {
                     Text(title).font(.system(size: 22, weight: .bold)).foregroundStyle(Palette.text)
                     Spacer()
                     if mode.wrappedValue == .inbox {
-                        InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering)
+                        InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering,
+                                        deleteOlder: $deleteOlder)
                     }
                     if mode.wrappedValue == .bots {
                         Button("New Bot", systemImage: "plus") { addingBot = true }
@@ -53,6 +55,7 @@ struct TabletSidebar: View {
         }
         .background(Palette.surface)
         .sheet(isPresented: $addingBot) { NewBotForm() }
+        .inboxDeleteOlder($deleteOlder)
     }
 
     private var title: String {

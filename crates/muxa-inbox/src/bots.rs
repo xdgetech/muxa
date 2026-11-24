@@ -1,6 +1,5 @@
-//! What the Inbox keeps per Bot (ADR 0082): how many items it added today,
-//! so a Bot stays within its daily limit, and how its items ended, so the
-//! user can see whether it helps.
+//! What the Inbox keeps per Bot (ADR 0082): how many items it added today
+//! and how its items ended, so the user can see whether it helps.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,17 +18,13 @@ pub(crate) struct Ledger {
 }
 
 impl Ledger {
-    /// Whether one more item fits `limit` on `day`; a new day starts at zero.
-    pub fn take(&mut self, day: &str, limit: u32) -> bool {
+    /// Counts one more item on `day`; a new day starts at zero.
+    pub fn count(&mut self, day: &str) {
         if self.day != day {
             self.day = day.to_owned();
             self.added = 0;
         }
-        if self.added >= limit {
-            return false;
-        }
-        self.added += 1;
-        true
+        self.added = self.added.saturating_add(1);
     }
 }
 
@@ -37,22 +32,18 @@ pub(crate) fn key(workspace: &str, bot: &str) -> String {
     format!("{workspace}/{bot}")
 }
 
-/// The key of the one item that stands for a Bot's items past its limit.
-pub(crate) fn more_key(workspace: &str, bot: &str, day: &str) -> String {
-    format!("bot-more:{workspace}/{bot}:{day}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn a_day_allows_the_limit_and_the_next_day_starts_over() {
+    fn a_day_counts_with_no_limit_and_the_next_day_starts_over() {
         let mut l = Ledger::default();
-        assert!(l.take("2026-11-23", 2));
-        assert!(l.take("2026-11-23", 2));
-        assert!(!l.take("2026-11-23", 2));
-        assert!(l.take("2026-11-24", 2));
+        for _ in 0..60 {
+            l.count("2026-11-23");
+        }
+        assert_eq!(l.added, 60);
+        l.count("2026-11-24");
         assert_eq!(l.added, 1);
     }
 }

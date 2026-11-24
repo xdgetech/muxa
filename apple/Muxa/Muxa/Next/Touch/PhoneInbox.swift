@@ -9,6 +9,7 @@ struct PhoneInbox: View {
     @State private var path: [String] = []
     @State private var filter = InboxFilter()
     @State private var reordering = false
+    @State private var deleteOlder: Int?
     @State private var now = Int64(Date().timeIntervalSince1970)
 
     var body: some View {
@@ -24,6 +25,7 @@ struct PhoneInbox: View {
             .safeAreaInset(edge: .bottom) { LinkBanner() }
         }
         .tint(Palette.accent)
+        .inboxDeleteOlder($deleteOlder)
         .task {
             // Later items come back on their own; the clock decides what shows.
             while !Task.isCancelled {
@@ -37,7 +39,8 @@ struct PhoneInbox: View {
         VStack(alignment: .leading, spacing: 10) {
             ScreenTitle(title: "Inbox") {
                 HostMenu()
-                InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering)
+                InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering,
+                                deleteOlder: $deleteOlder)
             }
             NeedsYouBanner(open: nav.open) { nav.tab = .tasks }
             CaptureField()

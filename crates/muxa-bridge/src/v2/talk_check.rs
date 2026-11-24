@@ -4,7 +4,7 @@
 use muxa_protocol::settings::{SettingsBot, SettingsOp, SettingsWorkspace};
 use serde::Deserialize;
 
-use crate::records::bots::{DEFAULT_DAILY_ITEMS, MAX_MEMORY};
+use crate::records::bots::MAX_MEMORY;
 use crate::routines::identity::{self, Place, Reach};
 
 /// `.muxa/bot.json` in the talk's folder.
@@ -285,10 +285,10 @@ You never edit files in the Workspace's `.muxa/` folder: they are denied to you.
 }}
 ```
 
-Every key is optional. When the user asks you for Inbox items, add them to `items`: they reach the Inbox at once, do not count against your daily items, and a key you used before is skipped. Settings change only by a proposal, which the user applies from their Inbox; nothing changes before. Allowed ops, all with "workspace": {ws:?}:
-- {{"op":"bot-add"|"bot-update","workspace":…,"bot":{{"name":{bot:?},"description":…,"daily_items":3,"enabled":true,"members":[],"handoffs_per_day":10,"commands":[]}},"soul_text":"…"}}
-- {{"op":"routine-add"|"routine-update","workspace":…,"routine":{{"name":…,"bot":{bot:?},"instructions":"routines/<name>.md","enabled":false,"schedule":"*/30 9-18 * * 1-5","timezone":"Europe/Berlin","read_only":true}},"instructions_text":"…"}}
-  (a schedule is five cron fields, runs at least 15 minutes apart; or "at":"09:00" daily; or "on":"review" to run when a Task asks for review)
+Every key is optional. When the user asks you for Inbox items, add them to `items`: they reach the Inbox at once, and a key you used before is skipped. Settings change only by a proposal, which the user applies from their Inbox; nothing changes before. Allowed ops, all with "workspace": {ws:?}:
+- {{"op":"bot-add"|"bot-update","workspace":…,"bot":{{"name":{bot:?},"description":…,"enabled":true,"members":[],"handoffs_per_day":10,"commands":[]}},"soul_text":"…"}}
+- {{"op":"routine-add"|"routine-update","workspace":…,"routine":{{"name":…,"bot":{bot:?},"instructions":"routines/<name>.md","enabled":false,"schedule":"*/30 9-18 * * 1-5","timezone":"Europe/Berlin","read_only":true,"items":10}},"instructions_text":"…"}}
+  (a schedule is five cron fields, runs at least 15 minutes apart; or "at":"09:00" daily; or "on":"review" to run when a Task asks for review; "items" is the most one run may publish, 1 to 50, default 10)
 - {{"op":"routine-remove","workspace":…,"name":…}}
 
 Routines you add are added turned off; the user turns them on. After you write the file and end your turn, muxa checks it and writes the result to `.muxa/CHECK.md`; read it on your next turn. Update your memory when you learn something about the user worth keeping.
@@ -302,9 +302,6 @@ Routines you add are added turned off; the user turns them on. After you write t
 fn reach(ws: &SettingsWorkspace, bot: Option<&SettingsBot>) -> Reach {
     Reach {
         workspace: ws.name.clone(),
-        daily_items: bot
-            .and_then(|b| b.spec.daily_items)
-            .unwrap_or(DEFAULT_DAILY_ITEMS),
         connections: ws
             .connections
             .iter()

@@ -223,9 +223,6 @@ pub struct BotSpec {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker: Option<String>,
-    /// None: 3.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub daily_items: Option<u32>,
     pub enabled: bool,
     /// A team lead's members (ADR 0085): Bots of the same Workspace that
     /// lead no team themselves.

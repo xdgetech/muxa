@@ -34,11 +34,12 @@ struct TalkCodingTests {
              "suggestion":{"kind":"todo","workspace":"w","due":"2026-11-28","split":["a","b"],"task_goal":"Fix it","bot":"pr-watch"}}],
             "done":[]}}
             """#
+        // `daily_items` from a host before ADR 0094 decodes and is dropped.
         let inbox = try Inbox.field(of: Data(wire.utf8))
         let proposal = try #require(inbox.items[0].settingsProposal)
         #expect(proposal.revision == "abc")
         #expect(proposal.ops == [
-            .botUpdate(workspace: "w", bot: BotSpec(name: "pr-watch", dailyItems: 5, members: ["triage"], handoffsPerDay: 4)),
+            .botUpdate(workspace: "w", bot: BotSpec(name: "pr-watch", members: ["triage"], handoffsPerDay: 4)),
             .routineAdd(workspace: "w",
                         routine: RoutineSpec(name: "sweep", instructions: "routines/sweep.md", enabled: false, bot: "pr-watch",
                                              readOnly: true, on: "review"),

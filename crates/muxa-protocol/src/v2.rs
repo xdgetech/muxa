@@ -360,6 +360,11 @@ pub enum ClientMsg {
         id: u64,
         item: String,
     },
+    /// Deletes every open and done item older than `days` (ADR 0095).
+    InboxDeleteOlder {
+        id: u64,
+        days: u32,
+    },
     Routines {
         id: u64,
     },
@@ -917,8 +922,8 @@ pub struct BotCount {
     /// The host's local date of `added`, `YYYY-MM-DD`; empty before its first item.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub day: String,
-    /// Items that counted against `daily_items` on `day`. Its "N more" item and
-    /// its talks' proposals do not count.
+    /// Items the Bot's runs added on `day` (ADR 0094). Its talks' items and
+    /// proposals do not count.
     #[serde(default)]
     pub added: u32,
 }

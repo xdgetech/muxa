@@ -31,8 +31,6 @@ fun ColumnScope.BotSettingsTab(model: NextModel, editor: SettingsEditor, e: BotE
     val on = !editor.readOnly
     BotRename(editor, ws.name, e.name, ws.bots.map { it.name }) { bots.pick = BotPick(ws.name, it) }
     Field(d.description, { d = d.copy(description = it) }, "Description", "bot.description", enabled = on, placeholder = "Watches open PRs")
-    Field(d.dailyItems, { d = d.copy(dailyItems = it) }, "Daily items", "bot.daily", enabled = on, number = true,
-        placeholder = "$DEFAULT_DAILY_ITEMS", help = "At most this many Inbox items a day, from 1 to 50.")
     SwitchField("Enabled", "bot.enabled", d.enabled, on) { d = d.copy(enabled = it) }
     Text("Turned off, its Routines do not run.", style = MaterialTheme.typography.bodySmall)
     BotTeam(d, ws.bots) { d = it }

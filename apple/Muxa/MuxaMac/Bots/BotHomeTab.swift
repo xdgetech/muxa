@@ -64,16 +64,16 @@ struct BotHomeTab: View {
             if let n = last.1.published { parts.append(n == 1 ? "1 item" : "\(n) items") }
             out.append(("Last run", parts.joined(separator: " · ")))
         }
-        if let today = itemsToday { out.append(("Items today", "\(today) of \(entry.bot.spec.dailyItems ?? 3)")) }
+        if let today = itemsToday { out.append(("Items today", "\(today)")) }
         if let at = entry.bot.memoryHistory.first?.at {
             out.append(("Memory", "updated \(routineStamp(at))"))
         }
         return out
     }
 
-    /// The host's count against the daily limit today. Its "N more" item and
-    /// its talks' proposals do not count, so it never passes the limit. Nil
-    /// from a server that does not send it.
+    /// The items the Bot's runs added today, as the host counts them; its
+    /// talks' items and proposals do not count. Nil from a server that does
+    /// not send it.
     private var itemsToday: Int? {
         let today = Date.now.formatted(.iso8601.year().month().day())
         let count = model.inbox.bots?.first { $0.workspace == entry.workspace.name && $0.bot == entry.name }

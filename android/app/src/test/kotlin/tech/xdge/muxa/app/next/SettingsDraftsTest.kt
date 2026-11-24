@@ -89,25 +89,22 @@ class SettingsDraftsTest {
     }
 
     @Test
-    fun aBotNameIsLowercaseAndItsDailyItemsAreFrom1To50() {
+    fun aBotNameIsLowercase() {
         val d = BotDraft(true, "pr-watch", soul = "You watch PRs.")
         assertNull(d.problem)
         assertEquals("A name has only lowercase letters, digits, - and _.", d.copy(name = "PR Watch").problem)
-        assertEquals("Daily items is a number from 1 to 50.", d.copy(dailyItems = "51").problem)
-        assertEquals("Daily items is a number from 1 to 50.", d.copy(dailyItems = "0").problem)
-        assertNull(d.copy(dailyItems = " 50 ").problem)
         assertEquals("The Soul is at most 12 KiB.", d.copy(soul = "x".repeat(12 * 1024 + 1)).problem)
-        val add = d.copy(description = " Watches PRs ", dailyItems = "5").op("app") as SettingsOp.BotAdd
-        assertEquals(BotSpec("pr-watch", "Watches PRs", null, 5, true), add.bot)
+        val add = d.copy(description = " Watches PRs ").op("app") as SettingsOp.BotAdd
+        assertEquals(BotSpec("pr-watch", "Watches PRs", null, true), add.bot)
         assertEquals("You watch PRs.", add.soulText)
     }
 
     @Test
     fun aBotSendsItsSoulOnlyWhenItChanged() {
-        val b = SettingsBot("pr-watch", dailyItems = 3, soulText = "Old\n", memoryText = "- learned\n", memoryVersions = 2)
+        val b = SettingsBot("pr-watch", soulText = "Old\n", memoryText = "- learned\n", memoryVersions = 2)
         val same = BotDraft.of(b).op("app") as SettingsOp.BotUpdate
         assertNull(same.soulText)
-        assertEquals(BotSpec("pr-watch", dailyItems = 3), same.bot)
+        assertEquals(BotSpec("pr-watch"), same.bot)
         assertEquals("New", (BotDraft.of(b).copy(soul = "New").op("app") as SettingsOp.BotUpdate).soulText)
         assertNull((BotDraft.of(b.copy(soulText = null)).op("app") as SettingsOp.BotUpdate).soulText)
     }
@@ -120,9 +117,9 @@ class SettingsDraftsTest {
             routines = listOf(SettingsRoutine("scan", instructions = "s.md", bot = "pr-watch"), SettingsRoutine("other", instructions = "o.md")),
         )
         // ADR 0087: a Bot's worker is ignored by the host, so the summary leaves it out.
-        assertEquals("1 Routine · 3 a day", botSummary(bot, ws, emptyList()))
+        assertEquals("1 Routine", botSummary(bot, ws, emptyList()))
         val counts = listOf(BotCount("Personal", "pr-watch", 9, 9), BotCount("app", "pr-watch", 4, 1))
-        assertEquals("1 Routine · 3 a day · 4 done · 1 deleted", botSummary(bot, ws, counts))
+        assertEquals("1 Routine · 4 done · 1 deleted", botSummary(bot, ws, counts))
     }
 
     @Test
@@ -149,7 +146,7 @@ class SettingsDraftsTest {
         assertEquals(BotSpec("lead", members = listOf("a"), handoffsPerDay = 5), d.copy(handoffs = "5").spec())
         assertEquals("Handoffs a day is a number from 1 to 50.", d.copy(handoffs = "51").problem)
         assertEquals(BotSpec("lead"), d.copy(members = emptySet(), handoffs = "5").spec())
-        assertEquals("1 Routine · 3 a day · Leads a", botSummary(bots[0], SettingsWorkspace("w", "/w", routines = listOf(SettingsRoutine("r", instructions = "r.md", bot = "lead"))), emptyList()))
+        assertEquals("1 Routine · Leads a", botSummary(bots[0], SettingsWorkspace("w", "/w", routines = listOf(SettingsRoutine("r", instructions = "r.md", bot = "lead"))), emptyList()))
     }
 
     @Test

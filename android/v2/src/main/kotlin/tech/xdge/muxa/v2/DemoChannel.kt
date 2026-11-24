@@ -205,6 +205,18 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                     bots = open?.let { counted(i.bots, it, deleted = true) } ?: i.bots,
                 )
             }
+            "inbox-delete-older" -> {
+                val days = m.long("days")?.takeIf { it in 1..MAX_DELETE_DAYS }
+                    ?: return send(error(id, "bad-request", "days must be 1 to $MAX_DELETE_DAYS"))
+                val cutoff = now() - days * DAY
+                change(id) { i ->
+                    val (old, kept) = i.items.partition { it.created < cutoff }
+                    i.copy(
+                        items = kept, done = i.done.filter { it.created >= cutoff },
+                        bots = old.fold(i.bots) { counts, it -> counted(counts, it, deleted = true) },
+                    )
+                }
+            }
             "task-review" -> {
                 val t = terminals.firstOrNull { it.id == m.str("terminal") }
                 val review = InboxItem(
@@ -633,6 +645,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         val CAPTURE_KINDS = mapOf("reply" to ItemKind.REPLY, "read" to ItemKind.READ, "decide" to ItemKind.DECIDE)
         val BOT_NAME = Regex("[a-z0-9_-]{1,64}")
 
+        const val DAY = 86_400L
+        const val MAX_DELETE_DAYS = 3650L
         fun now() = System.currentTimeMillis() / 1000
     }
 }
@@ -830,7 +844,7 @@ private fun standardContent(): DemoContent {
         ),
         losesWork = mapOf("d8" to "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"),
         settings = DEMO_SETTINGS,
-        // d10 and d11 counted against pr-watch's daily items today, as the host counts them (ADR 0086).
+        // pr-watch's runs added d10 and d11 today, as the host counts them (ADR 0086).
         botCounts = listOf(BotCount("app", "pr-watch", done = 4, deleted = 1, day = LocalDate.now().toString(), added = 2)),
     )
 }
@@ -843,7 +857,7 @@ private const val TALK_DIR = "/demo/tasks/talk-to-pr-watch"
 /** The shell commands only pr-watch may run (ADR 0088). */
 private val PR_WATCH_COMMANDS = listOf("gh pr list:*")
 
-/** What pr-watch proposed in a talk: an off Routine of its own, and a day's items more. */
+/** What pr-watch proposed in a talk: an off Routine of its own, and a description that names CI. */
 private val NIGHTLY_SWEEP_OPS = listOf(
     SettingsOp.RoutineAdd(
         "app",
@@ -851,7 +865,7 @@ private val NIGHTLY_SWEEP_OPS = listOf(
         "Close the stale PRs of example/app.\n",
     ),
     // A bot-update replaces the whole Bot, so it keeps the commands it already has.
-    SettingsOp.BotUpdate("app", BotSpec("pr-watch", "Watches the app's open PRs", dailyItems = 4, commands = PR_WATCH_COMMANDS)),
+    SettingsOp.BotUpdate("app", BotSpec("pr-watch", "Watches the app's open PRs and their CI", commands = PR_WATCH_COMMANDS)),
 )
 
 private val DEMO_PLAN = """
@@ -906,7 +920,7 @@ private val DEMO_SETTINGS = Settings(
             ),
             bots = listOf(
                 SettingsBot(
-                    "pr-watch", "Watches the app's open PRs", dailyItems = 3,
+                    "pr-watch", "Watches the app's open PRs",
                     soulText = "You watch the open PRs of example/app.\nPropose a review only when CI passed. Write short items.\n",
                     memoryText = "- Sam reviews the auth code.\n- Dependabot PRs merge on Fridays.\n",
                     memoryVersions = 2,

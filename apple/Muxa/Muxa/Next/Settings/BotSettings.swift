@@ -53,7 +53,6 @@ struct BotDraft: Identifiable {
     var description = ""
     /// Kept as the file says it; the host ignores a Bot's worker (ADR 0087).
     var worker = ""
-    var dailyItems = ""
     var enabled = true
     /// The Bots it leads (ADR 0085), in the Workspace's order.
     var members: [String] = []
@@ -72,7 +71,6 @@ struct BotDraft: Identifiable {
         name = b.name
         description = b.spec.description ?? ""
         worker = b.spec.worker ?? ""
-        dailyItems = b.spec.dailyItems.map(String.init) ?? ""
         enabled = b.spec.enabled
         members = b.spec.members
         handoffs = b.spec.handoffsPerDay.map(String.init) ?? ""
@@ -85,7 +83,7 @@ struct BotDraft: Identifiable {
         guard let name = Lines.optional(name) else { return nil }
         guard commands.allSatisfy({ Self.commandProblem($0.text) == nil }) else { return nil }
         return BotSpec(name: name, description: Lines.optional(description), worker: Lines.optional(worker),
-                       dailyItems: UInt32(Lines.trimmed(dailyItems)), enabled: enabled, members: members,
+                       enabled: enabled, members: members,
                        handoffsPerDay: members.isEmpty ? nil : UInt32(Lines.trimmed(handoffs)),
                        commands: commands.map { Lines.trimmed($0.text) })
     }
@@ -242,14 +240,8 @@ struct BotSettingsSections: View {
             Toggle("Enabled", isOn: $draft.enabled)
                 .accessibilityIdentifier("bot.enabled")
         } footer: {
-            if draft.existing == nil { Text("Lowercase letters, digits, - and _.") }
-        }
-        Section {
-            TextField("Items a day, 1 to 50 (default 3)", text: $draft.dailyItems)
-                .numberEntry()
-                .accessibilityIdentifier("bot.daily")
-        } footer: {
-            Text("Past its daily items, the rest go into one \"N more\" item. It runs with \(workspace.name)'s access: its connections and MCP servers.")
+            let access = "It runs with \(workspace.name)'s access: its connections and MCP servers."
+            Text(draft.existing == nil ? "Lowercase letters, digits, - and _. \(access)" : access)
         }
         team
         commands

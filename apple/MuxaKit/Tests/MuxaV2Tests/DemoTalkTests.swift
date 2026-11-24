@@ -20,7 +20,7 @@ struct DemoTalkTests {
         let app = try #require(try await c.settings().workspaces.first { $0.name == "app" })
         let sweep = try #require(app.routines.first { $0.name == "nightly-sweep" })
         #expect(!sweep.spec.enabled && sweep.spec.bot == "pr-watch")
-        #expect(app.bots.first { $0.name == "pr-watch" }?.spec.dailyItems == 5)
+        #expect(app.bots.first { $0.name == "pr-watch" }?.spec.commands == ["gh pr list:*", "gh pr diff:*"])
     }
 
     @Test(.timeLimit(.minutes(1)))

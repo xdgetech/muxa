@@ -36,6 +36,17 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func deleteOlderKeepsOnlyNewerItems() async throws {
+        let c = try await open()
+        // The demo's own items are from 2025; a capture made now is not a day old.
+        _ = try await c.inbox(.inboxAdd(Capture(kind: .todo, title: "fresh")))
+        let inbox = try await c.inbox(.inboxDeleteOlder(days: 1))
+        #expect(inbox.items.map(\.title) == ["fresh"])
+        #expect(inbox.done.isEmpty)
+        await #expect(throws: (any Error).self) { try await c.inbox(.inboxDeleteOlder(days: 0)) }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func turnedOffRoutinesAreReportedUntilTurnedOn() async throws {
         let c = try await open()
         #expect(try await c.routines().off == [RoutinesOff(workspace: "Personal", count: 1)])

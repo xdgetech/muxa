@@ -186,7 +186,7 @@ data class RoutineDraft(
 }
 
 /**
- * A Bot's fields (ADR 0082). [soul] is its `soul.md`; blank [dailyItems] is the host's default, 3.
+ * A Bot's fields (ADR 0082). [soul] is its `soul.md`.
  * [members] make it a team lead (ADR 0085); blank [handoffs] is the host's default, 10.
  */
 data class BotDraft(
@@ -194,7 +194,6 @@ data class BotDraft(
     val name: String = "",
     val description: String = "",
     val worker: String? = null,
-    val dailyItems: String = "",
     val enabled: Boolean = true,
     val soul: String = "",
     /** The Soul as read; null when it could not be read. A new Bot has none. */
@@ -208,7 +207,6 @@ data class BotDraft(
         get() = when {
             name.isBlank() -> "Give it a name."
             !isValidName(name.trim()) -> NAME_RULE
-            dailyItems.isNotBlank() && dailyItems.trim().toIntOrNull() !in PER_DAY -> "Daily items is a number from 1 to 50."
             members.isNotEmpty() && handoffs.isNotBlank() && handoffs.trim().toIntOrNull() !in PER_DAY ->
                 "Handoffs a day is a number from 1 to 50."
             members.size > MAX_MEMBERS -> "A team has at most $MAX_MEMBERS members."
@@ -219,7 +217,7 @@ data class BotDraft(
         }
 
     fun spec() = BotSpec(
-        name.trim(), description.trim().ifEmpty { null }, worker, dailyItems.trim().toIntOrNull(), enabled,
+        name.trim(), description.trim().ifEmpty { null }, worker, enabled,
         // Handoffs mean nothing without a team.
         members.sorted(), handoffs.trim().toIntOrNull().takeIf { members.isNotEmpty() }, commands,
     )
@@ -268,7 +266,7 @@ data class BotDraft(
         }
 
         fun of(b: SettingsBot) = BotDraft(
-            false, b.name, b.description.orEmpty(), b.worker, b.dailyItems?.toString().orEmpty(), b.enabled,
+            false, b.name, b.description.orEmpty(), b.worker, b.enabled,
             b.soulText.orEmpty(), b.soulText, b.members.toSet(), b.handoffsPerDay?.toString().orEmpty(), b.commands,
         )
     }

@@ -80,10 +80,10 @@ struct BotDetailPane: View {
         .padding(.top, 18)
     }
 
-    /// `app · 3 items a day · reviewer · leads research, writer`.
+    /// `app · leads research, writer`.
     private var meta: String {
         let spec = entry.bot.spec
-        var parts = [entry.workspace.name, "\(spec.dailyItems ?? 3) items a day"]
+        var parts = [entry.workspace.name]
         if !spec.members.isEmpty { parts.append("leads \(spec.members.joined(separator: ", "))") }
         if let lead = entry.workspace.bots.first(where: { $0.spec.members.contains(entry.name) }) {
             parts.append("member of \(lead.name)")

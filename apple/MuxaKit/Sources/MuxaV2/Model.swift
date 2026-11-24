@@ -142,8 +142,8 @@ public struct BotCount: Codable, Equatable, Sendable {
         self.added = added
     }
 
-    /// Items counted against the daily limit today, by the host's count; nil
-    /// when the server does not say or the count is for another day.
+    /// Items the Bot's runs added today, by the host's count (ADR 0094): 0
+    /// when the count is for another day, nil when the server does not say.
     public func addedToday(_ today: String) -> UInt32? {
         guard let day, day == today else { return day == nil ? nil : 0 }
         return added

@@ -173,7 +173,7 @@ data class RoutineSpec(
 )
 
 /**
- * A `[[bot]]` (ADR 0082). [name] is lowercase letters, digits, `-` and `_`; [dailyItems] null is 3.
+ * A `[[bot]]` (ADR 0082). [name] is lowercase letters, digits, `-` and `_`.
  * [members] make it a team lead (ADR 0085); [handoffsPerDay] null is 10.
  */
 @OptIn(ExperimentalSerializationApi::class)
@@ -182,7 +182,6 @@ data class BotSpec(
     val name: String,
     val description: String? = null,
     val worker: String? = null,
-    @SerialName("daily_items") val dailyItems: Int? = null,
     val enabled: Boolean = true,
     // Absent when empty, as the server writes it.
     @EncodeDefault(EncodeDefault.Mode.NEVER) val members: List<String> = emptyList(),
@@ -197,7 +196,6 @@ data class SettingsBot(
     val name: String,
     val description: String? = null,
     val worker: String? = null,
-    @SerialName("daily_items") val dailyItems: Int? = null,
     val enabled: Boolean = true,
     @SerialName("soul_text") val soulText: String? = null,
     @SerialName("memory_text") val memoryText: String? = null,
@@ -209,11 +207,11 @@ data class SettingsBot(
     @SerialName("memory_history") val memoryHistory: List<MemoryVersion> = emptyList(),
 ) {
     val spec: BotSpec
-        get() = BotSpec(name, description, worker, dailyItems, enabled, members, handoffsPerDay, commands)
+        get() = BotSpec(name, description, worker, enabled, members, handoffsPerDay, commands)
 
     companion object {
         fun of(spec: BotSpec, soulText: String?) = with(spec) {
-            SettingsBot(name, description, worker, dailyItems, enabled, soulText, "", 0, members, handoffsPerDay, commands)
+            SettingsBot(name, description, worker, enabled, soulText, "", 0, members, handoffsPerDay, commands)
         }
     }
 }
