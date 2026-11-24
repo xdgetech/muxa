@@ -75,8 +75,16 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 List {
-                    ForEach(entries) {
-                        ChatRow(entry: $0).listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    ForEach(entries) { entry in
+                        ChatRow(entry: entry)
+                            .contextMenu {
+                                Button("Copy Message") { Clipboard.copy(entry.copyText) }
+                                    .accessibilityIdentifier("chat.copy.message")
+                                Button("Copy Chat") { Clipboard.copy(ChatEntry.transcript(entries)) }
+                                    .accessibilityIdentifier("chat.copy.chat")
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     }
                     Color.clear.frame(height: 1).id("end").listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
@@ -148,6 +156,7 @@ private struct ChatRow: View {
         case "user":
             Text(entry.text ?? "")
                 .foregroundStyle(Palette.text)
+                .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
@@ -159,10 +168,12 @@ private struct ChatRow: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(2)
+                    .textSelection(.enabled)
                 if let result = entry.tool?.result {
                     Text(result).font(.caption2.monospaced())
                         .foregroundStyle(entry.tool?.error == true ? Palette.late : Palette.textTertiary)
                         .lineLimit(4)
+                        .textSelection(.enabled)
                 }
             }
             .padding(10)
@@ -171,7 +182,7 @@ private struct ChatRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("chat.tool")
         case "notice":
-            Text(entry.text ?? "").font(.caption).foregroundStyle(Palette.textTertiary)
+            Text(entry.text ?? "").font(.caption).foregroundStyle(Palette.textTertiary).textSelection(.enabled)
         default:
             MarkdownText(text: entry.text ?? "")
                 .accessibilityIdentifier("chat.assistant")
@@ -228,4 +239,21 @@ extension ChatPrompt {
 
     /// The option a single Approve button sends: the first that goes on.
     var approve: ChatOption? { options.first { $0.cancel != true } }
+}
+
+extension ChatEntry {
+    /// The entry as plain text: a message's own Markdown, a tool's line and result.
+    var copyText: String {
+        guard kind == "tool" else { return text ?? "" }
+        let line = [tool?.name ?? "Tool", tool?.summary].compactMap { $0 }.joined(separator: " ")
+        return [line, tool?.result].compactMap { $0 }.joined(separator: "\n")
+    }
+
+    /// The whole conversation, one entry per paragraph. The user's lines start
+    /// with `You:`, since a pasted chat has no bubbles to tell them apart.
+    static func transcript(_ entries: [ChatEntry]) -> String {
+        entries.map { $0.kind == "user" ? "You: \($0.copyText)" : $0.copyText }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+    }
 }

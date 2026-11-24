@@ -181,7 +181,7 @@ struct BotConversation: View {
             if terminal.isTaskAgent {
                 Button("Close", systemImage: "xmark") { chrome.closingTask = terminal }
                     .buttonStyle(PaneActionStyle(on: false))
-                    .help("Close this chat's Task")
+                    .help("Close this chat")
                     .accessibilityIdentifier("bot.chat.close")
             }
         }
