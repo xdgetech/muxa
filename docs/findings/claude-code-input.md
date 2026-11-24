@@ -8,10 +8,12 @@ The apps type a chat message into the agent's terminal and send it with Return (
 | A line of 70 bytes or more with `\r` at its end, in one write, is not sent. Claude Code reads the write as a paste, and the `\r` becomes a new line in the prompt. 70, 80, 120 and 300 bytes behaved the same. | *probe* |
 | The same text, then `\r` as a write of its own, is sent: right after the text, after 20 ms and after 50 ms. | *probe* |
 | A short bracketed paste of two lines (`ESC[200~ … ESC[201~`) with `\r` in the same write is sent. | *probe* |
+| `--mcp-config` takes a list. `claude -p --mcp-config ./m.json zzprompt` read `zzprompt` as a second config file ("MCP config file not found"). With `--` before the prompt, the prompt was read as the prompt. Checked on 2.1.331, 2026-11-25. `--help` lists `--add-dir`, `--allowedTools` and `--disallowedTools` as lists too. | *probe* |
 | Claude Code reports `done` (OSC 7501) after each turn, and the talk then waits for the next message (`session-backends.md`). A Bot's live talk is usually `done`. | by hand |
 
 ## What muxa does with it
 
 - The apps write the message first, then `\r` alone after `KeyBytes.submitPause` (200 ms). Over the network, two writes sent back to back may reach the terminal in one read, so the pause is longer than the probe needed.
 - The host does the same through `muxa_server::typing::type_message`: Request changes' comment, and the fix prompt of a Routine run and of a Task Loop.
+- A Task's agent gets its start prompt as its last argument, after `--` (ADR 0098).
 - A Bot's page lands on a talk whatever its state, since `done` only means the turn ended.

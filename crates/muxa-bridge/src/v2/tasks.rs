@@ -224,6 +224,24 @@ impl BridgeHost {
     }
 }
 
+/// A Task's agent starts working on its own with one of these as its first
+/// message (ADR 0098). A talk gets none: it waits for the user.
+const START_PROMPT: &str = "Read .muxa/TASK.md and do the Task.";
+const PLAN_PROMPT: &str = "Read .muxa/TASK.md and plan the Task.";
+const CONTINUE_PROMPT: &str = "Read .muxa/TASK.md and continue the Task.";
+const PLAN_CONTINUE_PROMPT: &str = "Read .muxa/TASK.md and plan how to continue the Task.";
+
+/// Pure. The first message of a new Task's agent, or of one in a place it
+/// adopts (`existing`, `checkout`).
+fn start_prompt(adopts: bool, plan: bool) -> &'static str {
+    match (adopts, plan) {
+        (false, false) => START_PROMPT,
+        (false, true) => PLAN_PROMPT,
+        (true, false) => CONTINUE_PROMPT,
+        (true, true) => PLAN_CONTINUE_PROMPT,
+    }
+}
+
 /// Claude Code may not edit the Workspace's `.muxa/` in a talk: the Bot
 /// proposes changes instead (ADR 0083). It is told to read its brief first.
 /// The Bot's `commands` are allowed too; the user is in the talk, so anything
@@ -457,6 +475,9 @@ impl Host for BridgeHost {
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
+        if talk.is_none() {
+            line = crate::launch::prompt_line(&line, start_prompt(adopts, spec.plan));
+        }
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
         let mut prepared = prepared(ws, title, made, line, given);
         prepared.checkout = spec.checkout().map(str::to_owned);
@@ -487,6 +508,8 @@ impl Host for BridgeHost {
                 None => Vec::new(),
             };
             line = talk_line(&ws, made.working(), line, commands).await?;
+        } else {
+            line = crate::launch::prompt_line(&line, CONTINUE_PROMPT);
         }
         let title = ended
             .name
@@ -837,6 +860,7 @@ mod tests {
         assert!(super::super::talk_check::START_PROMPT.contains(".muxa/TASK.md"));
         let brief = std::fs::read_to_string(ready.dir.join(".muxa/TASK.md")).unwrap();
         assert!(brief.contains("`.muxa/bot.json`"));
+        assert!(!ready.argv[2].contains(" -- "), "a talk waits for the user");
         let plain = host.prepare(&spec(&[])).await.unwrap();
         assert!(!plain.argv[2].contains("--append-system-prompt"));
         let _ = std::fs::remove_dir_all(base);
@@ -851,7 +875,7 @@ mod tests {
         assert_eq!(
             ready.argv[2],
             format!(
-                "claude --mcp-config '{}' --strict-mcp-config",
+                "claude --mcp-config '{}' --strict-mcp-config -- '{START_PROMPT}'",
                 config.display()
             )
         );
@@ -862,6 +886,37 @@ mod tests {
         let named = host.prepare(&spec(&["web"])).await.unwrap();
         assert_eq!(named.mcp, ["docs"]);
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn a_plan_task_starts_by_planning() {
+        let (host, base) = host("plan", "");
+        let plan = TaskSpec {
+            plan: true,
+            ..spec(&[])
+        };
+        let line = host.prepare(&plan).await.unwrap().argv[2].clone();
+        assert!(
+            line.ends_with(&format!(" --permission-mode plan -- '{PLAN_PROMPT}'")),
+            "{line}"
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn an_adopted_place_continues_its_task() {
+        assert_eq!(start_prompt(false, false), START_PROMPT);
+        assert_eq!(start_prompt(true, false), CONTINUE_PROMPT);
+        assert_eq!(start_prompt(true, true), PLAN_CONTINUE_PROMPT);
+        for p in [
+            START_PROMPT,
+            PLAN_PROMPT,
+            CONTINUE_PROMPT,
+            PLAN_CONTINUE_PROMPT,
+        ] {
+            assert!(p.starts_with("Read .muxa/TASK.md "), "{p}");
+            assert!(!p.contains('\''), "quoted once on the line: {p}");
+        }
     }
 
     #[tokio::test]
@@ -952,6 +1007,10 @@ mod tests {
         );
         let line = &p.argv[2];
         assert!(line.starts_with("claude --x --settings "), "{line}");
+        assert!(
+            line.ends_with(&format!(" -- '{CONTINUE_PROMPT}'")),
+            "{line}"
+        );
         assert!(dir.join(".muxa/claude-settings.json").is_file());
 
         std::fs::remove_dir_all(&dir).unwrap();

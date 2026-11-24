@@ -108,7 +108,10 @@ async fn a_folder_is_adopted_and_its_notes_are_kept() {
     assert_eq!(p.dir, dir);
     assert_eq!((p.places.len(), p.places[0].kind), (1, PlaceKind::Folder));
     assert_eq!((p.repo, p.branch), (None, None));
-    assert_eq!(p.argv[2], "claude", "no conversation: no --continue");
+    assert_eq!(
+        p.argv[2], "claude -- 'Read .muxa/TASK.md and continue the Task.'",
+        "no conversation: no --continue"
+    );
     let notes = std::fs::read_to_string(dir.join(".muxa/TASK.md")).unwrap();
     assert_eq!(notes, "# Fix login\n\nMy notes.\n");
 
@@ -194,16 +197,19 @@ async fn claude_continues_only_where_it_kept_a_conversation() {
     let host = f.host(None);
     assert_eq!(
         host.prepare(&existing(&old)).await.unwrap().argv[2],
-        "claude --continue"
+        "claude --continue -- 'Read .muxa/TASK.md and continue the Task.'"
     );
     assert_eq!(
         host.prepare(&existing(&new)).await.unwrap().argv[2],
-        "claude"
+        "claude -- 'Read .muxa/TASK.md and continue the Task.'"
     );
     // A new folder Task never continues, also in a folder with a conversation.
     let mut fresh = existing(&old);
     fresh.places = Vec::new();
-    assert_eq!(host.prepare(&fresh).await.unwrap().argv[2], "claude");
+    assert_eq!(
+        host.prepare(&fresh).await.unwrap().argv[2],
+        "claude -- 'Read .muxa/TASK.md and do the Task.'"
+    );
 }
 
 /// A client of the server on `host`, past its welcome.
