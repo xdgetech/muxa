@@ -429,18 +429,53 @@ pub struct BotRules {
 const MAX_RULES: usize = 200;
 const MAX_RULE: usize = 500;
 
+/// The allow rules of a Workspace whose `[workspace.bots]` sets no `allow`
+/// (ADR 0090): tools that read and never write. The web, and the read tools
+/// of the common claude.ai connectors, which load only when the Workspace
+/// lets them in. Gmail stays out: mail is where untrusted text arrives.
+pub const DEFAULT_ALLOW: &[&str] = &[
+    "WebSearch",
+    "WebFetch",
+    "mcp__claude_ai_Google_Calendar__list_*",
+    "mcp__claude_ai_Google_Calendar__get_event",
+    "mcp__claude_ai_Google_Calendar__suggest_time",
+    "mcp__claude_ai_Google_Drive__search_files",
+    "mcp__claude_ai_Google_Drive__read_file_content",
+    "mcp__claude_ai_Google_Drive__get_file_metadata",
+    "mcp__claude_ai_Google_Drive__list_*",
+    "mcp__claude_ai_Google_Docs__read_doc",
+    "mcp__claude_ai_Google_Sheets__get_*",
+    "mcp__claude_ai_Slack__slack_read_*",
+    "mcp__claude_ai_Slack__slack_search_*",
+    "mcp__claude_ai_Notion__notion-search",
+    "mcp__claude_ai_Notion__notion-fetch",
+    "mcp__claude_ai_Notion__notion-get-*",
+    "mcp__claude_ai_Notion__notion-query-*",
+    "mcp__claude_ai_Notion__notion-list-*",
+    "mcp__claude_ai_Linear__list_*",
+    "mcp__claude_ai_Linear__get_*",
+    "mcp__claude_ai_Meetings__list_meetings",
+    "mcp__claude_ai_Meetings__get_*",
+];
+
+/// Pure. [`DEFAULT_ALLOW`] as owned rules.
+pub fn default_allow() -> Vec<String> {
+    DEFAULT_ALLOW.iter().map(|r| (*r).to_owned()).collect()
+}
+
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawBotRules {
-    #[serde(default)]
-    allow: Vec<String>,
+    /// None: [`DEFAULT_ALLOW`]. An empty list allows nothing.
+    allow: Option<Vec<String>>,
     #[serde(default)]
     deny: Vec<String>,
 }
 
 impl RawBotRules {
     pub(super) fn check(self) -> Result<BotRules, String> {
-        for (list, rules) in [("allow", &self.allow), ("deny", &self.deny)] {
+        let allow = self.allow.unwrap_or_else(default_allow);
+        for (list, rules) in [("allow", &allow), ("deny", &self.deny)] {
             if rules.len() > MAX_RULES {
                 return Err(format!("bots.{list} has at most {MAX_RULES} rules"));
             }
@@ -451,7 +486,7 @@ impl RawBotRules {
             }
         }
         Ok(BotRules {
-            allow: self.allow,
+            allow,
             deny: self.deny,
         })
     }

@@ -48,7 +48,16 @@ pub struct FileWorkspace {
     #[serde(default)]
     claude_connectors: bool,
     #[serde(default)]
-    bots: BotRules,
+    bots: FileBotRules,
+}
+
+/// `[workspace.bots]`; with no `allow` the Bots get the defaults (ADR 0090),
+/// which Settings shows so the user can change them.
+#[derive(Deserialize, Default)]
+struct FileBotRules {
+    allow: Option<Vec<String>>,
+    #[serde(default)]
+    deny: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -330,7 +339,13 @@ pub fn workspace(
         routines_enabled: gate.enabled,
         direct_writes: gate.direct_writes,
         claude_connectors: w.claude_connectors,
-        bot_rules: w.bots,
+        bot_rules: BotRules {
+            allow: w
+                .bots
+                .allow
+                .unwrap_or_else(crate::records::bots::default_allow),
+            deny: w.bots.deny,
+        },
         connections,
         mcp: w.mcp,
         routines: list,

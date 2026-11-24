@@ -246,16 +246,53 @@ fn a_workspaces_bot_rules_and_claude_connectors_are_set_and_cleared() {
             &s.revision,
             vec![op(
                 json!({"op": "workspace-update", "workspace": "Home", "claude_connectors": false,
-                "bot_rules": {"allow": [], "deny": []}}),
+                "bot_rules": {"allow": crate::records::bots::DEFAULT_ALLOW, "deny": []}}),
             )],
         )
         .unwrap();
-    assert!(!s.workspaces[1].claude_connectors && s.workspaces[1].bot_rules.is_empty());
+    assert!(!s.workspaces[1].claude_connectors);
+    assert_eq!(
+        s.workspaces[1].bot_rules.allow,
+        crate::records::bots::default_allow()
+    );
     assert!(
         !fs::read_to_string(&h.file)
             .unwrap()
             .contains("[workspace.bots]"),
-        "an empty table goes"
+        "the defaults stay unwritten, so the table goes"
+    );
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "workspace-update", "workspace": "Home", "bot_rules": {"allow": [], "deny": []}}),
+            )],
+        )
+        .unwrap();
+    assert!(
+        s.workspaces[1].bot_rules.is_empty(),
+        "no rules: allow nothing"
+    );
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    let ws = loaded.all().iter().find(|w| w.name == "Home").unwrap();
+    assert!(ws.bot_rules.allow.is_empty(), "allow = [] stays written");
+}
+
+#[test]
+fn a_workspace_without_bot_rules_gives_its_bots_the_read_defaults() {
+    let h = host("botdefaults");
+    let s = h.store.view().unwrap();
+    assert_eq!(
+        s.workspaces[1].bot_rules.allow,
+        crate::records::bots::default_allow()
+    );
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    let ws = loaded.all().iter().find(|w| w.name == "Home").unwrap();
+    assert!(ws.bot_rules.allow.iter().any(|r| r == "WebSearch"));
+    assert!(
+        !ws.bot_rules.allow.iter().any(|r| r.contains("Gmail")),
+        "mail stays out of the defaults"
     );
 }
 

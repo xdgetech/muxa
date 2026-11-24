@@ -70,14 +70,11 @@ pub fn apply(
             }
             if let Some(rules) = bot_rules {
                 let bots = sub_table(t, "bots")?;
-                set_list(bots, "allow", &rules.allow);
+                // The defaults stay unwritten, so they follow muxa's; an empty
+                // list is written, since it means "allow nothing" (ADR 0090).
+                let defaults = rules.allow == crate::records::bots::default_allow();
+                set_opt_list(bots, "allow", (!defaults).then_some(&rules.allow));
                 set_list(bots, "deny", &rules.deny);
-                if rules.allow.is_empty() {
-                    bots.remove("allow");
-                }
-                if rules.deny.is_empty() {
-                    bots.remove("deny");
-                }
                 drop_empty(t, "bots");
             }
             if let Some(hidden) = hidden_repos {
