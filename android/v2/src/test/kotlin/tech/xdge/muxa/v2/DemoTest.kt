@@ -569,6 +569,20 @@ class DemoTest {
         }
     }
 
+    /** ADR 0091: each subscription with its last report; one never used has none. */
+    @Test
+    fun subscriptionsShowTheirLastReport() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val usage = c.subscriptions()
+            assertEquals(listOf("claude-personal", "claude-spare", "chatgpt"), usage.map { it.name })
+            assertEquals(listOf(82, 31), usage[0].windows.map { it.usedPercent })
+            assertEquals(false, usage[0].windows.any { it.hasReset() })
+            assertEquals(Pair(emptyList<UsageWindow>(), null), Pair(usage[1].windows, usage[1].asOf))
+            c.close()
+        }
+    }
+
     /** ADR 0091: a login is named once and Workspaces list it; one a Workspace lists cannot go. */
     @Test
     fun subscriptionsAreAddedListedAndKeptWhileListed() = runBlocking {

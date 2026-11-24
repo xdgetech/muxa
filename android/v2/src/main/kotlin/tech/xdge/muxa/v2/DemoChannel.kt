@@ -67,6 +67,8 @@ data class DemoContent(
     val settings: Settings = Settings("1"),
     /** How the Bots' items ended before; Done and Delete add to them. */
     val botCounts: List<BotCount> = emptyList(),
+    /** What `subscriptions` answers (ADR 0091). */
+    val subscriptions: List<SubscriptionUsage> = emptyList(),
 ) {
     companion object {
         /**
@@ -93,6 +95,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private val losesWork = content.losesWork
     private var nextChat = 1
     private val settings = DemoSettings(content.settings)
+    private val subscriptions = content.subscriptions
     private var inbox = Inbox(1, content.inbox, emptyList(), content.botCounts)
 
     /** Uploads by folder and file name, so a second one with the same name gets a number. */
@@ -228,6 +231,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             "inbox-apply" -> applyProposal(id, item)
             "inbox-suggestion" -> suggestion(id, item, (m["accept"] as? JsonPrimitive)?.booleanOrNull == true)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
+            "subscriptions" -> reply(id, "subscriptions" to enc(subscriptions))
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {}, "off" to enc(routinesOff()))
             "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
             "reader-list" -> {
@@ -832,6 +836,7 @@ private fun standardContent(): DemoContent {
         settings = DEMO_SETTINGS,
         // d10 and d11 counted against pr-watch's daily items today, as the host counts them (ADR 0086).
         botCounts = listOf(BotCount("app", "pr-watch", done = 4, deleted = 1, day = LocalDate.now().toString(), added = 2)),
+        subscriptions = demoUsage(System.currentTimeMillis() / 1000),
     )
 }
 
@@ -879,6 +884,22 @@ private val DEMO_DIFF = """
 
 /** A 1×1 PNG. */
 private const val DEMO_PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+/** The limits the demo's agents last reported (ADR 0091): one near its 5-hour limit, one never used yet. */
+private fun demoUsage(now: Long): List<SubscriptionUsage> {
+    val hours = { h: Double -> now + (h * 3600).toLong() }
+    return listOf(
+        SubscriptionUsage(
+            "claude-personal", "claude-code", "Max 20x",
+            listOf(UsageWindow(300, 82, hours(3.0)), UsageWindow(10_080, 31, hours(60.0))), now - 240,
+        ),
+        SubscriptionUsage("claude-spare", "claude-code", "Max 5x"),
+        SubscriptionUsage(
+            "chatgpt", "codex", "Plus",
+            listOf(UsageWindow(300, 18, hours(1.5)), UsageWindow(10_080, 41, hours(90.0))), now - 720,
+        ),
+    )
+}
 
 /** The demo's `workspaces.toml` and `routines.toml`, as `settings` shows them; the secret is only "set". */
 private val DEMO_SETTINGS = Settings(

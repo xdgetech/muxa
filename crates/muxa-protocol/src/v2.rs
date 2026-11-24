@@ -461,6 +461,10 @@ pub enum ClientMsg {
     Workspaces {
         id: u64,
     },
+    /// Each subscription and the plan limits its agents last reported (ADR 0091).
+    Subscriptions {
+        id: u64,
+    },
     /// Approves a Review item: closes its Task (ADR 0068 §7, ADR 0043).
     InboxApprove {
         id: u64,
@@ -520,6 +524,33 @@ pub enum WorktreeMode {
     Remove,
     /// It goes anyway, its branch with `git branch -D`.
     Force,
+}
+
+/// A subscription, a named agent login, and the plan limits its agents last
+/// reported (ADR 0091). No credential and no account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubscriptionUsage {
+    pub name: String,
+    /// `claude-code` or `codex`.
+    pub agent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// Shortest first; empty before its first report.
+    #[serde(default)]
+    pub windows: Vec<UsageWindow>,
+    /// Unix seconds of the last report; None before the first.
+    #[serde(default)]
+    pub as_of: Option<u64>,
+}
+
+/// One plan window: 300 minutes, 10080 minutes (a week).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageWindow {
+    pub minutes: u32,
+    /// 0 to 100, rounded.
+    pub used_percent: u32,
+    /// Unix seconds. A time in the past: the window reset, with no report since.
+    pub resets_at: u64,
 }
 
 /// A Workspace as a client may see it.
@@ -1195,6 +1226,9 @@ pub enum Reply {
     },
     Workspaces {
         workspaces: Vec<Workspace>,
+    },
+    Subscriptions {
+        subscriptions: Vec<SubscriptionUsage>,
     },
     Settings {
         settings: Settings,

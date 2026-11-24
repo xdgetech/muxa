@@ -468,15 +468,33 @@ fn made(
         let (rules, allow) = bot_run::bot_rules(ws, &commands, rules, &dir, &extra.read_dirs);
         let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
         let login = login_for(workspaces, ws, bot, &command);
+        let hook = hook_for(config, login.as_ref());
         tracing::debug!(bot = name, "bot run prepared");
         (
-            bot_agent_in(ws, command, &dir, &rules, &allow, &extra.read_dirs)?,
+            bot_agent_in(
+                ws,
+                command,
+                &dir,
+                &rules,
+                &allow,
+                &extra.read_dirs,
+                hook.as_ref(),
+            )?,
             login,
         )
     } else {
         let login = login_for(workspaces, ws, None, &resolved.command);
+        let hook = hook_for(config, login.as_ref());
         (
-            agent_in(ws, resolved.command, &dir, &rules, &[], &extra.read_dirs)?,
+            agent_in(
+                ws,
+                resolved.command,
+                &dir,
+                &rules,
+                &[],
+                &extra.read_dirs,
+                hook.as_ref(),
+            )?,
             login,
         )
     };
@@ -498,6 +516,15 @@ fn made(
         dir,
         subscription: login.map(|l| l.name),
     })
+}
+
+/// The status line that records `login`'s usage (ADR 0091 §6); None without
+/// a login or a state dir.
+pub(crate) fn hook_for(
+    config: &crate::config::Config,
+    login: Option<&subscriptions::Login>,
+) -> Option<crate::status_line::Hook> {
+    crate::status_line::Hook::current(config.state_dir.as_deref(), &login?.name)
 }
 
 /// The login a background agent of `ws` runs on: its Bot's list when it has
@@ -532,8 +559,10 @@ pub(crate) fn agent_in(
     rules: &[String],
     allow: &[String],
     read_dirs: &[PathBuf],
+    hook: Option<&crate::status_line::Hook>,
 ) -> Result<Agent, String> {
-    agent_with(ws, command, dir, rules, allow, read_dirs, false)
+    let start = Start { bot: false, hook };
+    agent_with(ws, command, dir, rules, allow, read_dirs, start)
 }
 
 /// As [`agent_in`] for a Bot (ADR 0087): its MCP config is the Workspace's
@@ -546,8 +575,17 @@ pub(crate) fn bot_agent_in(
     rules: &[String],
     allow: &[String],
     read_dirs: &[PathBuf],
+    hook: Option<&crate::status_line::Hook>,
 ) -> Result<Agent, String> {
-    agent_with(ws, command, dir, rules, allow, read_dirs, true)
+    let start = Start { bot: true, hook };
+    agent_with(ws, command, dir, rules, allow, read_dirs, start)
+}
+
+/// How a background agent starts beyond its command and access: as a Bot,
+/// and with the status line that records its login's usage (ADR 0091).
+struct Start<'a> {
+    bot: bool,
+    hook: Option<&'a crate::status_line::Hook>,
 }
 
 fn agent_with(
@@ -557,8 +595,9 @@ fn agent_with(
     rules: &[String],
     allow: &[String],
     read_dirs: &[PathBuf],
-    bot: bool,
+    start: Start<'_>,
 ) -> Result<Agent, String> {
+    let Start { bot, hook } = start;
     let servers = mcp::chosen(ws);
     let command = if !mcp::managed(ws) && !(bot && !ws.claude_connectors) {
         command
@@ -573,6 +612,11 @@ fn agent_with(
         bot_run::with_permissions(command, dir, rules, allow, read_dirs)?
     } else {
         command
+    };
+    // Last, so it joins the settings file the steps above wrote.
+    let command = match hook {
+        Some(h) => crate::status_line::add(command, dir, h)?,
+        None => command,
     };
     Ok(Agent {
         argv: argv(&command, START_PROMPT),

@@ -53,6 +53,8 @@ public enum V2Request: Sendable {
     case chatOpen(terminal: String)
     case chatClose(chat: UInt32)
     case workspaces
+    /// Each subscription and its agents' last report of the plan limits (ADR 0091).
+    case subscriptions
     /// The host's editable settings (ADR 0074).
     case settings
     /// `revision` must be the current one; the ops apply all or none.
@@ -113,6 +115,7 @@ public enum V2Request: Sendable {
         case let .chatOpen(terminal): set("chat-open", ["terminal": terminal])
         case let .chatClose(chat): set("chat-close", ["chat": chat])
         case .workspaces: set("workspaces", [:])
+        case .subscriptions: set("subscriptions", [:])
         case .settings: set("settings", [:])
         case let .settingsUpdate(revision, ops):
             set("settings-update", ["revision": revision, "ops": try ops.map { try $0.jsonObject() }])

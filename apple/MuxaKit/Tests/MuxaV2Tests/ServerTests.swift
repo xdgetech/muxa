@@ -125,6 +125,20 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func subscriptionsComeWithTheirLimits() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.subscriptions() == [SubscriptionUsage(
+            name: "claude-work", agent: "claude-code", plan: "Max 20x",
+            windows: [
+                UsageWindow(minutes: 300, usedPercent: 82, resetsAt: Date(timeIntervalSince1970: 1_764_014_400)),
+                UsageWindow(minutes: 10_080, usedPercent: 31, resetsAt: Date(timeIntervalSince1970: 1_764_320_400)),
+            ],
+            asOf: Date(timeIntervalSince1970: 1_764_000_120))])
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func settingsShowTheHostsFilesWithoutSecrets() async throws {
         let server = try Server()
         let c = try await server.connect()

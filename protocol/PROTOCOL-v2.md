@@ -339,6 +339,14 @@ A Review item with no `terminal`, or another kind, is `bad-request`. A terminal 
 - `terminal`, ended agent: the Workspace's agent starts again in the same working place, with the same places, labels and connections, but not in plan mode. The ended terminal is removed. A working place that is gone is `bad-request`.
 - Neither, or another kind: `bad-request`.
 
+### Subscriptions
+
+ADR 0091. `{"type":"subscriptions","id"}` answers `{"subscriptions":[SubscriptionUsage...]}`, one per `[[subscription]]` in file order. An older server answers `bad-request`.
+
+`SubscriptionUsage`: `{"name","agent","plan"?,"windows":[UsageWindow...],"as_of"}`. `windows` and `as_of` (Unix seconds) are what the subscription's agents last reported; before the first report `windows` is empty and `as_of` is `null`. `UsageWindow`: `{"minutes","used_percent","resets_at"}`: the window's length (300 is 5 hours, 10080 a week), the part used, 0 to 100, and when it resets, in Unix seconds. A `resets_at` in the past means the window reset after the last report and its use is not known.
+
+Where the host gets them: a Claude Code agent with a subscription reports through its status line, which muxa adds to its `--settings` and which still prints the login's own status line; it reports only while a session runs, after its first reply. A Codex subscription's newest session log is read every minute. muxa never reads a login's credential and never asks the vendor itself.
+
 ### Settings
 
 ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace's `.muxa/routines.toml` and the Routines' instruction files. The files stay the source of truth, and a person can still edit them by hand. The daemon edits them in place, so comments and order stay, and reads them again on its next use.

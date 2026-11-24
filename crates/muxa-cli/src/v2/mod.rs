@@ -44,6 +44,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] close-shell TERMINAL
        muxa-cli v2 [--bridge CMD] upload TERMINAL FILE
        muxa-cli v2 [--bridge CMD] workspaces [--json]
+       muxa-cli v2 [--bridge CMD] subscriptions [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
        muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
@@ -86,6 +87,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                  again adds nothing twice. It never changes the old records
   --loop         a Task Loop: after each finished turn the host runs the check;
                  without --check, the Workspace's only allowed one
+  subscriptions  each agent login muxa names, with the plan limits its agents last
+                 reported: used percent and reset time per window (ADR 0091)
   settings       the host's workspaces.toml and routines files as the apps edit them;
                  env values and secrets never show
   settings-set   applies settings ops (protocol/PROTOCOL-v2.md, Settings) from FILE
@@ -113,6 +116,9 @@ enum Cmd {
         json: bool,
     },
     Workspaces {
+        json: bool,
+    },
+    Subscriptions {
         json: bool,
     },
     Inbox {
@@ -291,6 +297,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let cmd = match words.as_slice() {
         ["terminals"] => Cmd::Terminals { json },
         ["workspaces"] => Cmd::Workspaces { json },
+        ["subscriptions"] => Cmd::Subscriptions { json },
         ["approve", i] => Cmd::Inbox {
             action: inbox::Action::Approve {
                 item: (*i).to_owned(),
@@ -575,6 +582,18 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             } else {
                 for w in reply["workspaces"].as_array().into_iter().flatten() {
                     println!("{}", workspace_row(w));
+                }
+            }
+            Ok(())
+        }
+        Cmd::Subscriptions { json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c.request(json!({"type": "subscriptions"})).await?;
+            if json {
+                println!("{}", reply["subscriptions"]);
+            } else {
+                for s in reply["subscriptions"].as_array().into_iter().flatten() {
+                    println!("{}", subscription_row(s));
                 }
             }
             Ok(())
@@ -892,6 +911,33 @@ fn v1_row(t: &Value) -> String {
         s("workspace"),
         s("title"),
         s("path")
+    )
+}
+
+/// `name agent plan 300m:42%@<resets_at> ...`, or `no report yet`.
+fn subscription_row(s: &Value) -> String {
+    let text = |v: &Value| v.as_str().unwrap_or("").to_owned();
+    let windows: Vec<String> = s["windows"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|w| {
+            format!(
+                "{}m:{}%@{}",
+                w["minutes"], w["used_percent"], w["resets_at"]
+            )
+        })
+        .collect();
+    let limits = if windows.is_empty() {
+        "no report yet".to_owned()
+    } else {
+        format!("{} as of {}", windows.join(" "), s["as_of"])
+    };
+    format!(
+        "{}\t{}\t{}\t{limits}",
+        text(&s["name"]),
+        text(&s["agent"]),
+        text(&s["plan"])
     )
 }
 

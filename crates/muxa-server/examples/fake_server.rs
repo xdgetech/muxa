@@ -79,6 +79,27 @@ impl Host for FakeHost {
         vec!["Personal".into()]
     }
 
+    async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
+        Ok(vec![muxa_protocol::v2::SubscriptionUsage {
+            name: "claude-work".into(),
+            agent: "claude-code".into(),
+            plan: Some("Max 20x".into()),
+            windows: vec![
+                muxa_protocol::v2::UsageWindow {
+                    minutes: 300,
+                    used_percent: 82,
+                    resets_at: 1_764_014_400,
+                },
+                muxa_protocol::v2::UsageWindow {
+                    minutes: 10_080,
+                    used_percent: 31,
+                    resets_at: 1_764_320_400,
+                },
+            ],
+            as_of: Some(1_764_000_120),
+        }])
+    }
+
     async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
         Ok(vec![Workspace {
             name: "Personal".into(),

@@ -182,7 +182,26 @@ extension DemoContent {
                     ])),
             ],
             losesWork: ["d8": "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"],
-            settings: settings)
+            settings: settings,
+            subscriptions: usage)
+    }()
+
+    /// The limits the demo's agents last reported (ADR 0091): one near its
+    /// 5-hour limit, one never used yet.
+    private static let usage: [SubscriptionUsage] = {
+        let now = Date()
+        let hours = { (h: Double) in now.addingTimeInterval(h * 3600) }
+        return [
+            SubscriptionUsage(name: "claude-personal", agent: "claude-code", plan: "Max 20x", windows: [
+                UsageWindow(minutes: 300, usedPercent: 82, resetsAt: hours(3)),
+                UsageWindow(minutes: 10_080, usedPercent: 31, resetsAt: hours(60)),
+            ], asOf: now.addingTimeInterval(-240)),
+            SubscriptionUsage(name: "claude-spare", agent: "claude-code", plan: "Max 5x"),
+            SubscriptionUsage(name: "chatgpt", agent: "codex", plan: "Plus", windows: [
+                UsageWindow(minutes: 300, usedPercent: 18, resetsAt: hours(1.5)),
+                UsageWindow(minutes: 10_080, usedPercent: 41, resetsAt: hours(90)),
+            ], asOf: now.addingTimeInterval(-720)),
+        ]
     }()
 
     /// What pr-watch proposed in a talk: a turned-off Routine of its own and

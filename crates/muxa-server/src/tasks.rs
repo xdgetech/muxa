@@ -172,6 +172,14 @@ pub trait Host: Send + Sync {
         async { Ok(Vec::new()) }
     }
 
+    /// Each subscription and the limits its agents last reported (ADR 0091).
+    fn subscriptions(
+        &self,
+    ) -> impl Future<Output = Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError>> + Send
+    {
+        async { Ok(Vec::new()) }
+    }
+
     /// Whether closing a Task with `places` may go on: with
     /// [`WorktreeMode::Remove`], [`TaskError::WouldLoseWork`] when a branch
     /// worktree has uncommitted or unmerged work. Changes nothing.

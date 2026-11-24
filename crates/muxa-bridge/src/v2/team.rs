@@ -158,6 +158,7 @@ fn plan(
     let mut launches = Vec::new();
     for h in &handoffs {
         match member_launch(
+            config,
             &workspaces,
             fallback,
             &run.dir,
@@ -177,6 +178,7 @@ fn plan(
 
 /// Blocking. A member's folder inside the lead run's, its brief and agent.
 fn member_launch(
+    config: &crate::config::Config,
     workspaces: &Workspaces,
     fallback: &str,
     lead_dir: &Path,
@@ -206,7 +208,8 @@ fn member_launch(
     );
     let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
     let login = runner::login_for(workspaces, ws, Some(member), &command);
-    let agent = runner::bot_agent_in(ws, command, &dir, &rules, &allow, &[])?;
+    let hook = runner::hook_for(config, login.as_ref());
+    let agent = runner::bot_agent_in(ws, command, &dir, &rules, &allow, &[], hook.as_ref())?;
     crate::connections::merge(&mut resolved.environment.env, agent.env);
     resolved
         .environment

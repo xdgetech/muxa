@@ -10,10 +10,12 @@ mod connections;
 mod daemon;
 mod docs;
 mod launch;
+mod limits;
 mod loops;
 mod records;
 mod routines;
 mod settings;
+mod status_line;
 mod usage;
 mod utc;
 mod v2;
@@ -37,6 +39,10 @@ fn main() -> ExitCode {
         }
         Ok(Action::Daemon(d)) => daemon::main(d),
         Ok(Action::Connect(a)) => connect(a),
+        Ok(Action::StatusLine {
+            subscription,
+            state_dir,
+        }) => status_line::main(&subscription, &state_dir),
         Ok(Action::Version) => {
             println!("muxa-bridge {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS

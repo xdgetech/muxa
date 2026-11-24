@@ -220,6 +220,24 @@ class ServerTest {
     }
 
     @Test
+    fun subscriptionsComeWithTheirLimits() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(
+                listOf(
+                    SubscriptionUsage(
+                        "claude-work", "claude-code", "Max 20x",
+                        listOf(UsageWindow(300, 82, 1_764_014_400), UsageWindow(10_080, 31, 1_764_320_400)),
+                        1_764_000_120,
+                    ),
+                ),
+                c.subscriptions(),
+            )
+            c.close()
+        }
+    }
+
+    @Test
     fun settingsShowTheFilesAndApplyOpsOnce() = runBlocking {
         withTimeout(10_000) {
             val c = connect()

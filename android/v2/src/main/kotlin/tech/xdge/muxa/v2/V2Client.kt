@@ -181,6 +181,9 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** The host's Workspaces, with what starting a Task in each may use. */
     suspend fun workspaces(): List<Workspace> = field("workspaces", request(V2Request.Workspaces))
 
+    /** Each subscription with the limits its agents last reported (ADR 0091). An older server refuses the request. */
+    suspend fun subscriptions(): List<SubscriptionUsage> = field("subscriptions", request(V2Request.Subscriptions))
+
     /** The Routines, the Workspaces whose Routines could not be read, and those that turn them off. */
     suspend fun routines(): Triple<List<Routine>, List<RoutineProblem>, List<RoutinesOff>> {
         val reply = request(V2Request.Routines)

@@ -9,7 +9,7 @@ mod bot_run;
 pub mod chat;
 mod close;
 pub mod feed;
-mod git;
+pub(crate) mod git;
 mod mcp;
 mod places;
 pub mod reader;

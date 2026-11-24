@@ -122,6 +122,21 @@ impl BridgeHost {
             && crate::agents::claude::has_conversation(&dirs, dir)
     }
 
+    /// `line` with the status line that records `login`'s usage (ADR 0091 §6).
+    async fn with_status_line(
+        &self,
+        line: String,
+        dir: &Path,
+        login: Option<&Login>,
+    ) -> Result<String, TaskError> {
+        let hook = login.and_then(|l| {
+            crate::status_line::Hook::current(self.records.state_dir.as_deref(), &l.name)
+        });
+        let Some(hook) = hook else { return Ok(line) };
+        let dir = dir.to_owned();
+        blocking(move || crate::status_line::add_to_line(line, &dir, &hook)).await
+    }
+
     /// The login an agent started with `line` runs on (ADR 0091): a talk's
     /// Bot list when it has one, else the Workspace's. `keep` wins while it
     /// exists; an adopted place keeps the login that holds its conversation.
@@ -506,6 +521,9 @@ impl Host for BridgeHost {
         if adopts && self.resumes(&ws, &line, made.working(), login.as_ref()) {
             line.push_str(" --continue");
         }
+        let mut line = self
+            .with_status_line(line, made.working(), login.as_ref())
+            .await?;
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
@@ -549,6 +567,9 @@ impl Host for BridgeHost {
         let keep = ended.labels.get(SUBSCRIPTION).cloned();
         let bot = ended.labels.get(BOT).cloned();
         let login = self.login(&ws, bot.as_deref(), &line, keep, None).await?;
+        let line = self
+            .with_status_line(line, made.working(), login.as_ref())
+            .await?;
         let mut prepared = prepared(ws, &title, made, line, given, login);
         prepared.checkout = ended.labels.get(CHECKOUT).cloned();
         prepared.bot = ended.labels.get(BOT).cloned();
@@ -595,6 +616,28 @@ impl Host for BridgeHost {
         if let Err(e) = noted {
             tracing::warn!(error = %e, "cannot note when connections were used");
         }
+    }
+
+    async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
+        let records = Arc::clone(&self.records);
+        blocking(move || {
+            let all = records.load_workspaces()?;
+            Ok(all
+                .subscriptions()
+                .iter()
+                .map(|s| {
+                    let found = match &records.state_dir {
+                        Some(dir) => crate::limits::read(dir, &s.name).unwrap_or_else(|e| {
+                            tracing::info!(subscription = %s.name, error = %e, "limits not read");
+                            crate::limits::Record::default()
+                        }),
+                        None => crate::limits::Record::default(),
+                    };
+                    crate::limits::usage(s, &found)
+                })
+                .collect())
+        })
+        .await
     }
 
     async fn workspace_list(&self) -> Result<Vec<muxa_protocol::v2::Workspace>, TaskError> {

@@ -501,6 +501,10 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
             },
             ClientMsg::Workspaces { id } => self.workspaces(id).await,
+            ClientMsg::Subscriptions { id } => match self.host.subscriptions().await {
+                Ok(subscriptions) => self.reply(id, Reply::Subscriptions { subscriptions }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
             ClientMsg::InboxApprove { id, item, worktree } => {
                 let mode = worktree.unwrap_or_default();
                 let done =

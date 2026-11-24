@@ -243,6 +243,13 @@ fn launch(
         None,
     );
     let command = bot_run::with_settings(command, &dir, &rules, &[])?;
+    let hook = login
+        .as_ref()
+        .and_then(|l| crate::status_line::Hook::current(config.state_dir.as_deref(), &l.name));
+    let command = match &hook {
+        Some(h) => crate::status_line::add(command, &dir, h)?,
+        None => command,
+    };
     let mut labels = Labels::from([
         ("muxa.kind".to_owned(), KIND.to_owned()),
         ("muxa.role".to_owned(), "agent".to_owned()),

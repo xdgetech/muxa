@@ -39,10 +39,14 @@ public struct DemoContent: Sendable {
     public var losesWork: [String: String]
     /// What `settings` answers first; `settings-update` changes it in memory.
     public var settings: Settings
+    /// What `subscriptions` answers (ADR 0091).
+    public var subscriptions: [SubscriptionUsage]
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
                 taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:],
-                losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1")) {
+                losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1"),
+                subscriptions: [SubscriptionUsage] = []) {
+        self.subscriptions = subscriptions
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
@@ -236,6 +240,8 @@ actor DemoServer {
             answerSuggestion(id, item, accept: m["accept"] as? Bool ?? false)
         case "workspaces":
             reply(id, ["workspaces": json(content.taskWorkspaces.map(withTasks))])
+        case "subscriptions":
+            reply(id, ["subscriptions": plain(content.subscriptions)])
         case "settings":
             reply(id, ["settings": plain(content.settings)])
         case "settings-update":

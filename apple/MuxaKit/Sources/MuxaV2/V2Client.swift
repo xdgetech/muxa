@@ -177,6 +177,12 @@ public actor V2Client {
         try field("workspaces", of: await request(.workspaces))
     }
 
+    /// Each subscription with the limits its agents last reported (ADR 0091).
+    /// An older server refuses the request.
+    public func subscriptions() async throws -> [SubscriptionUsage] {
+        try field("subscriptions", of: await request(.subscriptions), decoder: Coding.plainDecoder)
+    }
+
     /// The host's editable settings.
     public func settings() async throws -> Settings {
         try field("settings", of: await request(.settings), decoder: Coding.plainDecoder)

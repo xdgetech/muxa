@@ -5,6 +5,10 @@ use std::path::PathBuf;
 pub const USAGE: &str = "usage: muxa-bridge connect [--daemon-dir DIR]
        muxa-bridge daemon run|install|stop|restart|uninstall|status [flags] [--print]
        muxa-bridge --version
+       muxa-bridge statusline --subscription NAME --state-dir DIR
+
+`statusline` is the Claude Code status line muxa gives its agents: it records
+the plan limits for the subscription, then prints the login's own status line.
 
 `connect` relays protocol v2 (ADR 0067) to the daemon's server.sock; apps run
 it as their SSH exec command. With no command, muxa-bridge does the same when
@@ -39,6 +43,12 @@ pub enum Action {
     Daemon(Daemon),
     /// `connect [--daemon-dir DIR]`: relay a protocol v2 client to the daemon.
     Connect(Args),
+    /// `statusline --subscription NAME --state-dir DIR`: Claude Code's status
+    /// line for an agent muxa started (ADR 0091).
+    StatusLine {
+        subscription: String,
+        state_dir: std::path::PathBuf,
+    },
     Version,
     /// The usage text to print.
     Help(&'static str),
@@ -149,6 +159,9 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
             other => other,
         });
     }
+    if args.first().is_some_and(|a| a == "statusline") {
+        return status_line(&args[1..]);
+    }
     if args.first().is_some_and(|a| a == "connect") {
         return Ok(match parse_flags(args.split_off(1), |_| false)? {
             Action::Bare(args) => Action::Connect(args),
@@ -156,6 +169,31 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
         });
     }
     parse_flags(args, |_| false)
+}
+
+/// `statusline`'s two flags, both required.
+fn status_line(rest: &[std::ffi::OsString]) -> Result<Action, lexopt::Error> {
+    use lexopt::ValueExt;
+    let (mut subscription, mut state_dir) = (None, None);
+    let mut p = lexopt::Parser::from_args(rest.iter().cloned());
+    while let Some(arg) = p.next()? {
+        match arg {
+            lexopt::Arg::Long("subscription") => subscription = Some(p.value()?.string()?),
+            lexopt::Arg::Long("state-dir") => {
+                state_dir = Some(std::path::PathBuf::from(p.value()?))
+            }
+            other => return Err(other.unexpected()),
+        }
+    }
+    match (subscription, state_dir) {
+        (Some(subscription), Some(state_dir)) if state_dir.is_absolute() => {
+            Ok(Action::StatusLine {
+                subscription,
+                state_dir,
+            })
+        }
+        _ => Err("statusline wants --subscription NAME --state-dir /ABSOLUTE/DIR".into()),
+    }
 }
 
 /// The flags, plus the switches `extra` accepts.

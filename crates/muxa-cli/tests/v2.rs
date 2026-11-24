@@ -98,6 +98,29 @@ impl Host for WorkTasks {
         })
     }
 
+    async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
+        Ok(vec![
+            muxa_protocol::v2::SubscriptionUsage {
+                name: "work".into(),
+                agent: "claude-code".into(),
+                plan: Some("Max 20x".into()),
+                windows: vec![muxa_protocol::v2::UsageWindow {
+                    minutes: 300,
+                    used_percent: 82,
+                    resets_at: 1_700_018_000,
+                }],
+                as_of: Some(1_700_000_000),
+            },
+            muxa_protocol::v2::SubscriptionUsage {
+                name: "spare".into(),
+                agent: "claude-code".into(),
+                plan: None,
+                windows: Vec::new(),
+                as_of: None,
+            },
+        ])
+    }
+
     async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
         Ok(vec![Workspace {
             name: "w".into(),
@@ -501,6 +524,23 @@ async fn chat_prints_a_tasks_conversation() {
     let agent = started["terminal"]["id"].as_str().unwrap();
     let out = stdout(&host.cli(&["chat", agent]).await);
     assert_eq!(out, "user: Clean it\nassistant: Done.\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn subscriptions_list_each_login_and_its_last_report() {
+    let host = TestHost::start("subscriptions").await;
+    assert_eq!(
+        stdout(&host.cli(&["subscriptions"]).await),
+        "work\tclaude-code\tMax 20x\t300m:82%@1700018000 as of 1700000000\n\
+         spare\tclaude-code\t\tno report yet\n"
+    );
+    let listed: Value =
+        serde_json::from_str(&stdout(&host.cli(&["subscriptions", "--json"]).await)).unwrap();
+    assert_eq!(
+        listed[0]["windows"][0],
+        serde_json::json!({"minutes": 300, "used_percent": 82, "resets_at": 1_700_018_000u64})
+    );
+    assert_eq!(listed[1]["as_of"], Value::Null);
 }
 
 #[tokio::test(flavor = "multi_thread")]

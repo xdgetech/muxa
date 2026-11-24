@@ -324,6 +324,17 @@ struct DemoTests {
         #expect(s.workers.map(\.name) == ["reviewer"])
     }
 
+    /// ADR 0091: each subscription with its last report; one never used has none.
+    @Test(.timeLimit(.minutes(1)))
+    func subscriptionsShowTheirLastReport() async throws {
+        let c = try await open()
+        let usage = try await c.subscriptions()
+        #expect(usage.map(\.name) == ["claude-personal", "claude-spare", "chatgpt"])
+        #expect(usage[0].windows.map(\.usedPercent) == [82, 31])
+        #expect(usage[0].windows.allSatisfy { !$0.hasReset() })
+        #expect(usage[1].windows.isEmpty && usage[1].asOf == nil)
+    }
+
     /// ADR 0091: a login is named once and Workspaces list it; one that a
     /// Workspace lists cannot go.
     @Test(.timeLimit(.minutes(1)))

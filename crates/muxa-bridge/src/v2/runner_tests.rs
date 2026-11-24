@@ -587,4 +587,27 @@ async fn a_run_gets_its_login_and_a_bot_run_its_bots_login() {
         bot.env.get("CLAUDE_CONFIG_DIR"),
         Some(&home(".claude-spare"))
     );
+    // Each records its login's usage through its status line, beside the
+    // Bot's permission rules.
+    for (launch, name) in [(&launches[0], "work"), (bot, "spare")] {
+        let dir = launch.cwd.clone().unwrap();
+        let settings = std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&settings).unwrap();
+        let line = value["statusLine"]["command"].as_str().unwrap();
+        assert!(
+            line.contains(&format!("statusline --subscription '{name}'")),
+            "{line}"
+        );
+        assert!(
+            launch.argv.join(" ").contains("--settings"),
+            "{:?}",
+            launch.argv
+        );
+    }
+    let bot_settings = bot.cwd.clone().unwrap().join(".muxa/claude-settings.json");
+    assert!(
+        std::fs::read_to_string(bot_settings)
+            .unwrap()
+            .contains("permissions")
+    );
 }

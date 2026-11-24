@@ -388,7 +388,7 @@ async fn an_adopted_place_resumes_on_the_login_that_holds_its_conversation() {
     let p = f.host(None).prepare(&existing(&dir)).await.unwrap();
     assert_eq!(p.subscription.as_deref(), Some("spare"));
     assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&spare));
-    assert!(p.argv[2].ends_with("--continue"), "{:?}", p.argv);
+    assert!(p.argv[2].contains(" --continue"), "{:?}", p.argv);
 }
 
 #[tokio::test]
@@ -423,4 +423,38 @@ async fn a_restart_keeps_its_login_and_falls_back_when_it_is_gone() {
     let p = host.restart(&ended("removed")).await.unwrap();
     assert_eq!(p.subscription.as_deref(), Some("work"));
     assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&work));
+}
+
+#[tokio::test]
+async fn each_subscription_shows_its_last_report_and_one_without_shows_none() {
+    let f = Fixture::new("login-usage");
+    with_logins(&f);
+    let now = crate::records::now();
+    let window = |minutes, used, resets_at| crate::limits::Window {
+        minutes,
+        used_percent: used,
+        resets_at,
+    };
+    crate::limits::record(
+        &f.base.join("state"),
+        "work",
+        &[window(300, 81.6, now + 600)],
+        now,
+    )
+    .unwrap();
+    let listed = f.host(None).subscriptions().await.unwrap();
+    assert_eq!(
+        listed.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+        ["work", "spare"]
+    );
+    assert_eq!(listed[0].as_of, Some(now));
+    assert_eq!(
+        listed[0].windows,
+        [muxa_protocol::v2::UsageWindow {
+            minutes: 300,
+            used_percent: 82,
+            resets_at: now + 600
+        }]
+    );
+    assert!(listed[1].windows.is_empty() && listed[1].as_of.is_none());
 }
