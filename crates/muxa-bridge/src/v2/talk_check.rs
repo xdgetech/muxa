@@ -9,6 +9,11 @@ use crate::routines::identity::{self, Place, Reach};
 
 /// `.muxa/bot.json` in the talk's folder.
 pub const OUTPUT: &str = "bot.json";
+/// Claude Code's `--append-system-prompt` for a talk. The user speaks first,
+/// so without it the Bot never reads its brief.
+pub const START_PROMPT: &str = "You are a muxa Bot in a talk with the user. Before you answer, \
+     read .muxa/TASK.md: it says who you are (your Soul and Memory), your Routines, and how to \
+     add Inbox items and propose changes (.muxa/bot.json). Add Inbox items only that way.";
 /// Ops in one proposal.
 const MAX_OPS: usize = 20;
 const MAX_SUMMARY: usize = 200;

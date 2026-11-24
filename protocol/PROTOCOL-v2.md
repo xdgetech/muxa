@@ -267,7 +267,7 @@ ADR 0076. `migrate-v1` reads the open Task records of protocol v1 (status `open`
 
 ### Talking to a Bot
 
-ADR 0083. `start-task` with `bot` starts a talk: a folder Task in `workspace` whose agent starts from the Bot's `soul.md` and `memory.md`, with the Bot's settings and its Routines in `.muxa/TASK.md`. `places` must be empty or one folder. `bot` names a Bot of the Workspace, or a valid name with no Bot yet: then the talk may propose adding it. The agent gets `muxa.bot`, the Workspace's connections and MCP servers like any Task, and Claude Code may not edit the Workspace's `.muxa/` folder. The talk is a Task: Chat, the Terminal and Close work as for any Task.
+ADR 0083. `start-task` with `bot` starts a talk: a folder Task in `workspace` whose agent starts from the Bot's `soul.md` and `memory.md`, with the Bot's settings and its Routines in `.muxa/TASK.md`. `places` must be empty or one folder. `bot` names a Bot of the Workspace, or a valid name with no Bot yet: then the talk may propose adding it. The agent gets `muxa.bot`, the Workspace's connections and MCP servers like any Task, and Claude Code may not edit the Workspace's `.muxa/` folder; it is told to read `.muxa/TASK.md` before it answers. The talk is a Task: Chat, the Terminal and Close work as for any Task.
 
 Each time the agent reports `done`, the host reads `.muxa/bot.json` in the Task's folder, when it changed:
 - `memory`: the Bot's new memory, at most 16 KiB. It replaces `memory.md`, and the earlier one is kept, as after a run.

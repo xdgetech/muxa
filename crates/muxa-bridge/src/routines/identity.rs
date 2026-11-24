@@ -112,7 +112,8 @@ pub fn section(name: &str, reach: &Reach, place: Place<'_>) -> String {
              description, daily items (1 to 50), on or off, team members and handoffs a day, your \
              Soul, and each Routine's schedule or time or review trigger, timezone, read only, items per run \
              and instructions. The user applies them. When the user asks you for Inbox items, write them \
-             to `items` in your output: they reach the Inbox at once.\n",
+             to `items` in `.muxa/bot.json` (see the end of this brief), never another way: they \
+             reach the Inbox at once.\n",
         ),
         Place::Run | Place::Member { .. } => out.push_str(
             "- You cannot change your settings in a run. When one holds you back (too few daily items, a \

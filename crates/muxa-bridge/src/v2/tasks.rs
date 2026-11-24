@@ -225,7 +225,7 @@ impl BridgeHost {
 }
 
 /// Claude Code may not edit the Workspace's `.muxa/` in a talk: the Bot
-/// proposes changes instead (ADR 0083).
+/// proposes changes instead (ADR 0083). It is told to read its brief first.
 /// The Bot's `commands` are allowed too; the user is in the talk, so anything
 /// else still asks (ADR 0088).
 async fn talk_line(
@@ -244,8 +244,12 @@ async fn talk_line(
             .unwrap_or_else(|| ws.root.join(crate::records::routines::WORKSPACE_DIR));
         let (rules, allow) =
             super::bot_run::bot_rules(&ws, &commands, vec![super::bot_run::deny(&muxa)], &dir, &[]);
+        let prompt = super::talk_check::START_PROMPT;
         match super::bot_run::with_permissions(launch, &dir, &rules, &allow, &[])? {
-            LaunchCommand::Shell(line) => Ok(line),
+            LaunchCommand::Shell(line) => Ok(format!(
+                "{line} --append-system-prompt '{}'",
+                prompt.replace('\'', "'\\''")
+            )),
             LaunchCommand::Native { .. } => Ok(line),
         }
     })
@@ -806,6 +810,36 @@ mod tests {
             plan: false,
             bot: None,
         }
+    }
+
+    #[tokio::test]
+    async fn a_talk_tells_claude_code_to_read_its_brief_first() {
+        let (host, base) = host("talk", "");
+        let host = host.with_settings(Arc::new(crate::settings::SettingsStore::new(
+            Some(base.join("workspaces.toml")),
+            None,
+            false,
+            Box::<crate::settings::secrets::Fake>::default(),
+        )));
+        let talk = TaskSpec {
+            bot: Some("scout".into()),
+            ..spec(&[])
+        };
+        let ready = host.prepare(&talk).await.unwrap();
+        assert!(
+            ready.argv[2].ends_with(&format!(
+                " --append-system-prompt '{}'",
+                super::super::talk_check::START_PROMPT
+            )),
+            "{}",
+            ready.argv[2]
+        );
+        assert!(super::super::talk_check::START_PROMPT.contains(".muxa/TASK.md"));
+        let brief = std::fs::read_to_string(ready.dir.join(".muxa/TASK.md")).unwrap();
+        assert!(brief.contains("`.muxa/bot.json`"));
+        let plain = host.prepare(&spec(&[])).await.unwrap();
+        assert!(!plain.argv[2].contains("--append-system-prompt"));
+        let _ = std::fs::remove_dir_all(base);
     }
 
     #[tokio::test]
