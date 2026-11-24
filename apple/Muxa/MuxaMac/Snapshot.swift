@@ -15,12 +15,17 @@ enum Snapshot {
         switch env["MUXA_SCREEN"] {
         case "focus": nav.focus = true
         case "routines": nav.tab = .bots
+        case "bots-landing-home", "bots-landing-chat":
+            // The landing rule picks the tab: scout has a live talk, pr-watch none.
+            nav.tab = .bots
+            chrome.botPick = .bot(workspace: "app", name: env["MUXA_SCREEN"] == "bots-landing-chat" ? "scout" : "pr-watch")
         case let screen? where screen.hasPrefix("bots"):
             nav.tab = .bots
             chrome.botPick = .bot(workspace: "app", name: "pr-watch")
             let tabs: [String: BotTab] = ["bots-chat": .chats, "bots-run": .chats, "bots-routines": .routines,
                                           "bots-files": .files, "bots-settings": .settings, "bots-routine-edit": .routines, "bots-soul-edit": .files]
             chrome.botTab = tabs[screen] ?? .home
+            chrome.botTabs[.bot(workspace: "app", name: "pr-watch")] = chrome.botTab
             chrome.botTerminal = screen == "bots-run" ? "t8" : "t7"
             chrome.botView = screen == "bots-run" ? .terminal : .chat
             chrome.showNewBot = screen == "bots-new"

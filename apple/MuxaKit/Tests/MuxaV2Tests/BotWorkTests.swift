@@ -166,7 +166,7 @@ struct BotRemovalTests {
         }
         let after = try await c.settingsUpdate(
             revision: s.revision, ops: s.workspaces[0].botRemoval("pr-watch", movingRoutinesTo: nil))
-        #expect(after.workspaces[0].bots.isEmpty)
+        #expect(after.workspaces[0].bots.map(\.name) == ["scout"])
         #expect(after.workspaces[0].routines.first { $0.name == "scan" }?.spec.bot == nil)
     }
 }
@@ -207,7 +207,7 @@ struct BotRenameTests {
         let s = try await c.settings()
         let after = try await c.settingsUpdate(
             revision: s.revision, ops: [.botRename(workspace: "app", from: "pr-watch", to: "reviews")])
-        #expect(after.workspaces[0].bots.map(\.name) == ["reviews"])
+        #expect(after.workspaces[0].bots.map(\.name) == ["reviews", "scout"])
         #expect(after.workspaces[0].routines.first { $0.name == "scan" }?.spec.bot == "reviews")
         let inbox = try await c.inbox()
         #expect(inbox.items.filter { $0.bot == "reviews" }.map(\.id) == ["d10", "d11", "d12"])

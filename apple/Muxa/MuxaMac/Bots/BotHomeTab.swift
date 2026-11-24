@@ -1,8 +1,9 @@
 import MuxaV2
 import SwiftUI
 
-/// A Bot's Home (ADR 0086): its tiles, then Needs you, In progress, Planned
-/// and Recent. An item opens in Home, a terminal in Focus.
+/// A Bot's Home (ADR 0086): a field to talk to it, its tiles, then Needs
+/// you, In progress, Planned and Recent. An item opens in Home, a terminal
+/// on the Bot's Chats.
 struct BotHomeTab: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -13,6 +14,7 @@ struct BotHomeTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            BotTalkField(entry: entry)
             let tiles = tiles
             if !tiles.isEmpty {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: tiles.count), spacing: 10) {

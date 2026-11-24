@@ -13,6 +13,7 @@ struct BotHomeList: View {
 
     var body: some View {
         List {
+            BotTalkField(entry: entry).cardRow(vertical: 6)
             if !tiles.isEmpty {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                     ForEach(tiles, id: \.0) { BotTile(label: $0.0, value: $0.1) }

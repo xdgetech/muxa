@@ -20,7 +20,8 @@ struct GoToTask: View {
             .sorted { ($0.element.state.goToRank, $0.offset) < ($1.element.state.goToRank, $1.offset) }
             .map(\.element)
         let query = text.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return tasks }
+        // A Bot's talks live on its page (ADR 0086): they show once the text matches them.
+        guard !query.isEmpty else { return tasks.filter { !$0.belongsToBot } }
         let shells = tasks.flatMap { model.shells(of: $0.id) }
         return (tasks + shells + model.otherTerminals).filter { label($0).lowercased().contains(query) }
     }

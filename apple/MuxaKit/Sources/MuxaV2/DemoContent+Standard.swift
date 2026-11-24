@@ -5,7 +5,8 @@ extension DemoContent {
     /// shell, a terminal muxa did not start, a Routine run, every Inbox kind,
     /// four Routines, and the Bot `pr-watch` with two items (ADR 0082) and a
     /// settings proposal (`d12`, ADR 0083) from its talk `t7`, and a run of
-    /// its Routine `scan` (`t8`, ADR 0086). The Capture assistant suggests
+    /// its Routine `scan` (`t8`, ADR 0086). The Bot `scout` has no Routines
+    /// and a live talk (`t9`). The Capture assistant suggests
     /// where `d13` goes (ADR 0084). Approving `d8` needs force: its worktree
     /// holds work. `d9` came from muxa v1.
     public static let standard: DemoContent = {
@@ -68,6 +69,13 @@ extension DemoContent {
                     labels: ["muxa.kind": "routine", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "pr-watch",
                              "muxa.routine": "scan", "muxa.dir": "/demo/runs/scan"],
                     cols: 80, rows: 24),
+                // scout's talk, still working: its page opens on it.
+                Terminal(
+                    id: "t9", name: "Talk to scout", live: true, status: TerminalStatus(state: "working", app: "claude-code"),
+                    labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.workspace": "app", "muxa.bot": "scout",
+                             "muxa.title": "Talk to scout", "muxa.dir": "/demo/tasks/talk-to-scout",
+                             "muxa.places": #"[{"kind":"folder","path":"/demo/tasks/talk-to-scout"}]"#],
+                    cols: 80, rows: 24),
             ],
             screens: [
                 "t1": "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
@@ -79,6 +87,7 @@ extension DemoContent {
                 "t7": "› Every night, list the PRs nobody touched for a week.\r\n\r\n"
                     + "● I wrote a proposal: a nightly-sweep Routine, turned off. Apply it from the bar above or the Inbox.\r\n",
                 "t8": "● Listing the PRs that wait for review\r\n",
+                "t9": "› Which of our dependencies have open CVEs?\r\n\r\n● Checking the lockfile against the advisories…\r\n",
             ],
             inbox: [
                 item("d1", .review, "Review fix-login", note: "Draft PR #42: refresh the session before it expires.", source: "task",
@@ -150,6 +159,10 @@ extension DemoContent {
                 ],
             ],
             chats: [
+                "t9": ChatUpdate(reset: true, entries: [
+                    ChatEntry(id: "u1", kind: "user", text: "Which of our dependencies have open CVEs?"),
+                    ChatEntry(id: "a1", kind: "assistant", text: "I'm checking the lockfile against the advisories."),
+                ]),
                 "t1": ChatUpdate(reset: true, entries: [
                     ChatEntry(id: "u1", kind: "user", text: "Refresh the session before it expires."),
                     ChatEntry(id: "a1", kind: "assistant", text: "I'll schedule the refresh **60 s** early."),
@@ -239,6 +252,9 @@ extension DemoContent {
                         memoryVersions: 2,
                         memoryHistory: [MemoryVersion(version: 1, at: 1_764_000_240),
                                         MemoryVersion(version: 2, at: 1_763_913_600)]),
+                    SettingsBot(
+                        spec: BotSpec(name: "scout", description: "Looks into the questions I hand it"),
+                        soulText: "I answer one question at a time and cite where I found it.\n", memoryText: ""),
                 ]),
             SettingsWorkspace(
                 name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude"),

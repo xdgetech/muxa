@@ -47,6 +47,8 @@ struct BotConversationScreen: View {
             }
         }
         .background(Palette.ground)
+        // Follows the talk's conversation, as a Task screen does; without it Chat never loads.
+        .background { if terminal.isTaskAgent { Color.clear.chatLink(terminal.id, chat: $chat) } }
         .navigationTitle(terminal.title)
         .inlineTitle()
         .toolbar {
@@ -57,6 +59,8 @@ struct BotConversationScreen: View {
                 }
             }
         }
+        // A container keeps its children's own identifiers (chat.field…).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bot.conversation")
         // A talk opens on Chat; a run or member, which has none, on Terminal.
         .onAppear { nav.taskView = terminal.isTaskAgent ? .chat : .terminal }

@@ -24,6 +24,8 @@ final class MacChrome {
     /// The talk, run or member open on the Chats tab, and how it shows.
     var botTerminal: String?
     var botView = BotView.chat
+    /// The tab each Bot was left on in this run; a Bot not in it opens by the landing rule.
+    var botTabs: [BotPick: BotTab] = [:]
     /// The Routine or Soul editor open over the Bot page.
     var botSheet: BotSheet?
 }
@@ -38,6 +40,7 @@ extension MacChrome {
         nav.tab = .bots
         botPick = .bot(workspace: workspace, name: bot)
         botTab = .chats
+        botTabs[.bot(workspace: workspace, name: bot)] = .chats
         botTerminal = t.id
         botView = t.isTaskAgent ? .chat : .terminal
         return true
@@ -55,6 +58,25 @@ enum BotSheet: Identifiable {
         case let .routine(w, d): "routine.\(w).\(d.id)"
         case let .soul(w, b): "soul.\(w.name).\(b.name)"
         }
+    }
+}
+
+extension MacChrome {
+    /// A Bot's page opens on the tab it was left on in this run. The first
+    /// time, on Chats with its live talk if it has one, else on Home (ADR 0086).
+    func land(on pick: BotPick, liveTalk: MuxaV2.Terminal?) {
+        if let left = botTabs[pick] {
+            botTab = left
+            return
+        }
+        if let talk = liveTalk {
+            botTab = .chats
+            botTerminal = talk.id
+            botView = .chat
+        } else {
+            botTab = .home
+        }
+        botTabs[pick] = botTab
     }
 }
 

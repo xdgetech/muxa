@@ -111,8 +111,15 @@ struct ReaderPanel: View {
                         Spacer()
                         Text("\(folder.entries.count)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
                     }
+                    #if os(iOS)
+                    // On iOS an identifier on the group also lands on every file row,
+                    // and the rows lose their own; it goes on the folder's label there.
+                    .accessibilityIdentifier("reader.folder.\(folder.path)")
+                    #endif
                 }
+                #if os(macOS)
                 .accessibilityIdentifier("reader.folder.\(folder.path)")
+                #endif
             } else {
                 ForEach(folder.entries) { row($0, scope: scope, in: folder) }
             }

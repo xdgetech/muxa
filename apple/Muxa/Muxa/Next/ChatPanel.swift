@@ -48,6 +48,9 @@ struct ChatView: View {
     let terminal: MuxaV2.Terminal
     @Binding var chat: UInt32?
     @State private var draft = ""
+    @FocusState private var fieldFocused: Bool
+    /// The text just sent: an input method that commits it again after the clear is undone.
+    @State private var sent: String?
 
     var body: some View {
         Group {
@@ -95,7 +98,12 @@ struct ChatView: View {
     private var composer: some View {
         HStack(spacing: 8) {
             TextField("Message the agent", text: $draft)
+                .focused($fieldFocused)
                 .onSubmit(sendDraft)
+                .onChange(of: draft) { _, typed in
+                    guard let sent else { return }
+                    if typed.trimmingCharacters(in: .whitespaces) == sent { draft = "" } else if !typed.isEmpty { self.sent = nil }
+                }
                 .padding(.horizontal, 4)
                 .fieldWell(radius: minTouch / 2)
                 .accessibilityIdentifier("chat.field")
@@ -109,11 +117,17 @@ struct ChatView: View {
     private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
+        // A field still composing (Japanese input) writes its marked text back
+        // after a clear. Leaving the field makes it commit now; the clear then
+        // comes on the next turn, after the commit, and the field takes focus again.
+        fieldFocused = false
+        sent = text
         draft = ""
-        // A field still composing (Japanese input) writes its text back after
-        // this; clear again once it has.
-        Task { @MainActor in draft = "" }
         send(text + "\r")
+        Task { @MainActor in
+            draft = ""
+            fieldFocused = true
+        }
     }
 
     private func send(_ input: String) {

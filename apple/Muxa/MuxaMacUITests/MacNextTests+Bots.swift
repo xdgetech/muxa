@@ -153,3 +153,64 @@ extension MacNextTests {
         XCTAssertEqual(app.staticTexts["bot.title"].value as? String ?? app.staticTexts["bot.title"].label, "reviews")
     }
 }
+
+/// A Bot's page first opens on its live talk, else on Home with a field to start one (ADR 0086).
+extension MacNextTests {
+    @MainActor
+    func testABotWithALiveTalkLandsOnIt() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: [.command, .shift])
+        let bot = app.descendants(matching: .any)["bot.app.scout"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 10))
+        bot.click()
+        XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
+        XCTAssertTrue(app.buttons["bot.chat.t9"].isSelected)
+    }
+
+    @MainActor
+    func testABotWithoutATalkStartsOneFromItsHome() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: [.command, .shift])
+        let bot = app.descendants(matching: .any)["bot.app.pr-watch"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 10))
+        bot.click()
+        let field = app.textFields["bot.home.talk"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["bot.tab.home"].isSelected)
+        field.click()
+        field.typeText("What waits for me today?\r")
+        XCTAssertTrue(app.descendants(matching: .any)["bot.conversation"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["bot.tab.chats"].isSelected)
+    }
+}
+
+/// Chat's field is empty and Send off after a send, by Return or the button.
+extension MacNextTests {
+    @MainActor
+    func testChatEmptiesItsFieldAfterASend() throws {
+        let app = launch()
+        app.typeKey("b", modifierFlags: [.command, .shift])
+        let bot = app.descendants(matching: .any)["bot.app.scout"]
+        XCTAssertTrue(bot.waitForExistence(timeout: 10))
+        bot.click()
+        let field = app.textFields["chat.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        let send = app.buttons["chat.send"]
+        field.click()
+        field.typeText("First question\r")
+        XCTAssertTrue(waitForEmpty(field), "the field empties after Return")
+        XCTAssertFalse(send.isEnabled)
+        field.click()
+        field.typeText("Second question")
+        XCTAssertTrue(send.isEnabled)
+        send.click()
+        XCTAssertTrue(waitForEmpty(field), "the field empties after Send")
+        XCTAssertFalse(send.isEnabled)
+    }
+
+    func waitForEmpty(_ field: XCUIElement) -> Bool {
+        let p = NSPredicate(format: "value == '' OR value == nil")
+        return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: field)], timeout: 10) == .completed
+    }
+}

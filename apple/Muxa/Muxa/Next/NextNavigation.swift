@@ -56,6 +56,8 @@ final class NextNavigation {
     /// iOS: the Bot page to show, and the terminal to open on it (ADR 0086).
     /// The Mac keeps its Bots state in `MacChrome`.
     var botRoute: BotRoute?
+    /// iOS: the tab each Bot's page was left on in this run, by `workspace/name`.
+    var botTabs: [String: BotTab] = [:]
     var sidebar = NavigationSplitViewVisibility.all
 
     /// The open Task's terminal (its agent), whichever pane has the keyboard.

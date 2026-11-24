@@ -71,9 +71,16 @@ extension NextModel {
 
     /// A new talk; a time in the title keeps it apart from the open ones,
     /// since a folder Task with the same title is the same Task.
-    func startChat(with e: BotEntry, now: Date = .now) async -> Terminal? {
+    /// `goal` is the first message, as typed on the Bot's Home.
+    func startChat(with e: BotEntry, goal: String? = nil, now: Date = .now) async -> Terminal? {
         let stamp = now.formatted(date: .abbreviated, time: .shortened)
-        return await startTalk(workspace: e.workspace.name, bot: e.name, title: "Talk to \(e.name) · \(stamp)")
+        return await startTalk(workspace: e.workspace.name, bot: e.name, title: "Talk to \(e.name) · \(stamp)", goal: goal)
+    }
+
+    /// Its most recent live talk, one whose agent is not done: a Bot's page
+    /// first opens on it (ADR 0086).
+    func liveTalk(of e: BotEntry) -> Terminal? {
+        talks(of: e).last { $0.status?.state != "done" }
     }
 
     /// New Bot (ADR 0086 decision 3): `bot-add`, then its first talk. A talk

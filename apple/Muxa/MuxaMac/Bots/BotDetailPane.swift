@@ -44,6 +44,8 @@ struct BotDetailPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Palette.pane)
+        .onAppear { chrome.land(on: entry.id, liveTalk: model.liveTalk(of: entry)) }
+        .onChange(of: chrome.botTab) { _, tab in chrome.botTabs[entry.id] = tab }
         .confirmationDialog("Continue a chat with \(entry.name)?", isPresented: $choosingChat, titleVisibility: .visible) {
             ForEach(model.talks(of: entry)) { t in
                 Button("Continue \(t.title)") { nav.open(t) }

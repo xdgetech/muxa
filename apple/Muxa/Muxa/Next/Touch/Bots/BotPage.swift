@@ -6,6 +6,7 @@ import SwiftUI
 /// its conversations open on this page, not as Tasks.
 struct BotPage: View {
     @Environment(NextModel.self) private var model
+    @Environment(NextNavigation.self) private var nav
     let entry: BotEntry
     @State private var tab = BotTab.home
 
@@ -23,6 +24,27 @@ struct BotPage: View {
         .background(Palette.ground)
         .navigationTitle(entry.name)
         .inlineTitle()
+        .onAppear(perform: land)
+        .onChange(of: tab) { _, picked in nav.botTabs[key] = picked }
+        .onChange(of: nav.botTabs[key]) { _, saved in if let saved, saved != tab { tab = saved } }
+    }
+
+    private var key: String { "\(entry.workspace.name)/\(entry.name)" }
+
+    /// The tab it was left on in this run; the first time, its live talk
+    /// on Chats if it has one, else Home (ADR 0086).
+    private func land() {
+        if let left = nav.botTabs[key] {
+            tab = left
+        } else if let talk = model.liveTalk(of: entry) {
+            nav.botTabs[key] = .chats
+            tab = .chats
+            nav.taskView = .chat
+            nav.botRoute = BotRoute(workspace: entry.workspace.name, bot: entry.name, terminal: talk.id)
+        } else {
+            nav.botTabs[key] = .home
+            tab = .home
+        }
     }
 
     private var header: some View {
