@@ -78,6 +78,19 @@ class ThemeRegistry(bundled: List<ThemeFile>, user: List<ThemeFile> = emptyList(
         return chain(root) + links
     }
 
+    /**
+     * The user theme an edit of [id] goes into (ADR 0091 Amendment 1): a user theme
+     * that extends another is edited in place; any other theme gets `<id>-custom`,
+     * which extends it.
+     */
+    fun editable(id: String): ThemeFile {
+        val base = file(id) ?: file(DEFAULT_ID) ?: MUXA
+        if (base.id !in bundledIds && base.extends != null) return base
+        val customId = "${base.id}-custom"
+        file(customId)?.takeIf { customId !in bundledIds }?.let { return it }
+        return ThemeFile(schema = ThemeFile.SCHEMA_VERSION, id = customId, name = "${base.name} (custom)", extends = base.id)
+    }
+
     companion object {
         const val DEFAULT_ID = "muxa-dark"
 
@@ -151,6 +164,13 @@ class ThemeRegistry(bundled: List<ThemeFile>, user: List<ThemeFile> = emptyList(
                 }
             }
             return files to failures
+        }
+
+        /** Deletes the user theme [id] from [folder]; a theme with no file there is no error. */
+        fun remove(id: String, folder: File) {
+            if (!ThemeFile.validId(id)) throw IOException("The theme id $id is not a file name")
+            val target = File(folder, "$id.json")
+            if (target.exists() && !target.delete()) throw IOException("The theme $id could not be removed")
         }
 
         /** Writes [file] as `<id>.json` in [folder], replacing one with that id. */

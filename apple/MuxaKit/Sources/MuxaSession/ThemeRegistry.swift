@@ -105,6 +105,32 @@ public struct ThemeRegistry: Sendable {
     }
 }
 
+// MARK: Editing colors
+
+extension ThemeRegistry {
+    /// The user theme that keeps color edits to `id` (ADR 0091 T4): a user
+    /// theme that already extends another is edited in place; any other gets
+    /// a `<id>-custom` file that extends it, made once and reused.
+    public func editable(_ id: String) -> ThemeFile {
+        let base = file(id) ?? file(Self.defaultID) ?? ThemeFile(terminalOnly: .muxa)
+        if !bundledIDs.contains(base.id), base.extends != nil { return base }
+        let customID = "\(base.id)-custom"
+        if let existing = file(customID), !bundledIDs.contains(customID) { return existing }
+        return ThemeFile(id: customID, name: "\(base.name) (custom)", extends: base.id)
+    }
+}
+
+extension ThemeFile {
+    /// This file with `token` set to `color`, or back to its parent's when nil.
+    public func setting(_ token: ThemeToken, to color: RGB?) -> ThemeFile {
+        var copy = self
+        var tokens = tokens ?? [:]
+        tokens[token.rawValue] = color?.hex
+        copy.tokens = tokens.isEmpty ? nil : tokens
+        return copy
+    }
+}
+
 // MARK: Files
 
 extension ThemeRegistry {

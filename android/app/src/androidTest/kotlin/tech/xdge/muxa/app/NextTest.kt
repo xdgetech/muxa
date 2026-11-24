@@ -116,6 +116,32 @@ class NextTest {
         compose.onNodeWithTag("terminal.theme.muxa-dark").assertIsSelected()
     }
 
+    // ADR 0091 Amendment 1: Automatic is a pick of its own, and an edit becomes `<id>-custom`.
+    @Test
+    fun automaticAndAnEditedThemeAreMarked() {
+        launch()
+        compose.openSettings()
+        compose.onNodeWithTag("settings.terminal").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.theme.automatic"), TIMEOUT)
+        compose.onNodeWithTag("terminal.theme.automatic").performScrollTo().performClick()
+        compose.onNodeWithTag("terminal.theme.automatic").assertIsSelected()
+        compose.onNodeWithTag("terminal.theme.muxa-dark").assertIsNotSelected()
+
+        compose.onNodeWithTag("terminal.theme.dracula").performScrollTo().performClick()
+        compose.onNodeWithTag("appearance.edit").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("edit.token.accent"), TIMEOUT)
+        compose.onNodeWithTag("edit.token.accent").performScrollTo().performTextReplacement("#ff79c6")
+        compose.onNodeWithTag("edit.save").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.theme.dracula-custom"), TIMEOUT)
+        compose.onNodeWithTag("terminal.theme.dracula-custom").performScrollTo().assertIsSelected()
+        compose.onNodeWithTag("terminal.theme.dracula").assertIsNotSelected()
+
+        // Remove the edit: the pick goes back to the default, so other tests and the next run start clean.
+        compose.onNodeWithTag("terminal.theme.dracula-custom.remove").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("terminal.theme.dracula-custom"), TIMEOUT)
+        compose.onNodeWithTag("terminal.theme.muxa-dark").performScrollTo().assertIsSelected()
+    }
+
     // Settings reads the host's settings since ADR 0074, and ADR 0075 gives every agent all its
     // Workspace's connections: the demo's settings have no linear connection, and nothing is "Default".
     @Test

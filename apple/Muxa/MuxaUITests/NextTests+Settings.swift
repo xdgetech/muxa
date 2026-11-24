@@ -37,6 +37,35 @@ extension NextTests {
         XCTAssertTrue(app.buttons["terminal.theme.muxa-dark"].isSelected)
     }
 
+    @MainActor
+    func testAutomaticAndAnEditedThemeArePicked() throws {
+        let app = launch()
+        openAppearance(app)
+        let automatic = app.buttons["terminal.theme.automatic"]
+        XCTAssertTrue(automatic.waitForExistence(timeout: 5))
+        automatic.tap()
+        XCTAssertTrue(automatic.isSelected, "Automatic is the pick")
+        XCTAssertFalse(app.buttons["terminal.theme.muxa-dark"].isSelected, "no single theme is marked under Automatic")
+
+        // An edit to Dracula goes into its own theme, which becomes the pick (ADR 0091 amendment 1).
+        app.buttons["terminal.theme.dracula"].tap()
+        app.buttons["appearance.edit"].tap()
+        let accent = app.textFields["edit.token.accent"]
+        XCTAssertTrue(accent.waitForExistence(timeout: 5))
+        accent.tap()
+        accent.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12) + "#ff79c6")
+        app.buttons["edit.save"].tap()
+        let custom = app.buttons["terminal.theme.dracula-custom"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 5))
+        XCTAssertTrue(custom.isSelected, "the edited theme is the pick")
+
+        // Leave the device as the other tests expect it.
+        app.buttons["terminal.remove.dracula-custom"].tap()
+        XCTAssertFalse(custom.waitForExistence(timeout: 2))
+        app.buttons["terminal.theme.muxa-dark"].tap()
+        XCTAssertTrue(app.buttons["terminal.theme.muxa-dark"].isSelected)
+    }
+
     /// Settings › Appearance. The row is last, and a list loads its rows only once they scroll in.
     @MainActor
     private func openAppearance(_ app: XCUIApplication) {

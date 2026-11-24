@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.launch
@@ -43,6 +44,9 @@ class MainActivity : ComponentActivity() {
             model.scope.launch { model.resumeOrLastHost() }
         }
         setContent {
+            // Automatic follows the system's mode while the app runs (ADR 0091 Amendment 1).
+            val dark = isSystemInDarkTheme()
+            LaunchedEffect(dark) { ThemeStore.follow(dark) }
             val theme = ThemeStore.current
             LaunchedEffect(theme) { follow(theme) }
             MuxaTheme { NextRoot(model) }

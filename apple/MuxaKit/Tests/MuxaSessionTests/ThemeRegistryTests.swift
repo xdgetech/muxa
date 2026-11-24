@@ -63,7 +63,7 @@ import Testing
         let fixture = try JSONDecoder().decode(Fixture.self, from: Self.fixtureData())
         #expect(fixture.tokenOrder == ThemeToken.allCases.map(\.rawValue))
         let registry = try Self.registry()
-        #expect(fixture.cases.count == 10)
+        #expect(fixture.cases.count == 12)
         for c in fixture.cases {
             let theme = registry.resolve(c.resolve)
             #expect(theme.id == c.id, "\(c.resolve)")
@@ -88,7 +88,7 @@ import Testing
 
     @Test func builtInsKeepTheContrastLimits() throws {
         let registry = ThemeRegistry(bundled: try ThemeRegistry.bundledFiles())
-        #expect(registry.files.map(\.id) == ["muxa-dark", "ghostty", "solarized-dark", "dracula"])
+        #expect(registry.files.map(\.id) == ["muxa-dark", "muxa-light", "ghostty", "solarized-dark", "solarized-light", "dracula"])
         for file in registry.files {
             let t = registry.resolve(file.id)
             let ground = t[.ground]
@@ -167,5 +167,47 @@ import Testing
             #expect(try JSONDecoder().decode(ThemePick.self, from: data) == pick)
         }
         #expect(try JSONDecoder().decode(ThemePick.self, from: Data(#"{"fixed": "ghostty"}"#.utf8)) == .fixed("ghostty"))
+    }
+
+    @Test func anEditGoesIntoAThemeThatExtendsThePickedOne() throws {
+        let registry = ThemeRegistry(bundled: try ThemeRegistry.bundledFiles())
+        let edit = registry.editable("dracula").setting(.accent, to: RGB(0xFF, 0x79, 0xC6))
+        #expect(edit.id == "dracula-custom")
+        #expect(edit.name == "Dracula (custom)")
+        #expect(edit.extends == "dracula")
+        #expect(edit.tokens == ["accent": "#ff79c6"])
+
+        let saved = ThemeRegistry(bundled: try ThemeRegistry.bundledFiles(), user: [edit])
+        #expect(saved.resolve("dracula-custom")[.accent] == RGB(0xFF, 0x79, 0xC6))
+        #expect(saved.resolve("dracula-custom")[.ground] == saved.resolve("dracula")[.ground])
+        // The edited theme is edited again in place, and from its parent the same file is found.
+        #expect(saved.editable("dracula-custom").id == "dracula-custom")
+        #expect(saved.editable("dracula").id == "dracula-custom")
+        // Back to the parent's color: no override is left.
+        #expect(edit.setting(.accent, to: nil).tokens == nil)
+    }
+
+    @Test func importedFilesGiveTheSharedPalette() throws {
+        struct Expected: Decodable {
+            struct Terminal: Decodable { var background, foreground, cursor, selection: String; var ansi: [String] }
+            struct File: Decodable { var file, kind, name: String }
+            var terminal: Terminal
+            var files: [File]
+        }
+        let folder = try #require(Bundle.module.url(forResource: "import", withExtension: nil, subdirectory: "Fixtures"))
+        let expected = try JSONDecoder().decode(Expected.self, from: Data(contentsOf: folder.appendingPathComponent("expected.json")))
+        #expect(expected.files.count == 2)
+        for f in expected.files {
+            let data = try Data(contentsOf: folder.appendingPathComponent(f.file))
+            let t = f.kind == "iterm"
+                ? try TerminalTheme.iTerm(data, name: f.name)
+                : try TerminalTheme.ghostty(String(decoding: data, as: UTF8.self), name: f.name)
+            #expect(t.name == f.name)
+            #expect(t.background.hex == expected.terminal.background, "\(f.file)")
+            #expect(t.foreground.hex == expected.terminal.foreground, "\(f.file)")
+            #expect(t.cursor?.hex == expected.terminal.cursor, "\(f.file)")
+            #expect(t.selection?.hex == expected.terminal.selection, "\(f.file)")
+            #expect(t.ansi?.map(\.hex) == expected.terminal.ansi, "\(f.file)")
+        }
     }
 }

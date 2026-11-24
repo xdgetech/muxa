@@ -84,6 +84,13 @@ data class ThemeFile(
         }
     }
 
+    /** This file with [token] set to [color], or back to its parent's when null. */
+    fun setting(token: ThemeToken, color: Rgb?): ThemeFile {
+        val next = tokens.orEmpty().toMutableMap()
+        if (color == null) next.remove(token.key) else next[token.key] = color.hex
+        return copy(tokens = next.takeIf { it.isNotEmpty() })
+    }
+
     fun encoded(): String = writer.encodeToString(serializer(), this)
 
     companion object {

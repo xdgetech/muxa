@@ -42,7 +42,8 @@ final class QuickCapture {
     func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        panel.appearance = NSAppearance(named: ThemeStore.shared.theme.appearance == .light ? .aqua : .darkAqua)
+        // Nil under Automatic: the panel takes the system's appearance.
+        panel.appearance = ThemeStore.shared.colorScheme.map { NSAppearance(named: $0 == .light ? .aqua : .darkAqua) } ?? nil
         panel.contentView = NSHostingView(rootView: content())
         NSApp.activate()
         panel.center()
@@ -119,7 +120,7 @@ private struct QuickCaptureView: View {
         }
         .frame(width: 580, alignment: .leading)
         .background(Palette.surface)
-        .preferredColorScheme(ColorScheme(ThemeStore.shared.theme.appearance))
+        .preferredColorScheme(ThemeStore.shared.colorScheme)
     }
 
     /// The window's keys, as the QuickCapture mock lists them.

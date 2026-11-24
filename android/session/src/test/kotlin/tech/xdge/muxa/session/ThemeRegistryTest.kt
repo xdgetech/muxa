@@ -51,7 +51,7 @@ class ThemeRegistryTest {
         assertEquals(ThemeToken.entries.map { it.key }, order)
         val registry = registry()
         val cases = fixture.getValue("cases") as JsonArray
-        assertEquals(10, cases.size)
+        assertEquals(12, cases.size)
         cases.map { it.jsonObject }.forEach { c ->
             val name = c.getValue("resolve").jsonPrimitive.content
             val theme = registry.resolve(name)
@@ -78,7 +78,10 @@ class ThemeRegistryTest {
     @Test
     fun builtInsKeepTheContrastLimits() {
         val registry = ThemeRegistry(ThemeRegistry.bundledFiles())
-        assertEquals(listOf("muxa-dark", "ghostty", "solarized-dark", "dracula"), registry.files.map { it.id })
+        assertEquals(
+            listOf("muxa-dark", "muxa-light", "ghostty", "solarized-dark", "solarized-light", "dracula"),
+            registry.files.map { it.id },
+        )
         registry.files.forEach { file ->
             val t = registry.resolve(file.id)
             val ground = t[ThemeToken.ground]

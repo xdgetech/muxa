@@ -106,7 +106,7 @@ Today:
 | T1 | The theme file format, the resolver, the derivation and the registry in `MuxaSession` and Android `:session`. The bundled theme files and one shared fixture folder (inputs → expected tokens). A Swift 6 spike: resolved tokens as a `Sendable` value readable outside the main actor. No UI change. | Fixture tests on both platforms, byte-equal: muxa Dark equals today's Apple values, every built-in meets the contrast limits, and cases with no ANSI, a light background, a partial override, `extends` chains and cycles, unknown keys, legacy entries and import. `make check`, `make test-apple`, `make test-android`. |
 | T2 | The Apple apps follow the theme: `Palette` and `Theme` members become getters over the resolved tokens; the colors captured once (the `UISegmentedControl` proxy, an `EnvironmentKey` default, web view backgrounds, the iOS pane background, stray hex) and the forced dark appearance follow the theme; terminal panes use its palette (the Mac look key hashes the theme); the Reader is injected; Settings › Appearance with swatches and import; `MUXA_THEME` for snapshots. | `make test-apple`, `make build-app`, `make test-app`, `make test-app-iphone`, `make build-mac-app`, `make test-mac-app`. A UI test picks Dracula, relaunches, and finds it still picked. Snapshots of the home, focus, Reader and settings screens for each built-in. |
 | T3 | Android follows the theme: Compose state behind `Palette`, `StateColors`, `KindPalette` and `Theme`; `MaterialTheme` from the tokens; the colors Compose does not track (top-level vals, `TerminalPaneView`'s color table, `windowBackground`, `SystemBarStyle`); the terminal palette; the Reader; an Appearance picker. | `make test-android`, `make test-android-v2`, `make build-android`, `make lint-android`, `make test-android-app` with a picker test, and screenshots for each theme. |
-| T4 | Later, in its own amendment: muxa Light and Solarized Light, the `system` pick (Automatic), import on Android, and an "edit one color" screen. | The default stays muxa Dark until the developer approves the light snapshots. |
+| T4 | Amendment 1 below: muxa Light and Solarized Light, the `system` pick (Automatic), import on Android, and an "edit one color" screen. | The default stays muxa Dark until the developer approves the light snapshots. |
 
 ```mermaid
 flowchart LR
@@ -136,6 +136,20 @@ flowchart LR
   - **Storing resolved tokens:** every new token would break the saved themes.
   - **Keeping the theme on the host:** ADR 0080 keeps display settings off the wire.
   - **One `themes.json` for all built-ins:** a user theme and a built-in should use the same unit, one file each.
+
+## Amendment 1: light themes, Automatic, import on Android, editing colors (T4, 2026-11-24)
+
+1. **Two light built-ins.** `muxa-light` pins the base tokens by hand: a white terminal with GitHub's light ANSI colors, on a `#f6f7f9` ground. It also pins `onNeedsYou`, `swipeDone` and `swipeLater`, because the dark rules for them give low contrast on a light ground. `solarized-light` pins only its three text levels. Both pass the same contrast limits as the dark built-ins.
+2. **Automatic** is the pick `{ "system": { "light": "muxa-light", "dark": "muxa-dark" } }`. It is the first row of Settings › Appearance.
+   - With it, the apps do not set the appearance. The system's light or dark mode picks the theme, and the apps follow a change while they run.
+   - The default stays `muxa-dark` until the developer approves the light snapshots.
+3. **Import on Android**, as on Apple: a muxa theme file, an iTerm2 `.itermcolors` preset, or a Ghostty theme.
+   - `:session` reads iTerm2 and Ghostty files with the rules of `MuxaSession.TerminalTheme`.
+   - The shared files in `apple/MuxaKit/Tests/MuxaSessionTests/Fixtures/import/` must give the same palette on both platforms.
+4. **Editing colors.** Settings › Appearance has "Edit Colors…" for the picked theme. It edits the base tokens only; the component tokens follow them.
+   - An edit goes into the user theme `ThemeRegistry.editable(id)` names: a user theme that already extends another is edited in place, and any other theme gets a `<id>-custom` file that extends it.
+   - The edited theme becomes the pick. Resetting a token removes its override, so it follows the parent again.
+   - The Apple apps use the system color picker. Android uses a `#rrggbb` field with a swatch.
 
 ## Appendix: tokens
 

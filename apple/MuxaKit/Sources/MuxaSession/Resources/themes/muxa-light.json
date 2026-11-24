@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "id": "muxa-light",
+  "name": "muxa Light",
+  "appearance": "light",
+  "terminal": {
+    "background": "#ffffff",
+    "foreground": "#24292f",
+    "cursor": "#0969da",
+    "selection": "#ddf4ff",
+    "ansi": ["#24292f", "#cf222e", "#116329", "#4d2d00", "#0969da", "#8250df", "#1b7c83", "#6e7781",
+             "#57606a", "#a40e26", "#1a7f37", "#633c01", "#218bff", "#a475f9", "#3192aa", "#8c959f"]
+  },
+  "tokens": {
+    "ground": "#f6f7f9",
+    "text": "#1f2328",
+    "surface": "#ffffff",
+    "card": "#ffffff",
+    "raised": "#eef0f3",
+    "border": "#d8dce1",
+    "textSecondary": "#59636e",
+    "textTertiary": "#6e7781",
+    "accent": "#0969da",
+    "working": "#1a7f37",
+    "needsYou": "#9a6700",
+    "failure": "#cf222e",
+    "decide": "#8250df",
+    "onNeedsYou": "#ffffff",
+    "swipeDone": "#1a7f37",
+    "swipeLater": "#6e40c9"
+  }
+}

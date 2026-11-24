@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 struct TerminalSettingsForm: View {
     @State private var importing = false
     @State private var importError: String?
+    @State private var editing: ThemeFile?
     private var settings: TerminalSettings { .shared }
     private var themes: ThemeStore { .shared }
 
@@ -17,7 +18,10 @@ struct TerminalSettingsForm: View {
                     .listRowInsets(EdgeInsets())
             }
             Section {
+                automaticRow
                 ForEach(themes.files) { file in themeRow(themes.resolve(file.id)) }
+                Button("Edit Colors…", systemImage: "paintpalette") { editing = themes.editable(themes.theme.id) }
+                    .accessibilityIdentifier("appearance.edit")
                 Button("Import Theme…", systemImage: "square.and.arrow.down") { importing = true }
                     .accessibilityIdentifier("terminal.import")
                 if let importError {
@@ -26,7 +30,7 @@ struct TerminalSettingsForm: View {
             } header: {
                 Text("Theme")
             } footer: {
-                Text("The theme colors the whole app and its terminals. Import a muxa theme (.json), an iTerm2 color preset (.itermcolors) or a Ghostty theme file.")
+                Text("The theme colors the whole app and its terminals. Automatic follows the system's light or dark mode. Import a muxa theme (.json), an iTerm2 color preset (.itermcolors) or a Ghostty theme file.")
             }
             Section("Font") {
                 Picker("Font", selection: Binding(get: { settings.fontName }, set: { settings.setFont($0) })) {
@@ -44,6 +48,7 @@ struct TerminalSettingsForm: View {
         }
         .formStyle(.grouped)
         .groundList()
+        .sheet(item: $editing) { file in ThemeColorsEditor(file: file) { editing = nil } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             importError = nil
             do {
@@ -57,8 +62,28 @@ struct TerminalSettingsForm: View {
         }
     }
 
+    private var automaticRow: some View {
+        let picked = themes.pick == ThemeStore.automatic
+        return Button { themes.choose(ThemeStore.automatic) } label: {
+            HStack(spacing: 10) {
+                HStack(spacing: 2) {
+                    Swatch(theme: themes.resolve("muxa-light"), width: 37)
+                    Swatch(theme: themes.resolve(ThemeRegistry.defaultID), width: 37)
+                }
+                Text("Automatic").foregroundStyle(Palette.text)
+                Spacer()
+                if picked { Image(systemName: "checkmark").foregroundStyle(Palette.accent) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(picked ? .isSelected : [])
+        .accessibilityIdentifier("terminal.theme.automatic")
+    }
+
     private func themeRow(_ theme: ResolvedTheme) -> some View {
-        let picked = themes.theme.id == theme.id
+        // Under Automatic no single theme is the pick.
+        let picked = themes.pick != ThemeStore.automatic && themes.theme.id == theme.id
         return HStack(spacing: 10) {
             Button { themes.pick(theme.id) } label: {
                 HStack(spacing: 10) {
@@ -74,6 +99,7 @@ struct TerminalSettingsForm: View {
             .accessibilityIdentifier("terminal.theme.\(theme.id)")
             if !themes.isBuiltIn(theme.id) {
                 Button("Remove", systemImage: "trash", role: .destructive) { themes.remove(theme.id) }
+                    .accessibilityIdentifier("terminal.remove.\(theme.id)")
                     .labelStyle(.iconOnly)
                     .buttonStyle(.plain)
                     .foregroundStyle(Palette.textSecondary)
@@ -103,6 +129,7 @@ struct TerminalSettingsForm: View {
 /// The theme's ground with its text, accent and state colors on it.
 private struct Swatch: View {
     let theme: ResolvedTheme
+    var width: CGFloat = 76
 
     var body: some View {
         HStack(spacing: 3) {
@@ -112,7 +139,8 @@ private struct Swatch: View {
             }
         }
         .padding(.horizontal, 6)
-        .frame(width: 76, height: 22, alignment: .leading)
+        .frame(width: width, height: 22, alignment: .leading)
+        .clipped()
         .background(Color(theme[.ground]), in: RoundedRectangle(cornerRadius: 5))
         .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color(theme[.border])))
         .accessibilityHidden(true)

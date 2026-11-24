@@ -22,15 +22,21 @@ final class ThemeStore: Observable, @unchecked Sendable {
     private struct State {
         var registry: ThemeRegistry
         var pick: ThemePick
+        /// The system's light or dark mode; it picks the theme under Automatic.
+        var system: ThemeAppearance
         var theme: ResolvedTheme
     }
+
+    /// Automatic (ADR 0091 amendment 1): muxa Light or muxa Dark by the system.
+    static let automatic = ThemePick.system(light: "muxa-light", dark: ThemeRegistry.defaultID)
 
     init(defaults: UserDefaults = .standard, folder: URL? = ThemeStore.defaultFolder) {
         self.defaults = defaults
         self.folder = folder
         let registry = Self.load(defaults: defaults, folder: folder)
         let pick = Self.savedPick(defaults)
-        state = State(registry: registry, pick: pick, theme: registry.resolve(pick, system: .dark))
+        let system = Self.initialSystem
+        state = State(registry: registry, pick: pick, system: system, theme: registry.resolve(pick, system: system))
     }
 
     /// The picked theme, resolved.
@@ -45,14 +51,45 @@ final class ThemeStore: Observable, @unchecked Sendable {
         return lock.withLock { state.registry.files }
     }
 
+    var pick: ThemePick {
+        registrar.access(self, keyPath: \.theme)
+        return lock.withLock { state.pick }
+    }
+
+    /// The appearance the apps set on their windows; nil lets the system's own
+    /// show, so Automatic sees the system change.
+    var colorScheme: ColorScheme? {
+        if case .system = pick { return nil }
+        return ColorScheme(theme.appearance)
+    }
+
+    /// The system's mode, as a window without a set appearance sees it.
+    func systemChanged(to appearance: ThemeAppearance) {
+        guard lock.withLock({ state.system != appearance }) else { return }
+        update { $0.system = appearance }
+    }
+
     func isBuiltIn(_ id: String) -> Bool { lock.withLock { state.registry.bundledIDs.contains(id) } }
 
     func resolve(_ id: String) -> ResolvedTheme { lock.withLock { state.registry.resolve(id) } }
 
+    /// A theme being edited, resolved as if it were saved.
+    func resolve(draft: ThemeFile) -> ResolvedTheme {
+        lock.withLock {
+            let registry = state.registry
+            let bundled = registry.files.filter { registry.bundledIDs.contains($0.id) }
+            let user = registry.files.filter { !registry.bundledIDs.contains($0.id) && $0.id != draft.id }
+            return ThemeRegistry(bundled: bundled, user: [draft] + user).resolve(draft.id)
+        }
+    }
+
     func color(_ token: ThemeToken) -> Color { Color(theme[token]) }
 
     func pick(_ id: String) {
-        let pick = ThemePick.fixed(id)
+        choose(.fixed(id))
+    }
+
+    func choose(_ pick: ThemePick) {
         do {
             defaults.set(try JSONEncoder().encode(pick), forKey: Keys.pick)
         } catch {
@@ -101,7 +138,19 @@ final class ThemeStore: Observable, @unchecked Sendable {
             NSLog("muxa: could not save the imported terminal themes: %@", String(describing: error))
         }
         reload()
-        if lock.withLock({ state.pick.id(system: .dark) }) == id { pick(ThemeRegistry.defaultID) }
+        if lock.withLock({ state.pick }) == .fixed(id) { pick(ThemeRegistry.defaultID) }
+    }
+
+    /// The user theme that keeps color edits to `id`.
+    func editable(_ id: String) -> ThemeFile { lock.withLock { state.registry.editable(id) } }
+
+    /// Saves an edited theme and picks it.
+    func save(_ file: ThemeFile) throws {
+        guard let folder else { throw CocoaError(.fileWriteNoPermission) }
+        guard !isBuiltIn(file.id) else { throw ThemeFile.LoadError.badID(file.id) }
+        try ThemeRegistry.save(file, in: folder)
+        reload()
+        pick(file.id)
     }
 
     private func reload() {
@@ -113,12 +162,21 @@ final class ThemeStore: Observable, @unchecked Sendable {
         registrar.withMutation(of: self, keyPath: \.theme) {
             lock.withLock {
                 change(&state)
-                state.theme = state.registry.resolve(state.pick, system: .dark)
+                state.theme = state.registry.resolve(state.pick, system: state.system)
             }
         }
     }
 
     // MARK: Loading
+
+    /// Before a window reports it. The Mac's setting is readable from any thread.
+    private static var initialSystem: ThemeAppearance {
+        #if os(macOS)
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? .dark : .light
+        #else
+        .dark
+        #endif
+    }
 
     static var defaultFolder: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -190,13 +248,20 @@ extension ColorScheme {
 /// A window root in the device's theme: its accent, light or dark controls,
 /// and ground. Read in a view body, so the window follows a new theme.
 struct ThemedWindow: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
     func body(content: Content) -> some View {
-        let theme = ThemeStore.shared.theme
+        let store = ThemeStore.shared
+        let theme = store.theme
         let ground = Color(theme[.ground])
         content
             .tint(Color(theme[.accent]))
             .background(ground)
-            .preferredColorScheme(ColorScheme(theme.appearance))
+            .preferredColorScheme(store.colorScheme)
+            // Under Automatic nothing sets the appearance, so this is the system's.
+            .onChange(of: scheme, initial: true) { _, scheme in
+                if store.colorScheme == nil { store.systemChanged(to: scheme == .light ? .light : .dark) }
+            }
             #if os(macOS)
             .containerBackground(ground, for: .window)
             .toolbarBackground(ground, for: .windowToolbar)
