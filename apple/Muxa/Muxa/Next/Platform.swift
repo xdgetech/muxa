@@ -53,8 +53,9 @@ extension View {
         #else
         onSubmit(send).onChange(of: text.wrappedValue) { old, new in
             guard let typed = withoutTypedReturn(old: old, new: new) else { return }
-            text.wrappedValue = typed
+            // `send` trims and clears; one write fewer leaves UIKit no older text to apply.
             send()
+            if text.wrappedValue == new { text.wrappedValue = typed }
         }
         #endif
     }
