@@ -2,7 +2,8 @@ import MuxaV2
 import SwiftUI
 
 /// The live Tasks of the active Task's Workspace as tabs (all live Tasks when
-/// the active terminal has no Workspace), and "+" for a new Task there.
+/// the active terminal has no Workspace), and "+" for a new Task there. A
+/// tab's close button only hides the tab; the Task closes elsewhere (ADR 0097).
 struct FocusTabStrip: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -11,8 +12,9 @@ struct FocusTabStrip: View {
     @State private var hovered: String?
 
     private var tasks: [MuxaV2.Terminal] {
-        guard let workspace = active?.workspace else { return model.focusTasks }
-        return model.focusTasks.filter { $0.workspace == workspace }
+        let shown = model.focusTasks.filter { !chrome.hiddenTabs.contains($0.id) || $0.id == active?.id }
+        guard let workspace = active?.workspace else { return shown }
+        return shown.filter { $0.workspace == workspace }
     }
 
     var body: some View {
@@ -22,6 +24,8 @@ struct FocusTabStrip: View {
             .layoutPriority(-1)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(active?.workspace.map { "Tasks in \($0)" } ?? "Tasks")
+            // A Task opened again, from the sidebar or Go to Task, gets its tab back.
+            .onChange(of: active?.id, initial: true) { _, id in if let id { chrome.hiddenTabs.remove(id) } }
     }
 
     private var strip: some View {
@@ -54,8 +58,7 @@ struct FocusTabStrip: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("tab.\(t.id)")
             .accessibilityAddTraits(on ? .isSelected : [])
-            // Closing asks first: the agent stops and its worktrees may go.
-            Button { chrome.closingTask = t } label: {
+            Button { hide(t, among: tasks) } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
                     .frame(width: 18, height: 18)
@@ -63,8 +66,8 @@ struct FocusTabStrip: View {
             }
             .buttonStyle(.plain)
             .opacity(on || hovered == t.id ? 1 : 0)
-            .help("Close Task…")
-            .accessibilityLabel("Close \(t.title)")
+            .help("Close Tab (the Task keeps running)")
+            .accessibilityLabel("Close the tab of \(t.title)")
             .accessibilityIdentifier("tab.close.\(t.id)")
             .padding(.trailing, 8)
         }
@@ -76,5 +79,18 @@ struct FocusTabStrip: View {
             Rectangle().fill(on ? t.state.color : .clear).frame(height: 2)
         }
         .onHover { hovered = $0 ? t.id : (hovered == t.id ? nil : hovered) }
+    }
+
+    /// Hides `t`'s tab. The active tab hands Focus to its neighbour, or to
+    /// Home when it was the last, since the active Task always has a tab.
+    private func hide(_ t: MuxaV2.Terminal, among shown: [MuxaV2.Terminal]) {
+        chrome.hiddenTabs.insert(t.id)
+        guard t.id == active?.id, let at = shown.firstIndex(where: { $0.id == t.id }) else { return }
+        let rest = shown.filter { $0.id != t.id }
+        if rest.isEmpty {
+            nav.focus = false
+        } else {
+            nav.terminal = rest[min(at, rest.count - 1)].id
+        }
     }
 }

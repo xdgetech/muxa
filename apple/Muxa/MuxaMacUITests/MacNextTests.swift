@@ -116,18 +116,22 @@ final class MacNextTests: XCTestCase {
         XCTAssertTrue(waitForGone(any["pane.2"]), "⌘W closes the shell")
     }
 
+    /// A tab's close button only hides the tab (ADR 0097): nothing asks, the
+    /// Task stays in the sidebar, and opening it there brings the tab back.
     @MainActor
-    func testATabClosesItsTaskAfterAsking() throws {
+    func testClosingATabKeepsItsTask() throws {
         let app = launch()
         app.typeKey("f", modifierFlags: [.command, .shift])
         let any = app.descendants(matching: .any)
         let close = any["tab.close.t1"]
         XCTAssertTrue(close.waitForExistence(timeout: 5))
         close.click()
-        let confirm = app.buttons["closetask.confirm"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        confirm.click()
         XCTAssertTrue(waitForGone(any["tab.t1"]))
+        XCTAssertFalse(app.buttons["closetask.confirm"].exists, "closing a tab asks nothing")
+        let row = any["terminal.t1"]
+        XCTAssertTrue(row.exists, "the Task is still in the sidebar")
+        row.click()
+        XCTAssertTrue(any["tab.t1"].waitForExistence(timeout: 5), "opening the Task shows its tab again")
     }
 
     @MainActor

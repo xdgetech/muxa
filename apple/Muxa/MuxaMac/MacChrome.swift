@@ -11,6 +11,9 @@ final class MacChrome {
     var showShortcuts = false
     /// The Task the user asked to close; Focus confirms it first.
     var closingTask: MuxaV2.Terminal?
+    /// Tasks whose tab the user closed (ADR 0097): they still run and stay in
+    /// the sidebar. Opening one shows its tab again.
+    var hiddenTabs: Set<String> = []
     /// The main window, so ⌘W knows when Focus has the keyboard.
     weak var mainWindow: NSWindow?
     /// Vim's window prefix was pressed and waits for its command key.

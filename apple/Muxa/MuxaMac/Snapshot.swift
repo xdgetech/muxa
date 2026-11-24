@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
 /// `MUXA_THEME=<theme id>` and
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|palette|reader|settings[-tab]|settings-terminal|settings-assistant|bots[-chat|-chats|-run|-routines|-files|-settings|-new|-routine-edit|-soul-edit]` in the environment, the app
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|palette|reader|settings[-tab]|settings-terminal|settings-assistant|bots[-chat|-chats|-run|-routines|-files|-settings|-new|-routine-edit|-soul-edit|-landing-chat|-landing-done|-landing-left-home|-landing-run]|focus-tab-hidden` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
 /// with the mocks without screen-recording permission. Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
@@ -17,10 +17,25 @@ enum Snapshot {
         switch env["MUXA_SCREEN"] {
         case "focus": nav.focus = true
         case "routines": nav.tab = .bots
-        case "bots-landing-home", "bots-landing-chat":
-            // The landing rule picks the tab: scout has a live talk, pr-watch none.
+        case "bots-landing-chat":
+            // The landing rule picks the tab: scout has a live talk.
             nav.tab = .bots
-            chrome.botPick = .bot(workspace: "app", name: env["MUXA_SCREEN"] == "bots-landing-chat" ? "scout" : "pr-watch")
+            chrome.botPick = .bot(workspace: "app", name: "scout")
+        case "bots-landing-done", "bots-landing-left-home":
+            // pr-watch's talk reported `done`; "left-home" was last left on Home. Both land on the talk.
+            nav.tab = .bots
+            chrome.botTab = .home
+            if env["MUXA_SCREEN"] == "bots-landing-left-home" { chrome.botTabs[.bot(workspace: "app", name: "pr-watch")] = .home }
+            chrome.botPick = .bot(workspace: "app", name: "pr-watch")
+        case "bots-landing-run":
+            // An Inbox item's run opens on its Bot's page and stays there, not on the talk.
+            for _ in 0..<30 where model.terminals.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+            if let run = model.terminals.first(where: { $0.id == "t8" }) { _ = chrome.showOnBotPage(run, nav: nav) }
+        case "focus-tab-hidden":
+            // t1's tab was closed: t1 still runs in the sidebar, t2 is open.
+            nav.focus = true
+            nav.terminal = "t2"
+            chrome.hiddenTabs = ["t1"]
         case let screen? where screen.hasPrefix("bots"):
             nav.tab = .bots
             chrome.botPick = .bot(workspace: "app", name: "pr-watch")
@@ -28,6 +43,8 @@ enum Snapshot {
                                           "bots-files": .files, "bots-settings": .settings, "bots-routine-edit": .routines, "bots-soul-edit": .files]
             chrome.botTab = tabs[screen] ?? .home
             chrome.botTabs[.bot(workspace: "app", name: "pr-watch")] = chrome.botTab
+            // The screen picks the tab, not the landing rule.
+            chrome.botRoutedTo = .bot(workspace: "app", name: "pr-watch")
             chrome.botTerminal = screen == "bots-run" ? "t8" : "t7"
             chrome.botView = screen == "bots-run" ? .terminal : .chat
             chrome.showNewBot = screen == "bots-new"
