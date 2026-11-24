@@ -159,6 +159,11 @@ extension DemoContent {
                 ],
             ],
             chats: [
+                "t7": ChatUpdate(reset: true, entries: [
+                    ChatEntry(id: "u1", kind: "user", text: "Every night, list the PRs nobody touched for a week."),
+                    ChatEntry(id: "a1", kind: "assistant",
+                              text: "I proposed a Routine **stale-prs** that runs at 21:00. Apply it to turn it on."),
+                ]),
                 "t9": ChatUpdate(reset: true, entries: [
                     ChatEntry(id: "u1", kind: "user", text: "Which of our dependencies have open CVEs?"),
                     ChatEntry(id: "a1", kind: "assistant", text: "I'm checking the lockfile against the advisories."),
