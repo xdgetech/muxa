@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ fun ColumnScope.BotSettingsTab(model: NextModel, editor: SettingsEditor, e: BotE
     var d by remember(e.bot) { mutableStateOf(original) }
     var saved by remember { mutableStateOf<String?>(null) }
     val on = !editor.readOnly
+    LaunchedEffect(Unit) { model.loadPlanUsage() }
     BotRename(editor, ws.name, e.name, ws.bots.map { it.name }) { bots.pick = BotPick(ws.name, it) }
     Field(d.description, { d = d.copy(description = it) }, "Description", "bot.description", enabled = on, placeholder = "Watches open PRs")
     Field(d.dailyItems, { d = d.copy(dailyItems = it) }, "Daily items", "bot.daily", enabled = on, number = true,
@@ -44,6 +46,15 @@ fun ColumnScope.BotSettingsTab(model: NextModel, editor: SettingsEditor, e: BotE
             "it tells you what it needed.",
         style = MaterialTheme.typography.bodySmall,
     )
+    // A Bot runs on its Workspace's logins only (ADR 0091 §4): a login carries connectors and settings.
+    if (ws.subscriptions.isNotEmpty()) {
+        Text("Subscriptions", style = MaterialTheme.typography.titleSmall)
+        SubscriptionOrder(d.subscriptions, ws.subscriptions, model.planUsage, "bot.subs", on) { d = d.copy(subscriptions = it) }
+        Text(
+            "Empty: ${ws.name}'s order. To run it on another login, add that login to ${ws.name} first.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
     d.problem?.let { Text(it, Modifier.testTag("bot.problem"), color = Theme.failure, fontSize = 13.sp) }
     PrimaryButton("Save", {
         scope.launch { saved = editor.save(listOf(d.op(ws.name))) }

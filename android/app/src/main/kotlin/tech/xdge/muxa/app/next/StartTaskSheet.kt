@@ -57,6 +57,7 @@ import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.app.ui.PrimaryButton
 import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.v2.LoopChecks
+import tech.xdge.muxa.v2.Settings
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
 
@@ -71,6 +72,7 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
     var workspaces by remember { mutableStateOf<List<Workspace>?>(null) }
     var choices by remember { mutableStateOf(TaskChoices(title = seed.title, goal = seed.goal)) }
     var starting by remember { mutableStateOf(false) }
+    var settings by remember { mutableStateOf<Settings?>(null) }
     val scope = rememberCoroutineScope()
     val phone = LocalPhoneLayout.current
     LaunchedEffect(Unit) {
@@ -78,6 +80,9 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
         val list = model.workspaces().orEmpty()
         workspaces = list
         (list.firstOrNull { it.name == seed.workspace } ?: list.firstOrNull())?.let { choices = choices.inWorkspace(it) }
+        // Only for the "Runs on" line: without them the sheet still starts Tasks.
+        settings = runCatching { model.settingsHost.settings() }.getOrNull()
+        model.loadPlanUsage()
     }
     val ws = workspaces?.firstOrNull { it.name == choices.workspace }
 
@@ -125,7 +130,7 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
                             choices.goal, { choices = choices.copy(goal = it) }, Modifier.fillMaxWidth().testTag("task.goal"),
                             label = { Text("Goal") }, minLines = 2,
                         )
-                        if (ws != null) TaskOptions(ws, choices) { choices = it }
+                        if (ws != null) TaskOptions(ws, settings?.runsOn(ws.name, ws.agent, model.planUsage), choices) { choices = it }
                     }
                 }
             }
@@ -151,9 +156,11 @@ private fun WorkspacePicker(list: List<Workspace>, picked: String, pick: (Worksp
 
 /** The parts that depend on the Workspace. */
 @Composable
-private fun TaskOptions(ws: Workspace, choices: TaskChoices, change: (TaskChoices) -> Unit) {
+private fun TaskOptions(ws: Workspace, runsOn: String?, choices: TaskChoices, change: (TaskChoices) -> Unit) {
     Places(ws, choices, change)
     toolsLine(ws)?.let { Text(it, Modifier.testTag("task.tools"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium) }
+    // The Workspace's order picks the login (ADR 0091 §4): no picker here.
+    runsOn?.let { Text(it, Modifier.testTag("task.subscription"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium) }
     SwitchRow("Plan mode", "task.plan", choices.plan) { change(choices.copy(plan = it)) }
     ws.loop?.let { LoopOptions(it.checks, choices, change) }
 }

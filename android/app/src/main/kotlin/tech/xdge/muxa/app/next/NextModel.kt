@@ -33,6 +33,7 @@ import tech.xdge.muxa.v2.ReaderList
 import tech.xdge.muxa.v2.Routine
 import tech.xdge.muxa.v2.RoutineProblem
 import tech.xdge.muxa.v2.SettingsOp
+import tech.xdge.muxa.v2.SubscriptionUsage
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.V2Client
 import tech.xdge.muxa.v2.V2Error
@@ -422,6 +423,36 @@ class NextModel(
     }
 
     private fun connected(): V2Client = client ?: throw IllegalStateException("Not connected.")
+
+    /** Each subscription with the limits its agents last reported (ADR 0091), as [loadPlanUsage] last read them. */
+    var planUsage: List<SubscriptionUsage> by mutableStateOf(emptyList())
+        private set
+
+    /**
+     * Reads [planUsage] again. A failure keeps the last copy and leaves [requestError] alone: an older host
+     * refuses the request, and its screens then show "no data yet".
+     */
+    suspend fun loadPlanUsage() {
+        val c = client ?: return
+        try {
+            planUsage = c.subscriptions()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Kept: the screens show the last copy, or "no data yet".
+        }
+    }
+
+    /** Opens the login terminal of [subscription] (ADR 0091 §7); null with [requestError] set. */
+    suspend fun startLogin(subscription: String): Terminal? {
+        var started: Terminal? = null
+        request { c ->
+            val (t, _) = c.loginStart(subscription)
+            if (terminals.none { it.id == t.id }) terminals = terminals + t
+            started = t
+        }
+        return started
+    }
 
     /** Starts a Task; its agent terminal, or null with [requestError] set. */
     suspend fun startTask(draft: TaskDraft): Terminal? {

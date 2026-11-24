@@ -81,11 +81,13 @@ fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
 @Composable
 private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
     val editor = remember(model) { SettingsEditor(model.settingsHost) }
+    // Tasks that start or end change who uses what: ask again when the live terminals change.
+    val live = model.terminals.filter { it.live }.map { it.id }
     var usage by remember { mutableStateOf<List<Workspace>>(emptyList()) }
     var openWorkspace by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(editor) { editor.load() }
-    // Tasks that start or end change who uses what: ask again when the live terminals change.
-    val live = model.terminals.filter { it.live }.map { it.id }
+    // A save can add a subscription, and a running agent reports new limits: read them with each revision.
+    LaunchedEffect(editor.settings?.revision, live) { model.loadPlanUsage() }
     LaunchedEffect(live) { model.workspaces()?.let { usage = it } }
 
     Column(Modifier.padding(bottom = 16.dp)) {
@@ -102,8 +104,10 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
             ws != null -> WorkspaceSettings(editor, ws, usage.firstOrNull { it.name == ws.name }, model, open) { openWorkspace = null }
             else -> {
                 WorkspaceList(editor) { openWorkspace = it }
+                SubscriptionsSection(editor, model, model.planUsage, open)
+                UsageSection(editor, model.planUsage)
                 WorkersSection(editor, settings.workspaces.map { it.name })
-                AssistantSection(editor)
+                AssistantSection(editor, model.planUsage)
             }
         }
     }

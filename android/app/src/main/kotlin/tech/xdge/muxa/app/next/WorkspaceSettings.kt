@@ -58,7 +58,7 @@ fun WorkspaceSettings(
         }
         when (tab) {
             WorkspaceTab.GENERAL -> {
-                WorkspaceGeneral(editor, ws)
+                WorkspaceGeneral(editor, ws, model.planUsage)
                 EnvSettings(editor, ws)
                 RemoveWorkspace(editor, ws, back)
             }

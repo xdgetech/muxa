@@ -203,6 +203,8 @@ data class BotDraft(
     val handoffs: String = "",
     /** Shell commands only this Bot may run (ADR 0088), as the inside of `Bash(...)`. */
     val commands: List<String> = emptyList(),
+    /** Its own order of its Workspace's subscriptions (ADR 0091); empty: the Workspace's. */
+    val subscriptions: List<String> = emptyList(),
 ) {
     val problem: String?
         get() = when {
@@ -221,7 +223,7 @@ data class BotDraft(
     fun spec() = BotSpec(
         name.trim(), description.trim().ifEmpty { null }, worker, dailyItems.trim().toIntOrNull(), enabled,
         // Handoffs mean nothing without a team.
-        members.sorted(), handoffs.trim().toIntOrNull().takeIf { members.isNotEmpty() }, commands,
+        members.sorted(), handoffs.trim().toIntOrNull().takeIf { members.isNotEmpty() }, commands, subscriptions,
     )
 
     /** As a Routine's text: the Soul goes only when it is new or changed, so an unreadable file is never emptied. */
@@ -270,6 +272,7 @@ data class BotDraft(
         fun of(b: SettingsBot) = BotDraft(
             false, b.name, b.description.orEmpty(), b.worker, b.dailyItems?.toString().orEmpty(), b.enabled,
             b.soulText.orEmpty(), b.soulText, b.members.toSet(), b.handoffsPerDay?.toString().orEmpty(), b.commands,
+            b.subscriptions,
         )
     }
 }
@@ -281,11 +284,18 @@ data class AssistantDraft(
     val soul: String = "",
     /** The Soul as read; null when it could not be read. */
     val originalSoul: String? = null,
+    /** The Claude subscriptions it runs on, in order (ADR 0091). */
+    val subscriptions: List<String> = emptyList(),
+    val originalSubscriptions: List<String> = emptyList(),
 ) {
-    fun op() = SettingsOp.AssistantUpdate(enabled, worker, soul.takeIf { it != (originalSoul ?: "") })
+    /** The list goes only when it changed, so a host older than ADR 0091 takes the rest. */
+    fun op() = SettingsOp.AssistantUpdate(
+        enabled, worker, soul.takeIf { it != (originalSoul ?: "") }, subscriptions.takeIf { it != originalSubscriptions },
+    )
 
     companion object {
-        fun of(a: SettingsAssistant) = AssistantDraft(a.enabled, a.worker, a.soulText.orEmpty(), a.soulText)
+        fun of(a: SettingsAssistant) =
+            AssistantDraft(a.enabled, a.worker, a.soulText.orEmpty(), a.soulText, a.subscriptions, a.subscriptions)
     }
 }
 
