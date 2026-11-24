@@ -42,8 +42,8 @@ A session that waits on you is not an item. It is short-lived and shows as Needs
 
 - The list is in **your order**. You drag an item, or press `⌥↑` / `⌥↓`. New items go to the top.
 - A due date is optional. Only items with one show it. An overdue date shows in red.
-- Later hides an item until a time you pick. It then comes back on top.
-- Filters: kind, Workspace, due, hidden by Later.
+- Later moves an item to the bottom, below everything else (ADR 0096). Nothing is hidden.
+- Filters: kind, Workspace, due.
 
 ### Detail
 

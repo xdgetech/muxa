@@ -1,23 +1,20 @@
 import MuxaV2
 import SwiftUI
 
-/// Which Inbox items show: a kind, a Workspace, Later items and Done.
+/// Which Inbox items show: a kind, a Workspace and Done.
 struct InboxFilter {
     var kind: ItemKind?
     var workspace: String?
-    var showLater = false
     var showDone = false
 
     /// Dragging reorders only the whole list: a filtered one has gaps.
     var isActive: Bool { kind != nil || workspace != nil }
 
-    var changesList: Bool { isActive || showLater || showDone }
+    var changesList: Bool { isActive || showDone }
 
-    func apply(_ items: [InboxItem], now: Int64) -> [InboxItem] {
+    func apply(_ items: [InboxItem]) -> [InboxItem] {
         items.filter { item in
-            (kind == nil || item.kind == kind)
-                && (workspace == nil || item.workspace == workspace)
-                && (showLater || !item.isLater(now: now))
+            (kind == nil || item.kind == kind) && (workspace == nil || item.workspace == workspace)
         }
     }
 
@@ -46,7 +43,6 @@ struct InboxFilterMenu: View {
                 Text("Every Workspace").tag(String?.none)
                 ForEach(workspaces, id: \.self) { Text($0).tag(Optional($0)) }
             }
-            Toggle("Show Later Items", isOn: $filter.showLater)
             Toggle("Show Done", isOn: $filter.showDone)
             if let reordering, !filter.isActive {
                 Toggle("Reorder", isOn: reordering)

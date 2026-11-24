@@ -37,8 +37,6 @@ data class InboxItem(
     val workspace: String? = null,
     /** `YYYY-MM-DD`. */
     val due: String? = null,
-    /** Hidden until then (Unix seconds). */
-    @SerialName("later_until") val laterUntil: Long? = null,
     val created: Long,
     /** `capture`, `task`, `routine` or `v1`. */
     val source: String,
@@ -58,9 +56,7 @@ data class InboxItem(
     @SerialName("settings_proposal") val settingsProposal: SettingsProposal? = null,
     /** What the Capture assistant suggests (ADR 0084). */
     val suggestion: ItemSuggestion? = null,
-) {
-    fun isLater(now: Long) = (laterUntil ?: 0) > now
-}
+)
 
 /** Settings changes a Bot proposed, against the settings at [revision]. */
 @Serializable

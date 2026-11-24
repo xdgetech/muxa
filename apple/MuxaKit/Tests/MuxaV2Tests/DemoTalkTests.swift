@@ -117,8 +117,7 @@ struct DemoBotWorkTests {
         let bot = try #require(settings.workspaces[0].bots.first { $0.name == "pr-watch" })
         #expect(bot.memoryHistory.map(\.version) == [1, 2])
         let w = BotWork(bot: "pr-watch", workspace: "app", enabled: bot.spec.enabled, inbox: try await c.inbox(),
-                        terminals: try await c.terminals(), routines: try await c.routines().routines,
-                        now: 1_764_000_000)
+                        terminals: try await c.terminals(), routines: try await c.routines().routines)
         #expect(w.items.map(\.id) == ["d10", "d11", "d12"])
         #expect(w.terminals.map(\.id) == ["t7", "t8"])
         #expect(w.planned.map(\.name) == ["scan"])

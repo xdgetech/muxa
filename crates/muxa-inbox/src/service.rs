@@ -1,18 +1,15 @@
 //! The server's one Inbox: changes in order, saved before they are seen,
-//! a revision for watchers, and the timer that brings Later items back.
+//! and a revision for watchers.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Mutex, MutexGuard};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use muxa_protocol::v2;
 use tokio::sync::watch;
 
 use crate::book::{Book, InboxError};
 use crate::store::{self, StoreError};
-
-/// The longest the timer sleeps: a clock change or a sleeping Mac is caught up.
-const MAX_SLEEP: Duration = Duration::from_secs(60);
 
 pub struct Inbox {
     /// None keeps the Inbox in memory only (tests).
@@ -67,7 +64,6 @@ impl Inbox {
         let now = now();
         let mut book = self.lock();
         let mut next = book.clone();
-        next.wake(now);
         let out = f(&mut next, now)?;
         if next.revision() == book.revision() {
             return Ok(out);
@@ -83,36 +79,6 @@ impl Inbox {
         drop(book);
         self.revision.send_replace(revision);
         Ok(out)
-    }
-
-    /// Brings Later items back when their time comes, for as long as the
-    /// server runs.
-    pub fn spawn_timer(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
-        let inbox = Arc::clone(self);
-        tokio::spawn(async move {
-            let mut changes = inbox.subscribe();
-            loop {
-                let wait = inbox
-                    .lock()
-                    .next_wake()
-                    .map(|t| Duration::from_secs(u64::try_from(t - now()).unwrap_or(0)))
-                    .unwrap_or(MAX_SLEEP)
-                    .min(MAX_SLEEP);
-                tokio::select! {
-                    () = tokio::time::sleep(wait) => {
-                        let _ = inbox.change(|b, now| {
-                            b.wake(now);
-                            Ok(())
-                        });
-                    }
-                    changed = changes.changed() => {
-                        if changed.is_err() {
-                            return;
-                        }
-                    }
-                }
-            }
-        })
     }
 }
 
@@ -156,28 +122,6 @@ mod tests {
         assert_eq!(*rx.borrow_and_update(), 1);
         assert!(inbox.change(|b, _| b.done("nope")).is_err());
         assert!(!rx.has_changed().unwrap());
-    }
-
-    #[tokio::test]
-    async fn a_later_item_comes_back_on_time() {
-        let inbox = Arc::new(Inbox::memory());
-        let id = inbox
-            .change(|b, now| b.add(todo("a"), now))
-            .unwrap()
-            .unwrap();
-        inbox.change(|b, now| b.later(&id, now + 1, now)).unwrap();
-        let _timer = inbox.spawn_timer();
-        let mut rx = inbox.subscribe();
-        tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                rx.changed().await.unwrap();
-                if inbox.view().items[0].later_until.is_none() {
-                    return;
-                }
-            }
-        })
-        .await
-        .expect("woken within 3 s");
     }
 
     #[test]

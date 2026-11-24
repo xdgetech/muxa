@@ -104,11 +104,18 @@ struct FrameTests {
     }
 
     @Test func itemsDecodeFromTheWire() throws {
+        // An older server may still send `later_until`; it is ignored (ADR 0096).
         let wire = #"{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"#
         let inbox: Inbox = try field("inbox", of: Data(wire.utf8))
-        #expect(inbox.items[0].laterUntil == 200)
-        #expect(inbox.items[0].isLater(now: 100))
+        #expect(inbox.items[0].title == "milk")
         #expect(inbox.items[0].links == nil && inbox.bots == nil)
+    }
+
+    @Test func laterSendsNoTime() throws {
+        let frame = try JSONSerialization.jsonObject(with: V2Request.inboxLater(item: "i1").json(id: 4))
+            as? [String: Any]
+        #expect(frame?["type"] as? String == "inbox-later")
+        #expect(frame?["until"] == nil)
     }
 
     @Test func aBotItemDecodesWithItsLinksAndProposal() throws {

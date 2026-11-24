@@ -12,7 +12,6 @@ struct TabletSidebar: View {
     @Binding var botPath: [BotsDestination]
     @Binding var selectedSetting: SettingsPlace?
     @Binding var filter: InboxFilter
-    let now: Int64
     @State private var reordering = false
     @State private var deleteOlder: Int?
     @State private var showOthers = false
@@ -68,7 +67,7 @@ struct TabletSidebar: View {
     }
 
     private var segments: [Segment<NextNavigation.Tab>] {
-        let count = model.inbox.items.filter { !$0.isLater(now: now) }.count
+        let count = model.inbox.items.count
         return [
             Segment(value: .inbox, title: count > 0 ? "Inbox \(count)" : "Inbox", id: "mode.home"),
             Segment(value: .tasks, title: "Tasks", id: "mode.focus"),
@@ -79,7 +78,7 @@ struct TabletSidebar: View {
     // MARK: Inbox
 
     private var inbox: some View {
-        let visible = filter.apply(model.inbox.items, now: now)
+        let visible = filter.apply(model.inbox.items)
         return List {
             Group {
                 NeedsYouBanner(open: nav.open) { nav.focus = true }
@@ -88,7 +87,7 @@ struct TabletSidebar: View {
             .cardRow(vertical: 4)
             ForEach(visible) { item in
                 Button { selectedItem = item.id } label: {
-                    ItemCard(item: item, now: now, picked: item.id == selectedItem)
+                    ItemCard(item: item, picked: item.id == selectedItem)
                 }
                 .buttonStyle(.plain)
                 .cardRow()
@@ -104,7 +103,7 @@ struct TabletSidebar: View {
                 Section {
                     ForEach(model.inbox.done) { item in
                         Button { selectedItem = item.id } label: {
-                            ItemCard(item: item, now: now, picked: item.id == selectedItem)
+                            ItemCard(item: item, picked: item.id == selectedItem)
                         }
                         .buttonStyle(.plain)
                         .cardRow()

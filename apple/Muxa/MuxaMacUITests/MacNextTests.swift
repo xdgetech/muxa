@@ -41,6 +41,22 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testLaterMovesAnItemToTheBottom() throws {
+        let app = launch()
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'item.'"))
+        XCTAssertEqual(rows.firstMatch.identifier, "item.d1")
+        app.descendants(matching: .any)["item.d1"].click()
+        app.buttons["detail.later"].click()
+        let moved = NSPredicate(format: "identifier != 'item.d1'")
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: moved, evaluatedWith: rows.firstMatch)], timeout: 10),
+                       .completed)
+        // Nothing is hidden: the item is the last row.
+        app.scrollViews["inbox.list"].scroll(byDeltaX: 0, deltaY: -5000)
+        XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
+        XCTAssertEqual(rows.allElementsBoundByIndex.last?.identifier, "item.d1")
+    }
+
+    @MainActor
     func testApproveClosesTheReviewsTask() throws {
         let app = launch()
         app.descendants(matching: .any)["item.d1"].click()

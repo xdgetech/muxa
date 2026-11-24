@@ -342,11 +342,13 @@ pub enum ClientMsg {
         item: String,
         index: usize,
     },
-    /// Hides an item until `until` (Unix seconds); it then returns on top.
+    /// Moves an open item to the bottom (ADR 0096).
     InboxLater {
         id: u64,
         item: String,
-        until: i64,
+        /// Sent by apps before ADR 0096; ignored.
+        #[serde(default)]
+        until: Option<i64>,
     },
     InboxDone {
         id: u64,
@@ -831,9 +833,6 @@ pub struct InboxItem {
     /// `YYYY-MM-DD`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<String>,
-    /// Hidden until then (Unix seconds).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub later_until: Option<i64>,
     /// Unix seconds.
     pub created: i64,
     /// `capture`, `task`, or `routine`.

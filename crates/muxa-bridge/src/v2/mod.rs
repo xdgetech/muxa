@@ -90,7 +90,7 @@ impl Herdr {
     }
 }
 
-/// `<state dir>/inbox.json` (ADR 0066), with its Later timer running. A file
+/// `<state dir>/inbox.json` (ADR 0066). A file
 /// that cannot be read leaves an Inbox in memory only, and says so in the log.
 pub fn inbox(state_dir: Option<&Path>) -> Arc<Inbox> {
     let opened = match state_dir {
@@ -103,9 +103,7 @@ pub fn inbox(state_dir: Option<&Path>) -> Arc<Inbox> {
             Inbox::memory()
         }
     };
-    let inbox = Arc::new(opened);
-    inbox.spawn_timer();
-    inbox
+    Arc::new(opened)
 }
 
 /// Keeps a Failed item coming for each failing Task agent: watches

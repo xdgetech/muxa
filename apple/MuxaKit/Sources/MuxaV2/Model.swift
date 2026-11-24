@@ -13,8 +13,6 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var workspace: String?
     /// `YYYY-MM-DD`.
     public var due: String?
-    /// Hidden until then (Unix seconds).
-    public var laterUntil: Int64?
     public var created: Int64
     /// `capture`, `task` or `routine`.
     public var source: String
@@ -37,12 +35,9 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var suggestion: ItemSuggestion? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, note, workspace, due, laterUntil, created, source, terminal, routine, place, links
+        case id, kind, title, note, workspace, due, created, source, terminal, routine, place, links
         case proposal, bot, suggestion
     }
-
-    /// Hidden by Later at `now` (Unix seconds).
-    public func isLater(now: Int64) -> Bool { (laterUntil ?? 0) > now }
 }
 
 /// Settings changes a Bot proposed, against the settings at `revision`.

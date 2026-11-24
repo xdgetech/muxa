@@ -1078,7 +1078,7 @@ async fn a_capture_line_becomes_fields_then_an_item() {
 }
 
 #[tokio::test]
-async fn the_user_orders_hides_and_finishes_items() {
+async fn the_user_orders_moves_down_and_finishes_items() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;
     client.welcome().await;
@@ -1092,6 +1092,7 @@ async fn the_user_orders_hides_and_finishes_items() {
     let inbox = request(&mut client, json!({"type": "inbox", "id": 4})).await["inbox"].clone();
     assert_eq!(titles(&inbox), ["c", "b", "a"]);
     let a = inbox["items"][2]["id"].as_str().unwrap().to_owned();
+    let b = inbox["items"][1]["id"].as_str().unwrap().to_owned();
     let moved = request(
         &mut client,
         json!({"type": "inbox-move", "id": 5, "item": a, "index": 0}),
@@ -1100,10 +1101,18 @@ async fn the_user_orders_hides_and_finishes_items() {
     assert_eq!(titles(&moved["inbox"]), ["a", "c", "b"]);
     let later = request(
         &mut client,
-        json!({"type": "inbox-later", "id": 6, "item": a, "until": 4_000_000_000_i64}),
+        json!({"type": "inbox-later", "id": 6, "item": a}),
     )
     .await;
-    assert_eq!(later["inbox"]["items"][0]["later_until"], 4_000_000_000_i64);
+    assert_eq!(titles(&later["inbox"]), ["c", "b", "a"]);
+    // An older app still sends a time; Later ignores it and hides nothing.
+    let older = request(
+        &mut client,
+        json!({"type": "inbox-later", "id": 61, "item": b, "until": 4_000_000_000_i64}),
+    )
+    .await;
+    assert_eq!(titles(&older["inbox"]), ["c", "a", "b"]);
+    assert!(older["inbox"]["items"][2].get("later_until").is_none());
     let done = request(
         &mut client,
         json!({"type": "inbox-done", "id": 7, "item": a}),

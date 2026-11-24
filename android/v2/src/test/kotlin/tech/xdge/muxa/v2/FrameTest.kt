@@ -57,11 +57,16 @@ class FrameTest {
 
     @Test
     fun itemsDecodeFromTheWire() {
+        // An older server may still send `later_until`; it is ignored (ADR 0096).
         val wire = """{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"""
         val inbox = field<Inbox>("inbox", json.parseToJsonElement(wire) as JsonObject)
-        assertEquals(200L, inbox.items[0].laterUntil)
-        assertTrue(inbox.items[0].isLater(100))
+        assertEquals("milk", inbox.items[0].title)
         assertTrue(inbox.items[0].links.isEmpty() && inbox.bots.isEmpty())
+    }
+
+    @Test
+    fun laterSendsNoTime() {
+        assertEquals("""{"id":4,"type":"inbox-later","item":"i1"}""", V2Request.InboxLater("i1").json(4).toString())
     }
 
     @Test

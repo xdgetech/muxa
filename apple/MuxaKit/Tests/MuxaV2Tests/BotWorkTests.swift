@@ -30,12 +30,11 @@ struct BotWorkTests {
         let inbox = try Inbox.field(of: data)
         let terminals: [Terminal] = try field("terminals", of: data)
         let routines: [Routine] = try field("routines", of: data)
-        let now: Int64 = try field("now", of: data)
         let cases: [Case] = try field("cases", of: data)
         #expect(cases.count == 7)
         for c in cases {
             let w = BotWork(bot: c.bot, workspace: c.workspace, enabled: c.enabled, inbox: inbox, terminals: terminals,
-                            routines: routines, now: now)
+                            routines: routines)
             let name = "\(c.workspace)/\(c.bot)"
             #expect(w.items.map(\.id) == c.items, "\(name) items")
             #expect(w.terminals.map(\.id) == c.terminals, "\(name) terminals")

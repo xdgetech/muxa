@@ -10,7 +10,6 @@ struct PhoneInbox: View {
     @State private var filter = InboxFilter()
     @State private var reordering = false
     @State private var deleteOlder: Int?
-    @State private var now = Int64(Date().timeIntervalSince1970)
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -26,13 +25,6 @@ struct PhoneInbox: View {
         }
         .tint(Palette.accent)
         .inboxDeleteOlder($deleteOlder)
-        .task {
-            // Later items come back on their own; the clock decides what shows.
-            while !Task.isCancelled {
-                now = Int64(Date().timeIntervalSince1970)
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
     }
 
     private var header: some View {
@@ -50,12 +42,12 @@ struct PhoneInbox: View {
         .padding(.bottom, 10)
     }
 
-    private var visible: [InboxItem] { filter.apply(model.inbox.items, now: now) }
+    private var visible: [InboxItem] { filter.apply(model.inbox.items) }
 
     private var list: some View {
         List {
             ForEach(visible) { item in
-                Button { path.append(item.id) } label: { ItemCard(item: item, now: now) }
+                Button { path.append(item.id) } label: { ItemCard(item: item) }
                     .buttonStyle(.plain)
                     .cardRow()
                     .swipeActions(edge: .trailing) { ItemSwipeActions(item: item) }
@@ -69,7 +61,7 @@ struct PhoneInbox: View {
             if filter.showDone, !model.inbox.done.isEmpty {
                 Section {
                     ForEach(model.inbox.done) { item in
-                        Button { path.append(item.id) } label: { ItemCard(item: item, now: now) }
+                        Button { path.append(item.id) } label: { ItemCard(item: item) }
                             .buttonStyle(.plain)
                             .cardRow()
                     }

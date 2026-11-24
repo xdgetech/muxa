@@ -78,6 +78,9 @@ struct Stored {
     item: InboxItem,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     key: Option<String>,
+    /// Read only: ADR 0066's Later hid an item until then (ADR 0096).
+    #[serde(default, skip_serializing)]
+    later_until: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -122,7 +125,7 @@ impl Book {
         self.version
     }
 
-    /// The wire view. Hidden items stay in the list with `later_until`.
+    /// The wire view.
     pub fn view(&self) -> v2::Inbox {
         v2::Inbox {
             revision: self.revision,
@@ -173,7 +176,6 @@ impl Book {
             note: new.note,
             workspace: new.workspace,
             due: new.due,
-            later_until: None,
             created: now,
             source: new.source,
             terminal: new.terminal,
@@ -185,7 +187,14 @@ impl Book {
             settings_proposal: new.extra.settings_proposal,
             suggestion: None,
         };
-        self.items.insert(0, Stored { item, key: new.key });
+        self.items.insert(
+            0,
+            Stored {
+                item,
+                key: new.key,
+                later_until: None,
+            },
+        );
         self.revision += 1;
         Ok(Some(id))
     }
@@ -244,23 +253,32 @@ impl Book {
         Ok(())
     }
 
-    /// Hides an open item until `until`.
-    pub fn later(&mut self, id: &str, until: i64, now: i64) -> Result<(), InboxError> {
-        if until <= now {
-            return Err(InboxError::Invalid(
-                "Later needs a time in the future".into(),
-            ));
+    /// Moves an open item to the bottom (ADR 0096). New items go on top, so
+    /// items moved down stay below them, in the order they were moved.
+    pub fn later(&mut self, id: &str) -> Result<(), InboxError> {
+        self.move_to(id, usize::MAX)
+    }
+
+    /// Moves the items an older server hid with Later to the bottom, in
+    /// their order, so nothing stays hidden (ADR 0096).
+    pub(crate) fn unhide(&mut self) {
+        if self.items.iter().all(|s| s.later_until.is_none()) {
+            return;
         }
-        let at = self.open(id)?;
-        self.items[at].item.later_until = Some(until);
+        let (hidden, shown): (Vec<Stored>, Vec<Stored>) = std::mem::take(&mut self.items)
+            .into_iter()
+            .partition(|s| s.later_until.is_some());
+        self.items = shown;
+        self.items.extend(hidden.into_iter().map(|s| Stored {
+            later_until: None,
+            ..s
+        }));
         self.revision += 1;
-        Ok(())
     }
 
     pub fn done(&mut self, id: &str) -> Result<(), InboxError> {
         let at = self.open(id)?;
-        let mut s = self.items.remove(at);
-        s.item.later_until = None;
+        let s = self.items.remove(at);
         if let Some(l) = self.ledger(&s.item) {
             l.done += 1;
         }
@@ -330,34 +348,6 @@ impl Book {
             self.revision += 1;
         }
         gone
-    }
-
-    /// Brings back the items whose Later time came, on top. True when any did.
-    pub fn wake(&mut self, now: i64) -> bool {
-        let mut woken: Vec<Stored> = Vec::new();
-        self.items.retain(|s| match s.item.later_until {
-            Some(t) if t <= now => {
-                woken.push(s.clone());
-                false
-            }
-            _ => true,
-        });
-        if woken.is_empty() {
-            return false;
-        }
-        // The last to wake ends on top.
-        woken.sort_by_key(|s| s.item.later_until);
-        for mut s in woken {
-            s.item.later_until = None;
-            self.items.insert(0, s);
-        }
-        self.revision += 1;
-        true
-    }
-
-    /// When the next hidden item comes back.
-    pub fn next_wake(&self) -> Option<i64> {
-        self.items.iter().filter_map(|s| s.item.later_until).min()
     }
 
     /// The ledger of the Bot that made `item`, if one did.
@@ -488,23 +478,17 @@ mod tests {
     }
 
     #[test]
-    fn later_hides_an_item_and_it_returns_on_top() {
+    fn later_moves_an_item_to_the_bottom_in_the_order_moved() {
         let mut b = Book::default();
         let a = add(&mut b, todo("a"), 1);
-        b.add(todo("b"), 2).unwrap();
-        b.later(&a, 100, 10).unwrap();
-        assert_eq!(b.next_wake(), Some(100));
-        assert!(!b.wake(99));
-        b.add(todo("c"), 50).unwrap();
-        assert!(b.wake(100));
-        assert_eq!(titles(&b), ["a", "c", "b"]);
-        assert_eq!(b.view().items[0].later_until, None);
-        assert_eq!(
-            b.later(&a, 5, 10),
-            Err(InboxError::Invalid(
-                "Later needs a time in the future".into()
-            ))
-        );
+        let second = add(&mut b, todo("b"), 2);
+        b.add(todo("c"), 3).unwrap();
+        b.later(&second).unwrap();
+        b.later(&a).unwrap();
+        assert_eq!(titles(&b), ["c", "b", "a"]);
+        b.add(todo("d"), 4).unwrap();
+        assert_eq!(titles(&b), ["d", "c", "b", "a"]);
+        assert_eq!(b.later("i99"), Err(InboxError::NotFound("i99".into())));
     }
 
     #[test]
