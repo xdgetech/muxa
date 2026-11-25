@@ -22,6 +22,8 @@ struct ReaderPanel: View {
     @State private var path: [ReaderTarget] = []
     /// Open folders, by kind, scope and folder. Folders start closed.
     @State private var opened: Set<String> = []
+    /// The shown file to save, share or drag, with the file it is of.
+    @State private var exported: (target: ReaderTarget, export: ReaderExport)?
 
     var body: some View {
         Group {
@@ -33,8 +35,12 @@ struct ReaderPanel: View {
                 VStack(spacing: 0) {
                     header(target)
                     ReaderDocument(terminal: terminal.id, target: target) { follow($0, from: target) }
+                        onExport: { setExported(target, $0) }
                         .id(target)
+                        #if os(iOS)
+                        // Touch only: on the Mac a mouse drag on the image drags the file out (ADR 0100).
                         .simultaneousGesture(target.kind == .images ? swipe : nil)
+                        #endif
                 }
             } else {
                 files
@@ -52,12 +58,22 @@ struct ReaderPanel: View {
             Button("Back", systemImage: "chevron.backward") { path.removeLast() }
                 .accessibilityIdentifier("reader.back")
             Spacer()
-            Text((target.path as NSString).lastPathComponent)
-                .font(.headline)
-                .lineLimit(1)
-                .accessibilityIdentifier("reader.title")
+            // The title is the file, as a document window's: drag it out.
+            HStack(spacing: 6) {
+                if export(of: target) != nil {
+                    Image(systemName: "doc").font(.caption).foregroundStyle(Palette.textSecondary)
+                        .accessibilityHidden(true)
+                }
+                Text((target.path as NSString).lastPathComponent)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("reader.title")
+            }
+            .contentShape(Rectangle())
+            .readerFileDrag(export(of: target))
             Spacer()
             if target.kind == .images, let at = imageIndex(target) { imageSteps(at) }
+            if let export = export(of: target) { ReaderFileActions(export: export) }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -183,6 +199,19 @@ struct ReaderPanel: View {
         .accessibilityIdentifier("reader.file.\(e.path)")
     }
 
+    private func export(of target: ReaderTarget) -> ReaderExport? {
+        exported?.target == target ? exported?.export : nil
+    }
+
+    /// A document that goes away clears only its own file, not the next one's.
+    private func setExported(_ target: ReaderTarget, _ export: ReaderExport?) {
+        if let export {
+            exported = (target, export)
+        } else if exported?.target == target {
+            exported = nil
+        }
+    }
+
     private var images: [ReaderEntry] { kind == .images ? list?.entries ?? [] : [] }
 
     private func imageIndex(_ target: ReaderTarget) -> Int? {
@@ -249,7 +278,10 @@ struct ReaderDocument: View {
     let target: ReaderTarget
     /// A link that is not a web link, by its `href`.
     var follow: (String) -> Void = { _ in }
+    /// The file to save, share or drag as it changes; nil when there is none.
+    var onExport: (ReaderExport?) -> Void = { _ in }
     @State private var reader: UInt32?
+    @State private var export: ReaderExport?
 
     var body: some View {
         Group {
@@ -261,14 +293,47 @@ struct ReaderDocument: View {
                 } actions: {
                     Button("Open Again") { Task { await open() } }
                 }
-            } else if let content = reader.flatMap({ model.readerContents[$0] }) {
+            } else if let content {
                 shown(content)
             } else {
                 ProgressView()
             }
         }
         .task { await open() }
-        .onDisappear { close() }
+        .task(id: content) { await write() }
+        .onDisappear {
+            close()
+            setExport(nil)
+        }
+    }
+
+    private var content: ReaderContent? { reader.flatMap { model.readerContents[$0] } }
+
+    /// A copy of the shown file on disk, written again when the file changes.
+    private func write() async {
+        guard let content else { return setExport(nil) }
+        let kind = target.kind
+        do {
+            // An image's base64 decodes off the main thread too.
+            let next = try await Task.detached { () throws -> ReaderExport? in
+                guard let file = ReaderFile(kind: kind, content: content) else { return nil }
+                return ReaderExport(file: file, copy: try file.writeCopy())
+            }.value
+            if Task.isCancelled {
+                if let next { ReaderFile.removeCopy(next.copy) }
+                return
+            }
+            setExport(next)
+        } catch {
+            // Without a copy Save and Share stay hidden; the file still shows.
+            setExport(nil)
+        }
+    }
+
+    private func setExport(_ next: ReaderExport?) {
+        if let old = export, old != next { ReaderFile.removeCopy(old.copy) }
+        export = next
+        onExport(next)
     }
 
     @ViewBuilder
@@ -284,7 +349,7 @@ struct ReaderDocument: View {
             ReaderWebView(text: content.text ?? "", path: content.path, kind: .diff) { href, _ in link(href) }
         case .images:
             if let image = content.bytes.flatMap(Image.init(data:)) {
-                ScrollView([.horizontal, .vertical]) { image.resizable().scaledToFit() }
+                ScrollView([.horizontal, .vertical]) { image.resizable().scaledToFit().readerFileDrag(export) }
                     .accessibilityIdentifier("reader.image")
             } else {
                 ContentUnavailableView("Not an image", systemImage: "photo")

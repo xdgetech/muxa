@@ -80,6 +80,8 @@ struct Shortcut: Identifiable {
     static let inboxPanel = Shortcut("inbox-panel", .panes, "Inbox panel", KeyChord("i", [.command, .shift]))
     static let readerPanel = Shortcut("reader-panel", .panes, "Reader panel", KeyChord("r", [.command, .shift]))
     static let chatPanel = Shortcut("chat-panel", .panes, "Chat panel", KeyChord("c", [.command, .shift]))
+    // The Reader's Save button holds the key while a file shows (ADR 0100).
+    static let readerSave = Shortcut("reader-save", .panes, "Save the Reader's file", fixed: "⌘S")
     // The Bots page's own keys; Home's ⌘R and the Pane menu's ⌘1–4 are not shown there.
     static let newChat = Shortcut("new-chat", .bots, "New chat", fixed: "⌘T")
     static let runBot = Shortcut("run-bot", .bots, "Run now", fixed: "⌘R")
@@ -90,7 +92,7 @@ struct Shortcut: Identifiable {
         home, focus, bots, goToTask, nextNeedsYou, previousNeedsYou, nextTask, previousTask, sidebar, routines,
         capture, captureAnywhere, newTask, settings, shortcuts,
         open, later, done, retry, move,
-        split, nextPane, previousPane, closePane, closeOtherPanes, closeTask, pane, inboxPanel, readerPanel, chatPanel,
+        split, nextPane, previousPane, closePane, closeOtherPanes, closeTask, pane, inboxPanel, readerPanel, chatPanel, readerSave,
         newChat, runBot, botTabs, applyProposal,
     ]
 }
