@@ -77,7 +77,9 @@ extension View {
     @ViewBuilder
     func readerFolderActions(_ folder: String, zip: ReaderFolderZip, when shown: Bool) -> some View {
         if shown {
-            contextMenu { ReaderFolderActions(folder: folder, zip: zip) }
+            // The whole row drags; without a shape a drag from its empty middle starts nothing.
+            contentShape(Rectangle())
+                .contextMenu { ReaderFolderActions(folder: folder, zip: zip) }
                 .draggable(zip)
         } else {
             self

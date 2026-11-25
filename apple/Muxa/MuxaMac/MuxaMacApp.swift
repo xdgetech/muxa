@@ -102,6 +102,12 @@ struct MuxaMacApp: App {
 /// Capture, and Capture's `⌘⏎` opens the window again.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    #if DEBUG
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        ReaderCheck.runIfAsked()
+    }
+    #endif
 }
 
 /// Runs `start` when the main window appears, with the action that reopens it.

@@ -89,6 +89,24 @@ extension MacNextTests {
         XCTAssertNotNil(zip.range(of: Data("qa/report.md".utf8)))
     }
 
+    /// A file at the top of the list has no folder of its own: its menu saves the listed folder.
+    @MainActor
+    func testATopFilesMenuSavesTheListedFolder() throws {
+        let app = openReader()
+        let plan = app.descendants(matching: .any)["reader.file.PLAN.md"]
+        XCTAssertTrue(plan.waitForExistence(timeout: 10))
+        plan.rightClick()
+        let folder = app.menuItems["app"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        folder.hover()
+        let item = folder.menuItems["Save Folder…"]
+        XCTAssertTrue(item.waitForExistence(timeout: 10))
+        item.click()
+        let saved = try save(in: app, expecting: "app.zip")
+        let zip = try Data(contentsOf: saved)
+        XCTAssertNotNil(zip.range(of: Data("app/PLAN.md".utf8)))
+    }
+
     @MainActor
     private func openReader() -> XCUIApplication {
         let app = launch()

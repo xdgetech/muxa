@@ -22,7 +22,7 @@ Status: accepted (2026-11-25).
 3. **Limits refuse the whole folder; nothing is cut.** At most 11 MB of files (the size of the largest image, so the base64 fits one 16 MiB frame) and 1000 files. Past a limit, or with no listed files, the reply is `bad-request` with a message the apps show as is: "output/qa has 23 MB of files. Save Folder sends at most 11 MB. Save a folder inside it."
 4. **The apps (iPhone, iPad, Mac).**
    - A folder row's menu has Save Folder… (the Mac) and Share Folder. On the Mac and the iPad the row drags out as the zip.
-   - A file row's menu offers the same for each folder above the file. A folder with one file has no row of its own, and a run folder often has one report.
+   - A file row's menu offers the same for each folder above the file, and last for the listed folder itself (amendment 1). A folder with one file has no row of its own, and a run folder often has one report.
    - The zip is named after the folder and is fetched only when the user saves, shares or drags it.
 5. **Android: a follow-up**, with ADR 0100's single-file save. The Kotlin client has the request already.
 
@@ -37,3 +37,9 @@ Status: accepted (2026-11-25).
 - **The files one by one:** the client would have to build a folder or a zip itself, and a browser takes neither a folder drop nor many files from one drag everywhere.
 - **Cut the zip at the limit:** a report without some of its screenshots looks complete and is not.
 - **Compression:** a codec dependency for little gain on images.
+
+## Amendment 1: the listed folder in every file's menu (2026-11-26)
+
+- On the Mac, a right-click on a file at the top of the list showed nothing: its menu had no folder above the file, and macOS shows no empty menu. A Task's own documents, such as `PLAN.md`, often sit at the top.
+- Every file row's menu now ends with the listed folder, named as the list's root. It asks `reader-folder` with an empty `folder`, which decision 2 already allows, so the wire does not change.
+- The whole folder row takes the drag. Before, only its name and count did, and a drag from the row's empty middle started nothing on the Mac.

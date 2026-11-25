@@ -43,6 +43,23 @@ extension NextTests {
         XCTAssertTrue(item.waitForExistence(timeout: 15), "Save to Files")
     }
 
+    /// A file at the top of the list shares the listed folder.
+    @MainActor
+    func testATopFilesMenuSharesTheListedFolder() throws {
+        let app = openReader()
+        let plan = app.descendants(matching: .any)["reader.file.PLAN.md"]
+        XCTAssertTrue(plan.waitForExistence(timeout: 10))
+        plan.press(forDuration: 1.2)
+        let folder = app.buttons["app"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        folder.tap()
+        let share = app.buttons["Share Folder"]
+        XCTAssertTrue(share.waitForExistence(timeout: 10))
+        share.tap()
+        let item = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Save to Files")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 15), "Save to Files")
+    }
+
     @MainActor
     private func openReader() -> XCUIApplication {
         let app = launch()

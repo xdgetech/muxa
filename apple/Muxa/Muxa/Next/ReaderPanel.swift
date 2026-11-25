@@ -202,10 +202,13 @@ struct ReaderPanel: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            // The file's folder and those above it: a lone file's folder has no row.
+            // The file's folder, those above it and the listed folder: a lone file's
+            // folder has no row, and a file at the top would get no menu at all.
             if hasFolderZip {
-                ForEach(ReaderFolder.ancestors(of: e.path), id: \.self) { folder in
-                    Menu(folder) { ReaderFolderActions(folder: folder, zip: folderZip(folder)) }
+                ForEach(ReaderFolder.ancestors(of: e.path) + [""], id: \.self) { folder in
+                    Menu(folder.isEmpty ? list?.root ?? "Folder" : folder) {
+                        ReaderFolderActions(folder: folder, zip: folderZip(folder))
+                    }
                 }
             }
         }
