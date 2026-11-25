@@ -314,6 +314,9 @@ final class MacNextTests: XCTestCase {
         let kind = app.radioGroups["reader.kind"]
         XCTAssertTrue(kind.waitForExistence(timeout: 10))
         kind.radioButtons["Images"].click()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        folder.disclosureTriangles.firstMatch.click()
         let first = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
         XCTAssertTrue(first.waitForExistence(timeout: 10))
         first.click()
@@ -364,10 +367,32 @@ final class MacNextTests: XCTestCase {
         let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
         XCTAssertTrue(folder.waitForExistence(timeout: 10))
         let file = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        folder.disclosureTriangles.firstMatch.click()
         XCTAssertTrue(file.waitForExistence(timeout: 5))
         folder.disclosureTriangles.firstMatch.click()
         XCTAssertTrue(waitForGone(file))
+    }
+
+    @MainActor
+    func testTheReaderFoldersStartClosed() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let kind = app.radioGroups["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        // A folder with one file is no folder row: its file shows.
+        XCTAssertTrue(app.descendants(matching: .any)["reader.file..muxa/TASK.md"].waitForExistence(timeout: 10))
+        kind.radioButtons["Images"].click()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        let file = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        XCTAssertFalse(file.exists)
+        // The shown file's folder stays open after Back.
         folder.disclosureTriangles.firstMatch.click()
+        XCTAssertTrue(file.waitForExistence(timeout: 5))
+        file.click()
+        app.buttons["reader.back"].click()
         XCTAssertTrue(file.waitForExistence(timeout: 5))
     }
 

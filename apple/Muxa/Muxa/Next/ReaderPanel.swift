@@ -20,8 +20,8 @@ struct ReaderPanel: View {
     /// Not a NavigationStack: on a phone the panel is a sheet inside Focus's
     /// stack, and a nested stack pushed its files behind the sheet.
     @State private var path: [ReaderTarget] = []
-    /// Folders the user closed, by kind, scope and folder.
-    @State private var collapsed: Set<String> = []
+    /// Open folders, by kind, scope and folder. Folders start closed.
+    @State private var opened: Set<String> = []
 
     var body: some View {
         Group {
@@ -41,6 +41,10 @@ struct ReaderPanel: View {
             }
         }
         .task(id: "\(terminal.id)/\(kind.rawValue)") { await reload() }
+        // The shown file's folder opens, so Back finds the file in the list.
+        .onChange(of: path) { _, now in
+            if let shown = now.last { opened.insert(folderKey(shown.kind, shown.scope, ReaderFolder.parent(of: shown.path))) }
+        }
     }
 
     private func header(_ target: ReaderTarget) -> some View {
@@ -103,7 +107,7 @@ struct ReaderPanel: View {
         }
     }
 
-    /// The files under their parent folder; a folder with several files collapses.
+    /// The files under their parent folder; a folder with several files starts closed.
     private func rows(_ entries: [ReaderEntry], scope: DiffScope) -> some View {
         ForEach(ReaderFolder.group(entries)) { folder in
             if folder.collapses {
@@ -133,12 +137,16 @@ struct ReaderPanel: View {
     }
 
     private func expanded(_ folder: ReaderFolder, scope: DiffScope) -> Binding<Bool> {
-        let key = "\(kind.rawValue)/\(scope.rawValue)/\(folder.path)"
+        let key = folderKey(kind, scope, folder.path)
         return Binding(
-            get: { !collapsed.contains(key) },
+            get: { opened.contains(key) },
             set: { open in
-                if open { collapsed.remove(key) } else { collapsed.insert(key) }
+                if open { opened.insert(key) } else { opened.remove(key) }
             })
+    }
+
+    private func folderKey(_ kind: ReaderKind, _ scope: DiffScope, _ folder: String) -> String {
+        "\(kind.rawValue)/\(scope.rawValue)/\(folder)"
     }
 
     private func row(_ e: ReaderEntry, scope: DiffScope, in folder: ReaderFolder) -> some View {

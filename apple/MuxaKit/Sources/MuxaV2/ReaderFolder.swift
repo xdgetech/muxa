@@ -36,7 +36,8 @@ public struct ReaderFolder: Equatable, Sendable, Identifiable {
         path.split(separator: "/").last.map(String.init) ?? path
     }
 
-    static func parent(of path: String) -> String {
+    /// The file's folder, as `ReaderFolder.path` names it.
+    public static func parent(of path: String) -> String {
         guard let slash = path.lastIndex(of: "/") else { return "" }
         return String(path[..<slash])
     }

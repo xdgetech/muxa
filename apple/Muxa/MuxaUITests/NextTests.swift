@@ -286,7 +286,12 @@ final class NextTests: XCTestCase {
         let kind = app.segmentedControls["reader.kind"]
         XCTAssertTrue(kind.waitForExistence(timeout: 10))
         kind.buttons["Images"].tap()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
         let first = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        // Folders start closed.
+        XCTAssertFalse(first.exists)
+        folder.firstMatch.tap()
         XCTAssertTrue(first.waitForExistence(timeout: 10))
         first.tap()
         let title = app.staticTexts["reader.title"]
