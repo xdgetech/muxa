@@ -114,11 +114,14 @@ actor DemoServer {
             guard let (seq, bytes) = f.splitU64(), let id = channels[n] else { return }
             if seq > applied[n, default: 0] {
                 applied[n] = seq
-                // The demo's program echoes; Return starts a new line.
-                let echo = bytes.flatMap { $0 == 13 ? [13, 10] : [$0] }
-                content.screens[id, default: ""] += String(decoding: echo, as: UTF8.self)
-                write(Frame.withU64(n, offsets[n, default: 0], echo))
-                offsets[n, default: 0] += UInt64(echo.count)
+                // The demo's program echoes keys; Return starts a new line. Mouse
+                // reports (SGR, `ESC [ <`) are the program's, not text.
+                if !Self.isMouseReport(bytes) {
+                    let echo = bytes.flatMap { $0 == 13 ? [13, 10] : [$0] }
+                    content.screens[id, default: ""] += String(decoding: echo, as: UTF8.self)
+                    write(Frame.withU64(n, offsets[n, default: 0], echo))
+                    offsets[n, default: 0] += UInt64(echo.count)
+                }
             }
             write(Frame(channel: n, kind: .ack, payload: le(seq)))
         case (let n, .close):
@@ -543,6 +546,10 @@ actor DemoServer {
         let dir = content.terminals.first { $0.id == agent }?.taskDir
         close(agent)
         for shell in content.terminals where shell.isTaskShell && dir != nil && shell.taskDir == dir { close(shell.id) }
+    }
+
+    static func isMouseReport(_ bytes: [UInt8]) -> Bool {
+        bytes.starts(with: [0x1b, 0x5b, 0x3c]) && (bytes.last == 0x4d || bytes.last == 0x6d)
     }
 
     /// Input as if the user typed it: the screen and every attached channel show it.

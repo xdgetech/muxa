@@ -21,6 +21,20 @@ struct DemoTests {
         #expect(await events.next() == .output(channel: ch, bytes: Array("ls\r\n".utf8)))
     }
 
+    /// fix-login runs Codex, which takes the mouse: a click reaches the program and is not echoed.
+    @Test(.timeLimit(.minutes(1)))
+    func aMouseReportIsNotEchoed() async throws {
+        let c = try await open()
+        var events = c.events.makeAsyncIterator()
+        let ch = try await c.attach("t1", cols: 80, rows: 24)
+        #expect(await events.next() == .paint(channel: ch))
+        guard case .output(_, let screen)? = await events.next() else { return #expect(Bool(false)) }
+        #expect(String(decoding: screen, as: UTF8.self).contains("\u{1b}[?1003h"))
+        try await c.input(ch, Array("\u{1b}[<0;5;3M\u{1b}[<0;5;3m".utf8))
+        try await c.input(ch, Array("y".utf8))
+        #expect(await events.next() == .output(channel: ch, bytes: Array("y".utf8)))
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func aCaptureGoesOnTopAndWatchersSeeIt() async throws {
         let c = try await open()
