@@ -55,6 +55,15 @@ class FrameTest {
     }
 
     @Test
+    fun aLoopHeldForALimitSaysWhenItGoesOn() {
+        val wire = """{"loop":{"terminal":"t1","check":"make test","max_attempts":3,"timeout":600,"state":"paused","attempts":1,"armed_at":1,"since":2,"reason":"limit-reset","resumes_at":1700003600}}"""
+        val lp = field<LoopInfo>("loop", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals("limit-reset", lp.reason)
+        assertEquals(1_700_003_600L, lp.resumesAt)
+        assertTrue(lp.isActive)
+    }
+
+    @Test
     fun itemsDecodeFromTheWire() {
         val wire = """{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"""
         val inbox = field<Inbox>("inbox", json.parseToJsonElement(wire) as JsonObject)

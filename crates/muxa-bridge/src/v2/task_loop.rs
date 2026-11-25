@@ -3,7 +3,8 @@
 //! working place; a pass makes a Review item, a fail types the fixed prompt
 //! until `max_attempts`, then makes a Failed item. The loop lives in the
 //! working place's `.muxa/loop.json`, so a restarted daemon goes on with it.
-//! Neither the check nor its output reaches the log.
+//! While the agent's subscription is at its limit, the fail prompt waits
+//! for the reset (ADR 0091 §9). Neither the check nor its output reaches the log.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,7 +15,7 @@ use muxa_backend::{Change, ChangeStream, Labels, SessionBackend, TerminalId, Ter
 use muxa_inbox::{Inbox, NewItem};
 use muxa_protocol::v2::{self, ItemKind, LoopInfo};
 use muxa_server::TaskError;
-use muxa_server::tasks::{BRANCH, DIR, KIND, ROLE, WORKSPACE};
+use muxa_server::tasks::{BRANCH, DIR, KIND, ROLE, SUBSCRIPTION, WORKSPACE};
 use tokio::sync::watch;
 
 use crate::loops::CheckEnd;
@@ -22,6 +23,7 @@ use crate::loops::check::{self, CheckRun};
 use crate::loops::fail_prompt;
 use crate::records::loops::{Checks, LastCheck, Loop, LoopSpec, LoopState, Reason};
 use crate::records::{Workspaces, now};
+use crate::thresholds::Snapshot;
 
 const FILE: &str = ".muxa/loop.json";
 
@@ -32,6 +34,8 @@ struct Agent {
     workspace: String,
     /// What items call the Task: its branch, else its title.
     title: String,
+    /// The login it runs on, which it keeps (ADR 0091 §5).
+    subscription: Option<String>,
 }
 
 pub struct TaskLoops {
@@ -157,6 +161,7 @@ impl TaskLoops {
             .await
             .map_err(|e| e.to_string())?;
         self.rebuild(&now_live).await;
+        self.resume_held(backend).await;
         while let Some(change) = changes.next().await {
             match change.map_err(|e| e.to_string())? {
                 Change::Created(t) => self.rebuild_one(&t).await,
@@ -177,7 +182,10 @@ impl TaskLoops {
                         self.changed();
                     }
                 }
-                Change::Resync(all) => self.rebuild(&all).await,
+                Change::Resync(all) => {
+                    self.rebuild(&all).await;
+                    self.resume_held(backend).await;
+                }
                 _ => {}
             }
         }
@@ -195,6 +203,7 @@ impl TaskLoops {
             return;
         };
         let waiting = lp.state == LoopState::Paused && lp.reason == Some(Reason::Waiting);
+        let held = is_held(&lp);
         match state {
             "done" | "idle" if lp.state == LoopState::Armed || waiting => {
                 let (this, backend, id) = (Arc::clone(self), backend.clone(), id.clone());
@@ -211,7 +220,8 @@ impl TaskLoops {
                 })
                 .await;
             }
-            "working" if waiting => {
+            // The user typed to the agent: the loop follows its new turn.
+            "working" if waiting || held => {
                 self.update(id, &agent, |lp| Some(armed(lp, lp.armed_at)))
                     .await;
             }
@@ -220,10 +230,14 @@ impl TaskLoops {
     }
 
     /// Runs the check, then passes, types the fail prompt or stops.
-    async fn check<B: SessionBackend>(&self, backend: &B, id: &TerminalId, agent: Agent) {
+    async fn check<B>(self: &Arc<Self>, backend: &B, id: &TerminalId, agent: Agent)
+    where
+        B: SessionBackend + Clone + 'static,
+    {
         let claimed = self
             .update(id, &agent, |lp| {
-                (lp.state == LoopState::Armed || lp.state == LoopState::Paused).then(|| Loop {
+                let paused = lp.state == LoopState::Paused && lp.reason == Some(Reason::Waiting);
+                (lp.state == LoopState::Armed || paused).then(|| Loop {
                     state: LoopState::Checking,
                     reason: None,
                     since: now(),
@@ -299,6 +313,18 @@ impl TaskLoops {
                         .await;
                     return;
                 }
+                if let Some(until) = self.full_until(&agent).await {
+                    let hold = Loop {
+                        state: LoopState::Paused,
+                        reason: Some(Reason::LimitReset),
+                        since: now(),
+                        resumes_at: Some(until),
+                        ..fail
+                    };
+                    self.finish(id, &agent, hold, None).await;
+                    self.resume_at(backend, id, until);
+                    return;
+                }
                 match super::runner::type_line(backend, id, &fail_prompt(attempt)).await {
                     Ok(()) => {
                         self.finish(id, &agent, armed(&fail, now()), None).await;
@@ -318,6 +344,106 @@ impl TaskLoops {
             ..lp
         };
         self.finish(id, &agent, stop, item).await;
+    }
+
+    /// Until when the agent's subscription takes no more work (ADR 0091 §9).
+    /// None without a subscription, below the limit, or without current data.
+    async fn full_until(&self, agent: &Agent) -> Option<u64> {
+        let name = agent.subscription.clone()?;
+        let config = Arc::clone(&self.config);
+        blocking(move || {
+            let all = load(&config)?;
+            let limits = Snapshot::read(config.state_dir.as_deref(), all.subscriptions(), now());
+            Ok(limits.full_until(&name))
+        })
+        .await
+        .unwrap_or_else(|e| {
+            tracing::info!(error = %e, "no limits for a task loop");
+            None
+        })
+    }
+
+    /// Types the held fail prompt at `until`.
+    fn resume_at<B>(self: &Arc<Self>, backend: &B, id: &TerminalId, until: u64)
+    where
+        B: SessionBackend + Clone + 'static,
+    {
+        let (this, backend, id) = (Arc::clone(self), backend.clone(), id.clone());
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(until.saturating_sub(now()))).await;
+            this.resume(&backend, &id).await;
+        });
+    }
+
+    /// Types a held fail prompt, unless a newer report holds it longer or
+    /// the user moved the loop on meanwhile.
+    async fn resume<B>(self: &Arc<Self>, backend: &B, id: &TerminalId)
+    where
+        B: SessionBackend + Clone + 'static,
+    {
+        let Some(agent) = self.agent(id) else { return };
+        if let Some(until) = self.full_until(&agent).await {
+            let held = self
+                .update(id, &agent, move |lp| {
+                    is_held(lp).then(|| Loop {
+                        resumes_at: Some(until),
+                        ..lp.clone()
+                    })
+                })
+                .await;
+            if held.is_some_and(|lp| is_held(&lp)) {
+                self.resume_at(backend, id, until);
+            }
+            return;
+        }
+        let claimed = self
+            .update(id, &agent, |lp| {
+                is_held(lp).then(|| Loop {
+                    state: LoopState::Checking,
+                    reason: None,
+                    since: now(),
+                    resumes_at: None,
+                    ..lp.clone()
+                })
+            })
+            .await;
+        let Some(lp) = claimed.filter(|lp| lp.state == LoopState::Checking) else {
+            return;
+        };
+        let next = match super::runner::type_line(backend, id, &fail_prompt(lp.attempts)).await {
+            Ok(()) => armed(&lp, now()),
+            Err(e) => {
+                tracing::info!(terminal = %id, error = %e, "the held fail prompt was not typed");
+                lp.stopped(Reason::NotSent, now())
+            }
+        };
+        self.finish(id, &agent, next, None).await;
+    }
+
+    /// After a restart: each held fail prompt waits for its reset again.
+    async fn resume_held<B>(self: &Arc<Self>, backend: &B)
+    where
+        B: SessionBackend + Clone + 'static,
+    {
+        let agents: Vec<(TerminalId, Agent)> = self
+            .lock()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let held = blocking(move || {
+            Ok(agents
+                .into_iter()
+                .filter_map(|(id, a)| {
+                    let lp = read(&a.dir).filter(is_held)?;
+                    Some((id, lp.resumes_at.unwrap_or_default()))
+                })
+                .collect::<Vec<_>>())
+        })
+        .await
+        .unwrap_or_default();
+        for (id, until) in held {
+            self.resume_at(backend, &id, until);
+        }
     }
 
     /// Saves where the check left the loop, unless the user stopped it
@@ -451,8 +577,14 @@ fn armed(lp: &Loop, at: u64) -> Loop {
         reason: None,
         armed_at: at,
         since: now(),
+        resumes_at: None,
         ..lp.clone()
     }
+}
+
+/// Paused until its subscription resets.
+fn is_held(lp: &Loop) -> bool {
+    lp.state == LoopState::Paused && lp.reason == Some(Reason::LimitReset)
 }
 
 fn agent_of(t: &TerminalInfo) -> Option<Agent> {
@@ -465,6 +597,7 @@ fn agent_of(t: &TerminalInfo) -> Option<Agent> {
             .or(t.name.as_ref())
             .cloned()
             .unwrap_or_else(|| "a Task".into()),
+        subscription: t.labels.get(SUBSCRIPTION).cloned(),
     })
 }
 
@@ -519,6 +652,7 @@ pub fn info(id: &TerminalId, lp: &Loop) -> LoopInfo {
             seconds: c.seconds,
             at: c.at,
         }),
+        resumes_at: lp.resumes_at,
     }
 }
 

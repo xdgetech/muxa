@@ -96,7 +96,7 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
    - **Switch:** new agents take the next subscription of their kind in their list. A running agent is never moved (decision 5).
    - **Pause unattended work (S4):** when every subscription in the list is at or above 95%, a due Routine run, a Bot handoff and a Task Loop's next fix prompt wait until the earliest `resets_at`. The Routine shows "waiting for a limit reset". A user's own Start Task is warned and still starts.
      - Built in S4: a scheduled run is not claimed while it waits, so the schedule's one catch-up starts it after the reset. A team lead's next step waits the same way. A lead's handoffs stay in its run folder with `.muxa/team/held.json` beside them, and the daemon's tick starts them when each member has room. `routines` carries `waiting_until`.
-     - Not yet (S4b): the Task Loop's fix prompt still goes to its agent, whose login cannot change. A review Routine (`on = "review"`) and Run now start anyway: a review run has no later trigger to wait for, and Run now is the user's own.
+     - The Task Loop waits on its agent's own login, which cannot change (decision 5). A failed check while that login is full pauses the loop with reason `limit-reset` and `resumes_at`; the fail prompt is typed at the reset, after one more look at the record. A turn the user starts meanwhile arms the loop again. A review Routine (`on = "review"`) and Run now start anyway: a review run has no later trigger to wait for, and Run now is the user's own.
    - With no current data (Gemini, an API key, a record past its `resets_at`) nothing is switched or paused.
    - Not exact: data is only as fresh as the last report, other devices use the same account, and two agents that start at once near 95% both start. That is accepted. The aim is fewer runs that fail on a limit, not none.
 
@@ -127,7 +127,7 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
 | S1 | `[[subscription]]`; `subscriptions` on Workspaces, Bots and the assistant; selection at start; `muxa.subscription`; restart and adopt keep their login; adapters search every home; settings ops | `make check`, fake backend tests |
 | S2 | Usage reading (Claude status line through one settings writer, Codex rollouts), the record, `subscriptions` wire, `muxa-cli v2 subscriptions` | `make check`, `make test-apple-v2`, `make test-android-v2` |
 | S3 | Apps: onboarding (find, add, the login terminal), Settings → Subscriptions, the Usage page (meters), the Start Task line, Bot and assistant pickers | `make test-app`, `make test-app-iphone`, `make test-android-app`, `make test-mac-app` |
-| S4 | Limits: warn items, switch, pause unattended work (done 2026-11-25, except the Task Loop: S4b) | `make check` with recorded usage files |
+| S4 | Limits: warn items, switch, pause unattended work (done 2026-11-25; the Task Loop as S4b, done 2026-11-25) | `make check` with recorded usage files |
 | S5 | Tokens per Task and Workspace, `token-usage`, the Usage page's lower half | `make check` with fixture transcripts |
 | Later | Codex `account/rateLimits/read`; Gemini/Antigravity; Copilot (`premium_request/usage` with a connection) | — |
 

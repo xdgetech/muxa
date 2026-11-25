@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import tech.xdge.muxa.v2.FoundLogin
+import tech.xdge.muxa.v2.LoopInfo
 import tech.xdge.muxa.v2.Settings
 import tech.xdge.muxa.v2.SettingsAssistant
 import tech.xdge.muxa.v2.SettingsBot
@@ -71,6 +72,13 @@ class SubscriptionDraftsTest {
         val d = AssistantDraft.of(SettingsAssistant(true, subscriptions = listOf("work")))
         assertNull(d.op().subscriptions)
         assertEquals(listOf("spare", "work"), d.copy(subscriptions = listOf("spare", "work")).op().subscriptions)
+    }
+
+    @Test
+    fun aLoopHeldForALimitSaysWhy() {
+        val held = LoopInfo("t1", "make test", 3, 600, "paused", 1, 1, 2, reason = "limit-reset", resumesAt = now)
+        assertEquals("Paused: its subscription is at its limit", LoopText.state(held))
+        assertEquals("Paused: the agent waits for you", LoopText.state(held.copy(reason = "waiting")))
     }
 
     private fun settings() = Settings(

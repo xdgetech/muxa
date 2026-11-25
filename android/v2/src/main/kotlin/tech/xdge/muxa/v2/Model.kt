@@ -464,9 +464,11 @@ data class LoopInfo(
     val attempts: Int,
     @SerialName("armed_at") val armedAt: Long,
     val since: Long,
-    /** `waiting`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
+    /** `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
     val reason: String? = null,
     @SerialName("last_check") val lastCheck: LastCheck? = null,
+    /** Paused for `limit-reset`: when the fix prompt is typed (ADR 0091 §9). */
+    @SerialName("resumes_at") val resumesAt: Long? = null,
 ) {
     /** It still works on the Task. */
     val isActive: Boolean get() = state in setOf("armed", "checking", "paused")

@@ -187,18 +187,19 @@ A watch ends with the connection, and so do open Reader files. After a resume th
 
 ### Task Loop
 
-ADR 0019, on herdr-core (plan F3). After each finished turn of a Task's agent (`done` or `idle` through OSC 7501), the host runs the loop's check in the working place. A pass makes one Review item in the Inbox and ends the loop. A fail types a fixed prompt, `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.`, until `max_attempts` failed checks; the last one stops the loop and makes a Failed item. While the agent waits for the user (`blocked`, `waiting`), the loop is paused; it goes on when the agent works again. The loop never answers the agent's menus. It lives in the working place's `.muxa/loop.json`, so a restarted daemon goes on with it.
+ADR 0019, on herdr-core (plan F3). After each finished turn of a Task's agent (`done` or `idle` through OSC 7501), the host runs the loop's check in the working place. A pass makes one Review item in the Inbox and ends the loop. A fail types a fixed prompt, `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.`, until `max_attempts` failed checks; the last one stops the loop and makes a Failed item. While the agent waits for the user (`blocked`, `waiting`), the loop is paused; it goes on when the agent works again. When a check fails while the agent's subscription (its `muxa.subscription` label) is at 95% or more of a window (ADR 0091 §9), the loop is paused with reason `limit-reset` and `resumes_at`, the window's reset; the host types the fail prompt then. A turn the user starts meanwhile arms the loop again. The loop never answers the agent's menus. It lives in the working place's `.muxa/loop.json`, so a restarted daemon goes on with it.
 
 `LoopSpec`: `{"check"?,"max_attempts"?,"timeout"?}`.
 - `check` is a shell command run in the working place. The Workspace's `[workspace.loop] checks` must allow it: one of the listed commands exactly, or any command of at most 4096 bytes with no control character for `"any"`. Without `check`, the Workspace's only listed command.
 - `max_attempts` is 1 to 10, default 3. `timeout` is the seconds one check may run: 10 to 3600, default 600.
 - A Workspace without `checks`, or a check it does not allow, is `bad-request`; `start-task` then starts nothing.
 
-`Loop`: `{"terminal","check","max_attempts","timeout","state","attempts","armed_at","since","reason"?,"last_check"?}`.
+`Loop`: `{"terminal","check","max_attempts","timeout","state","attempts","armed_at","since","reason"?,"last_check"?,"resumes_at"?}`.
 - `state`: `armed` (waits for the next finished turn), `checking`, `paused`, `passed` or `stopped`.
 - `attempts`: the failed checks so far; `loop-start` keeps them unless `reset`.
-- `reason`, when paused or stopped: `waiting`, `limit`, `error` (the check could not run), `no-agent` (the agent ended), `not-sent` (the prompt was not typed) or `user`.
+- `reason`, when paused or stopped: `waiting`, `limit-reset` (the agent's subscription is at its limit), `limit`, `error` (the check could not run), `no-agent` (the agent ended), `not-sent` (the prompt was not typed) or `user`.
 - `last_check`: `{"attempt","exit"?,"seconds","at"}`; `exit` is absent when the check timed out. Times are Unix seconds.
+- `resumes_at`, while paused for `limit-reset`: when the host types the fail prompt.
 
 The check's output is in `.muxa/CHECK.md` and `.muxa/checks/<n>.log`, which the Reader lists. Neither the check command's output nor the loop file reaches the server's log.
 

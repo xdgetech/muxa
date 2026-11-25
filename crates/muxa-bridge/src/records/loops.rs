@@ -33,6 +33,10 @@ pub struct Loop {
     pub reason: Option<Reason>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_check: Option<LastCheck>,
+    /// While paused for `limit-reset`: when the agent's subscription resets
+    /// and the fail prompt is typed (ADR 0091 §9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumes_at: Option<u64>,
     /// Fields written by a newer muxa; kept on rewrite.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -50,6 +54,7 @@ impl fmt::Debug for Loop {
             .field("since", &self.since)
             .field("reason", &self.reason)
             .field("last_check", &self.last_check)
+            .field("resumes_at", &self.resumes_at)
             .finish()
     }
 }
@@ -75,6 +80,8 @@ pub enum Reason {
     Error,
     NoAgent,
     NotSent,
+    /// The agent's subscription is at its limit: the fail prompt waits.
+    LimitReset,
     Stalled,
     Status,
     User,
@@ -143,6 +150,7 @@ impl From<String> for Reason {
             "error" => Self::Error,
             "no-agent" => Self::NoAgent,
             "not-sent" => Self::NotSent,
+            "limit-reset" => Self::LimitReset,
             "stalled" => Self::Stalled,
             "status" => Self::Status,
             "user" => Self::User,
@@ -160,6 +168,7 @@ impl From<Reason> for String {
             Reason::Error => "error".into(),
             Reason::NoAgent => "no-agent".into(),
             Reason::NotSent => "not-sent".into(),
+            Reason::LimitReset => "limit-reset".into(),
             Reason::Stalled => "stalled".into(),
             Reason::Status => "status".into(),
             Reason::User => "user".into(),
@@ -194,6 +203,7 @@ impl Loop {
             since: now,
             reason: None,
             last_check: previous.and_then(|p| p.last_check.clone()),
+            resumes_at: None,
             extra: previous.map(|p| p.extra.clone()).unwrap_or_default(),
         }
     }
@@ -207,6 +217,7 @@ impl Loop {
             state: LoopState::Stopped,
             reason: Some(reason),
             since: now,
+            resumes_at: None,
             ..self.clone()
         }
     }

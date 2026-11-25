@@ -346,6 +346,7 @@ fn loop_info(terminal: &str, state: &str) -> LoopInfo {
         since: 1,
         reason: None,
         last_check: None,
+        resumes_at: None,
     }
 }
 

@@ -647,16 +647,18 @@ public struct LoopInfo: Codable, Equatable, Sendable, Identifiable {
     public var attempts: UInt32
     public var armedAt: Int64
     public var since: Int64
-    /// `waiting`, `limit`, `error`, `no-agent`, `not-sent`, `user`…
+    /// `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `not-sent`, `user`…
     public var reason: String?
     public var lastCheck: LastCheck?
+    /// Paused for `limit-reset`: when the fix prompt is typed (ADR 0091 §9).
+    public var resumesAt: Int64?
 
     public var id: String { terminal }
     /// It still works on the Task.
     public var isActive: Bool { ["armed", "checking", "paused"].contains(state) }
 
     public init(terminal: String, check: String, maxAttempts: UInt32, timeout: UInt64, state: String, attempts: UInt32,
-                armedAt: Int64, since: Int64, reason: String? = nil, lastCheck: LastCheck? = nil) {
+                armedAt: Int64, since: Int64, reason: String? = nil, lastCheck: LastCheck? = nil, resumesAt: Int64? = nil) {
         self.terminal = terminal
         self.check = check
         self.maxAttempts = maxAttempts
@@ -667,6 +669,7 @@ public struct LoopInfo: Codable, Equatable, Sendable, Identifiable {
         self.since = since
         self.reason = reason
         self.lastCheck = lastCheck
+        self.resumesAt = resumesAt
     }
 }
 

@@ -735,11 +735,14 @@ pub struct LoopInfo {
     pub armed_at: u64,
     /// When `state` last changed.
     pub since: u64,
-    /// Why it is paused or stopped: `waiting`, `limit`, `error`, `no-agent`, `user`…
+    /// Why it is paused or stopped: `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `user`…
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_check: Option<LastCheck>,
+    /// Paused for `limit-reset`: when the fail prompt is typed (ADR 0091 §9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumes_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

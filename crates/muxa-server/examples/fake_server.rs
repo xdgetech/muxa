@@ -325,6 +325,7 @@ fn fake_loop(terminal: &str, state: &str, reason: Option<&str>) -> LoopInfo {
         since: 1,
         reason: reason.map(str::to_owned),
         last_check: None,
+        resumes_at: None,
     }
 }
 
