@@ -16,10 +16,11 @@ extension Routine {
         [bot, workspace].compactMap { $0 }.joined(separator: " · ")
     }
 
-    enum Health { case running, failed, ok, never }
+    enum Health { case running, waiting, failed, ok, never }
 
     var health: Health {
         if runningSince != nil { return .running }
+        if waitingUntil != nil { return .waiting }
         guard let last else { return .never }
         return last.ok ? .ok : .failed
     }
@@ -29,6 +30,7 @@ extension Routine.Health {
     var title: String? {
         switch self {
         case .running: "Running"
+        case .waiting: "Waiting"
         case .failed: "Failed"
         case .ok: "OK"
         case .never: nil
@@ -38,6 +40,7 @@ extension Routine.Health {
     var color: Color {
         switch self {
         case .running: TaskState.working.color
+        case .waiting: Theme.attention
         case .failed: Palette.late
         case .ok: TaskState.done.color
         case .never: TaskState.idle.color
@@ -89,6 +92,11 @@ struct RoutinePane: View {
                 }
                 if let since = routine.runningSince {
                     LabeledContent("Running since", value: Date(timeIntervalSince1970: TimeInterval(since)).formatted())
+                }
+                if let until = routine.waitingUntil {
+                    // ADR 0091 §9: every subscription it may use is at its limit.
+                    LabeledContent("Waiting for a limit reset", value: Date(timeIntervalSince1970: TimeInterval(until)).formatted())
+                        .accessibilityIdentifier("routine.waiting")
                 }
             }
             .listRowBackground(Palette.card)

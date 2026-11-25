@@ -158,6 +158,8 @@ data class Routine(
     val bot: String? = null,
     /** The event that runs it, e.g. `review` (ADR 0084). */
     val on: String? = null,
+    /** Unix seconds: a due run waits until then, while every subscription it may use is at its limit (ADR 0091 §9). */
+    @SerialName("waiting_until") val waitingUntil: Long? = null,
 ) {
     val id: String get() = "$workspace/$name"
 }

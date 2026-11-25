@@ -125,6 +125,17 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aRoutineSaysItWaitsForALimitReset() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let routines = try await c.routines().routines
+        #expect(routines.map(\.name) == ["digest", "audit"])
+        #expect(routines[0].waitingUntil == 1_700_003_600)
+        #expect(routines[1].waitingUntil == nil)
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func subscriptionsComeWithTheirLimits() async throws {
         let server = try Server()
         let c = try await server.connect()

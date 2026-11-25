@@ -149,7 +149,7 @@ fn an_agent_takes_the_first_login_of_its_kind_and_a_restart_keeps_its_own() {
     let subs = all.subscriptions();
     let names: Vec<String> = ["chatgpt", "work", "spare"].map(String::from).to_vec();
     let name = |line: &str, keep: Option<&str>| {
-        choose(subs, &names, &shell(line), keep).map(|s| s.name.as_str())
+        choose(subs, &names, &shell(line), keep, &Snapshot::default()).map(|s| s.name.as_str())
     };
     assert_eq!(name("claude --model opus", None), Some("work"));
     assert_eq!(name("FOO=1 codex", None), Some("chatgpt"));
@@ -159,7 +159,10 @@ fn an_agent_takes_the_first_login_of_its_kind_and_a_restart_keeps_its_own() {
     assert_eq!(name("claude", Some("chatgpt")), Some("work"));
     assert_eq!(name("claude", Some("gone")), Some("work"));
     // No list: no login, so the agent starts as before.
-    assert_eq!(choose(subs, &[], &shell("claude"), None), None);
+    assert_eq!(
+        choose(subs, &[], &shell("claude"), None, &Snapshot::default()),
+        None
+    );
 }
 
 #[test]
@@ -182,4 +185,52 @@ fn an_adopted_place_resumes_in_the_login_that_holds_its_conversation() {
         holding(all.subscriptions(), &names, &place).as_deref(),
         Some("spare")
     );
+}
+
+/// ADR 0091 §9: a full login is skipped; when every login of the kind is
+/// full, new work still gets the first, and unattended work waits for the
+/// earliest reset.
+#[test]
+fn a_full_login_is_skipped_and_all_full_means_wait() {
+    let home = temp("full");
+    let all = load(&home, "", "", "").unwrap();
+    let subs = all.subscriptions();
+    let names: Vec<String> = ["chatgpt", "work", "spare"].map(String::from).to_vec();
+    let now = 1_800_000_000;
+    let full = |resets_at: u64| {
+        crate::limits::merge(
+            &Default::default(),
+            &[crate::limits::Window {
+                minutes: 300,
+                used_percent: 97.0,
+                resets_at,
+            }],
+            now,
+        )
+    };
+    let snapshot = |records: Vec<(&str, u64)>| {
+        crate::thresholds::Snapshot::new(
+            records
+                .into_iter()
+                .map(|(n, r)| (n.to_owned(), full(r)))
+                .collect(),
+            now,
+        )
+    };
+    let claude = WorkerAgent::ClaudeCode;
+    let work_full = snapshot(vec![("work", now + 900)]);
+    assert_eq!(
+        pick(subs, &names, claude, &work_full).unwrap().name,
+        "spare"
+    );
+    assert_eq!(wait_until(subs, &names, claude, &work_full), None);
+    let both = snapshot(vec![("work", now + 900), ("spare", now + 300)]);
+    assert_eq!(pick(subs, &names, claude, &both).unwrap().name, "work");
+    assert_eq!(wait_until(subs, &names, claude, &both), Some(now + 300));
+    // Codex has its own room; no list, nothing to wait for.
+    assert_eq!(wait_until(subs, &names, WorkerAgent::Codex, &both), None);
+    assert_eq!(wait_until(subs, &[], claude, &both), None);
+    // A restart keeps its login, full or not.
+    let kept = choose(subs, &names, &shell("claude"), Some("work"), &both).unwrap();
+    assert_eq!(kept.name, "work");
 }

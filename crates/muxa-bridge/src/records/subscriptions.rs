@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use super::workers::WorkerAgent;
 use crate::agents::{claude, codex};
+use crate::thresholds::Snapshot;
 
 /// Characters of a plan label.
 const MAX_PLAN: usize = 64;
@@ -167,16 +168,17 @@ pub fn agent_of(command: &super::workers::LaunchCommand) -> Option<WorkerAgent> 
 
 /// The subscription an agent started with `command` uses: `keep` when it
 /// still exists for that agent (a restart keeps its conversation's login,
-/// ADR 0091 §5), else the first in `names`.
+/// ADR 0091 §5), else [`pick`] from `names`.
 pub fn choose<'a>(
     all: &'a [Subscription],
     names: &[String],
     command: &super::workers::LaunchCommand,
     keep: Option<&str>,
+    limits: &Snapshot,
 ) -> Option<&'a Subscription> {
     let agent = agent_of(command)?;
     keep.and_then(|k| all.iter().find(|s| s.name == k && s.agent == agent))
-        .or_else(|| pick(all, names, agent))
+        .or_else(|| pick(all, names, agent, limits))
 }
 
 /// What an agent gets of its subscription: the name for its
@@ -195,8 +197,9 @@ pub fn login(
     names: &[String],
     command: &super::workers::LaunchCommand,
     keep: Option<&str>,
+    limits: &Snapshot,
 ) -> Option<Login> {
-    choose(all, names, command, keep).map(|s| Login {
+    choose(all, names, command, keep, limits).map(|s| Login {
         name: s.name.clone(),
         env: s.env(),
         home: s.home.clone(),
@@ -214,17 +217,47 @@ pub fn holding(all: &[Subscription], names: &[String], dir: &Path) -> Option<Str
         .map(|s| s.name.clone())
 }
 
-/// The first subscription in `names` for `agent`. Usage does not count yet:
-/// switching near a limit comes with usage reading (ADR 0091 S4).
+/// The subscriptions in `names` for `agent`, in order.
+fn of_kind<'a, 'n>(
+    all: &'a [Subscription],
+    names: &'n [String],
+    agent: WorkerAgent,
+) -> impl Iterator<Item = &'a Subscription> + use<'a, 'n> {
+    names
+        .iter()
+        .filter_map(|n| all.iter().find(|s| &s.name == n))
+        .filter(move |s| s.agent == agent)
+}
+
+/// The first subscription in `names` for `agent` below 95% (ADR 0091 §9).
+/// When every one is full, still the first: the user's own Task starts, and
+/// unattended work asks [`wait_until`] first.
 pub fn pick<'a>(
     all: &'a [Subscription],
     names: &[String],
     agent: WorkerAgent,
+    limits: &Snapshot,
 ) -> Option<&'a Subscription> {
-    names
-        .iter()
-        .filter_map(|n| all.iter().find(|s| &s.name == n))
-        .find(|s| s.agent == agent)
+    of_kind(all, names, agent)
+        .find(|s| limits.full_until(&s.name).is_none())
+        .or_else(|| of_kind(all, names, agent).next())
+}
+
+/// When unattended work for `agent` may start again: the earliest reset,
+/// while every subscription of that kind in `names` is full. None when one
+/// has room, when none has current data, or when `names` has none.
+pub fn wait_until(
+    all: &[Subscription],
+    names: &[String],
+    agent: WorkerAgent,
+    limits: &Snapshot,
+) -> Option<u64> {
+    let mut earliest: Option<u64> = None;
+    for s in of_kind(all, names, agent) {
+        let until = limits.full_until(&s.name)?;
+        earliest = Some(earliest.map_or(until, |e| e.min(until)));
+    }
+    earliest
 }
 
 #[cfg(test)]

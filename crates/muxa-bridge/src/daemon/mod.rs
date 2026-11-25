@@ -163,7 +163,7 @@ async fn serve(setup: Setup, path: &Path) -> std::io::Result<()> {
         .with_chats(chats)
         .with_settings(settings);
     crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&config));
-    crate::limits::spawn_codex_scan(Arc::clone(&config));
+    crate::thresholds::spawn(Arc::clone(&inbox), Arc::clone(&config));
     let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
     crate::v2::spawn_task_watch(Arc::clone(&herdr));
     crate::v2::spawn_review_runs(Arc::clone(&herdr), Arc::clone(&runner));

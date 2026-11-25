@@ -247,35 +247,6 @@ pub fn scan_codex(state_dir: &Path, subs: &[subscriptions::Subscription], now: u
     }
 }
 
-/// How often the daemon reads the Codex logs again.
-const CODEX_SCAN: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// Reads the Codex subscriptions' logs every [`CODEX_SCAN`]. Claude Code's
-/// limits come by its status line instead.
-pub fn spawn_codex_scan(config: std::sync::Arc<crate::config::Config>) {
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(CODEX_SCAN);
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tick.tick().await;
-            let config = std::sync::Arc::clone(&config);
-            let scanned = tokio::task::spawn_blocking(move || {
-                let (Some(state), Some(file)) = (&config.state_dir, &config.workspaces) else {
-                    return;
-                };
-                match crate::records::Workspaces::load(file, config.home.as_deref()) {
-                    Ok(all) => scan_codex(state, all.subscriptions(), crate::records::now()),
-                    Err(e) => tracing::info!(error = %e, "codex limits not read: no workspaces"),
-                }
-            })
-            .await;
-            if let Err(e) = scanned {
-                tracing::warn!(error = %e, "codex limits scan stopped");
-            }
-        }
-    });
-}
-
 #[cfg(test)]
 #[path = "limits_tests.rs"]
 mod tests;

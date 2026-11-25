@@ -12,13 +12,15 @@ use serde::{Deserialize, Serialize};
 
 use super::bot_run;
 use super::runner::{self, RunExtra, Runner};
-use crate::records::workers::WorkerChoice;
+use crate::records::subscriptions;
+use crate::records::workers::{WorkerAgent, WorkerChoice};
 use crate::records::{Workspaces, now};
 use crate::routines::brief::MAX_STEPS;
 use crate::routines::check::{self, HANDOFFS, RunAt};
 use crate::routines::identity::{self, Place};
 use crate::routines::output::Handoff;
 use crate::routines::runs::{self, When};
+use crate::thresholds::Snapshot;
 
 pub const KIND: &str = "handoff";
 const LEAD_DIR: &str = "muxa.lead-dir";
@@ -26,6 +28,8 @@ const MEMBER: &str = "muxa.bot";
 /// The lead a member works for, so clients show it on the lead's Home (ADR 0086).
 const LEAD: &str = "muxa.lead";
 const RESULT: &str = ".muxa/result.json";
+/// Beside the handoffs file while its members wait for a limit reset.
+const HELD: &str = ".muxa/team/held.json";
 /// The step's handoffs and results, in the lead run's folder.
 const PENDING: &str = ".muxa/team/pending.json";
 /// Bytes of a member's summary.
@@ -89,10 +93,29 @@ struct MemberResult {
 /// After a lead's run passed: starts its members, within the team's
 /// handoffs a day.
 pub async fn after_lead<B: SessionBackend>(runner: &Runner, backend: &B, run: &RunAt) {
-    let (config, fallback, run) = (runner.config(), runner.fallback(), run.clone());
-    let launches = tokio::task::spawn_blocking(move || plan(&config, &fallback, &run))
-        .await
-        .unwrap_or_else(|e| Err(e.to_string()));
+    start_members(
+        runner,
+        backend,
+        run.dir.clone(),
+        run.workspace.clone(),
+        run.name.clone(),
+    )
+    .await;
+}
+
+async fn start_members<B: SessionBackend>(
+    runner: &Runner,
+    backend: &B,
+    lead_dir: PathBuf,
+    workspace: String,
+    routine: String,
+) {
+    let (config, fallback) = (runner.config(), runner.fallback());
+    let launches = tokio::task::spawn_blocking(move || {
+        plan(&config, &fallback, &lead_dir, &workspace, &routine)
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()));
     let launches = match launches {
         Ok(l) => l,
         Err(e) => {
@@ -109,30 +132,59 @@ pub async fn after_lead<B: SessionBackend>(runner: &Runner, backend: &B, run: &R
     }
 }
 
-/// Blocking. The members' launches; the handoffs file goes once read.
+/// Handoffs that wait for a limit reset (ADR 0091 §9): the lead's run and
+/// Routine, beside its handoffs file, which stays.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Held {
+    workspace: String,
+    routine: String,
+}
+
+/// Blocking. The members' launches; the handoffs file goes once read,
+/// unless a member's logins are all full: then it stays, held.
 fn plan(
     config: &crate::config::Config,
     fallback: &str,
-    run: &RunAt,
+    lead_dir: &Path,
+    workspace: &str,
+    routine_name: &str,
 ) -> Result<Vec<(String, Launch, PathBuf)>, String> {
-    let path = run.dir.join(HANDOFFS);
+    let path = lead_dir.join(HANDOFFS);
     let Ok(text) = std::fs::read_to_string(&path) else {
         return Ok(Vec::new());
     };
-    let _ = std::fs::remove_file(&path);
-    let handoffs: Vec<Handoff> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let parsed: Result<Vec<Handoff>, String> =
+        serde_json::from_str(&text).map_err(|e| e.to_string());
     let workspaces = runs::load(config).map_err(|e| e.to_string())?;
+    if let Ok(handoffs) = &parsed
+        && let Some(until) = members_wait(
+            &workspaces,
+            workspace,
+            handoffs,
+            &runner::limits_of(config, &workspaces),
+        )
+    {
+        tracing::debug!(routine = %routine_name, until, "handoffs wait for a limit reset");
+        let held = Held {
+            workspace: workspace.to_owned(),
+            routine: routine_name.to_owned(),
+        };
+        return write_json(lead_dir, HELD, &held).map(|()| Vec::new());
+    }
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(lead_dir.join(HELD));
+    let handoffs = parsed?;
     let routine = workspaces
-        .routine(&run.workspace, &run.name)
+        .routine(workspace, routine_name)
         .ok_or("the lead's Routine is gone")?;
     let lead = routine
         .bot
         .as_deref()
-        .and_then(|b| workspaces.bot(&run.workspace, b))
+        .and_then(|b| workspaces.bot(workspace, b))
         .ok_or("the lead is gone")?;
     let allowed = take_budget(
         config,
-        &run.workspace,
+        workspace,
         &lead.name,
         lead.handoffs_per_day,
         handoffs.len(),
@@ -145,31 +197,31 @@ fn plan(
         return Ok(Vec::new());
     }
     let pending = Pending {
-        workspace: run.workspace.clone(),
-        routine: run.name.clone(),
+        workspace: workspace.to_owned(),
+        routine: routine_name.to_owned(),
         lead: lead.name.clone(),
-        step: check::step(&run.dir),
+        step: check::step(lead_dir),
         handoffs: handoffs.clone(),
         results: BTreeMap::new(),
         started_at: now(),
         followed: false,
     };
-    save(&run.dir, &pending)?;
+    save(lead_dir, &pending)?;
     let mut launches = Vec::new();
     for h in &handoffs {
         match member_launch(
             config,
             &workspaces,
             fallback,
-            &run.dir,
-            &run.workspace,
+            lead_dir,
+            workspace,
             &lead.name,
             h,
         ) {
-            Ok(l) => launches.push((h.to.clone(), l, run.dir.clone())),
+            Ok(l) => launches.push((h.to.clone(), l, lead_dir.to_owned())),
             Err(e) => {
                 tracing::info!(bot = %h.to, error = %e, "a member cannot start");
-                record(&run.dir, &h.to, &format!("(cannot start: {e})"))?;
+                record(lead_dir, &h.to, &format!("(cannot start: {e})"))?;
             }
         }
     }
@@ -207,7 +259,7 @@ fn member_launch(
         &[],
     );
     let command = bot_run::dont_ask(bot_run::as_bot(resolved.command));
-    let login = runner::login_for(workspaces, ws, Some(member), &command);
+    let login = runner::login_for(config, workspaces, ws, Some(member), &command);
     let hook = runner::hook_for(config, login.as_ref());
     let agent = runner::bot_agent_in(ws, command, &dir, &rules, &allow, &[], hook.as_ref())?;
     crate::connections::merge(&mut resolved.environment.env, agent.env);
@@ -363,6 +415,13 @@ pub async fn tick<B: SessionBackend>(runner: &Runner, backend: &B, live: &[Termi
             runner::end_terminal(backend, &t.id).await;
         }
     }
+    let config = runner.config();
+    let held = tokio::task::spawn_blocking(move || held_steps(&config))
+        .await
+        .unwrap_or_default();
+    for (dir, h) in held {
+        start_members(runner, backend, dir, h.workspace, h.routine).await;
+    }
     follow(runner, backend).await;
 }
 
@@ -390,8 +449,8 @@ async fn follow<B: SessionBackend>(runner: &Runner, backend: &B) {
                     tracing::warn!(error = %e, "cannot mark a team step followed");
                 }
             }
-            // The lead runs: the next tick tries again.
-            Err(runs::StartError::Busy(_)) => {}
+            // The lead runs, or its logins are full: the next tick tries again.
+            Err(runs::StartError::Busy(_) | runs::StartError::Waiting(_)) => {}
             Err(e) => {
                 tracing::info!(routine = %pending.routine, error = %e, "a lead's next step did not start");
                 let mut done = pending;
@@ -405,6 +464,30 @@ async fn follow<B: SessionBackend>(runner: &Runner, backend: &B) {
 /// Blocking. Lead run folders with a complete, unfollowed step. Run
 /// folders are `<root>/routines/<slug>-<id>`.
 fn complete_steps(config: &crate::config::Config) -> Vec<(PathBuf, Pending)> {
+    lead_run_dirs(config)
+        .into_iter()
+        .filter_map(|(ws, dir)| {
+            let p = load(&dir).ok()?;
+            (p.workspace == ws && p.complete() && !p.followed).then_some((dir, p))
+        })
+        .collect()
+}
+
+/// Blocking. Lead run folders whose handoffs wait for a limit reset.
+fn held_steps(config: &crate::config::Config) -> Vec<(PathBuf, Held)> {
+    lead_run_dirs(config)
+        .into_iter()
+        .filter_map(|(ws, dir)| {
+            let text = std::fs::read_to_string(dir.join(HELD)).ok()?;
+            let held: Held = serde_json::from_str(&text).ok()?;
+            (held.workspace == ws).then_some((dir, held))
+        })
+        .collect()
+}
+
+/// Blocking. The run folders of the Workspaces that have a team lead, with
+/// the Workspace's name.
+fn lead_run_dirs(config: &crate::config::Config) -> Vec<(String, PathBuf)> {
     let Ok(workspaces) = runs::load(config) else {
         return Vec::new();
     };
@@ -420,15 +503,36 @@ fn complete_steps(config: &crate::config::Config) -> Vec<(PathBuf, Pending)> {
         let Ok(entries) = std::fs::read_dir(ws.root.join("routines")) else {
             continue;
         };
-        for dir in entries.filter_map(Result::ok).map(|e| e.path()) {
-            if let Ok(p) = load(&dir) {
-                if p.workspace == ws.name && p.complete() && !p.followed {
-                    out.push((dir, p));
-                }
-            }
-        }
+        out.extend(
+            entries
+                .filter_map(Result::ok)
+                .map(|e| (ws.name.clone(), e.path())),
+        );
     }
     out
+}
+
+/// Pure. When a step's members may start, while one member's Claude
+/// logins are all full (ADR 0091 §9): the last such reset.
+fn members_wait(
+    workspaces: &Workspaces,
+    workspace: &str,
+    handoffs: &[Handoff],
+    limits: &Snapshot,
+) -> Option<u64> {
+    let ws = workspaces.get(workspace)?;
+    handoffs
+        .iter()
+        .filter_map(|h| {
+            let member = workspaces.bot(workspace, &h.to);
+            subscriptions::wait_until(
+                workspaces.subscriptions(),
+                runner::names_for(ws, member),
+                WorkerAgent::ClaudeCode,
+                limits,
+            )
+        })
+        .max()
 }
 
 fn member_of(t: &TerminalInfo) -> Option<(PathBuf, PathBuf, String, String)> {
@@ -466,8 +570,12 @@ fn load(lead_dir: &Path) -> Result<Pending, String> {
 }
 
 fn save(lead_dir: &Path, p: &Pending) -> Result<(), String> {
-    let text = serde_json::to_string_pretty(p).map_err(|e| e.to_string())?;
-    let path = lead_dir.join(PENDING);
+    write_json(lead_dir, PENDING, p)
+}
+
+fn write_json<T: Serialize>(lead_dir: &Path, file: &str, value: &T) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    let path = lead_dir.join(file);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

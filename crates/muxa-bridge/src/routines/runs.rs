@@ -34,6 +34,10 @@ pub enum StartError {
     /// A scheduled occurrence that another tick already handled.
     #[error("the occurrence was already handled")]
     Handled,
+    /// Unattended work while every subscription it may use is at its limit
+    /// (ADR 0091 §9): not claimed, so a later tick starts it.
+    #[error("every subscription it may use is at its limit until {0}")]
+    Waiting(u64),
 }
 
 impl From<StateError> for StartError {

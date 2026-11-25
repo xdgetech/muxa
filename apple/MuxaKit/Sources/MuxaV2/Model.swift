@@ -414,6 +414,9 @@ public struct Routine: Codable, Equatable, Sendable, Identifiable {
     public var bot: String? = nil
     /// The event that runs it: `review` (ADR 0084).
     public var on: String? = nil
+    /// Unix seconds: a due run waits until then, while every subscription
+    /// it may use is at its limit (ADR 0091 §9).
+    public var waitingUntil: Int64? = nil
 
     public var id: String { "\(workspace)/\(name)" }
 }

@@ -1036,6 +1036,10 @@ pub struct Routine {
     /// The event that runs it, e.g. `review` (ADR 0084).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on: Option<String>,
+    /// Unix seconds: a due run waits until then, while every subscription it
+    /// may use is at its limit (ADR 0091 §9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_until: Option<i64>,
 }
 
 /// How the last run ended.

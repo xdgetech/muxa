@@ -206,6 +206,8 @@ class ServerTest {
             val (routines, problems, off) = c.routines()
             assertEquals(listOf("digest", "audit"), routines.map { it.name })
             assertEquals("09:00", routines[0].at)
+            assertEquals(1_700_003_600L, routines[0].waitingUntil)
+            assertEquals(null, routines[1].waitingUntil)
             assertTrue(problems.isEmpty())
             assertEquals(listOf(RoutinesOff("lab", 2)), off)
             c.runRoutine("Personal", "audit")

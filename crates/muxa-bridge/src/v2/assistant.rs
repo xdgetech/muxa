@@ -241,6 +241,7 @@ fn launch(
         &all.assistant().subscriptions,
         &command,
         None,
+        &super::runner::limits_of(config, all),
     );
     let command = bot_run::with_settings(command, &dir, &rules, &[])?;
     let hook = login

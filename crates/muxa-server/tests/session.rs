@@ -179,6 +179,7 @@ impl Host for FakeTasks {
             last: None,
             bot: None,
             on: None,
+            waiting_until: None,
         };
         Ok(RoutineList {
             routines: vec![routine("digest", Some("09:00")), routine("audit", None)],

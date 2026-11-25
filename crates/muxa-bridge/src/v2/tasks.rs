@@ -169,6 +169,7 @@ impl BridgeHost {
                 &names,
                 &LaunchCommand::Shell(line),
                 keep.as_deref(),
+                &super::runner::limits_of(&records, &all),
             ))
         })
         .await
@@ -704,15 +705,24 @@ impl Host for BridgeHost {
 
     async fn routines(&self) -> Result<RoutineList, TaskError> {
         let records = Arc::clone(&self.records);
-        let listed = tokio::task::spawn_blocking(move || crate::routines::list(&records))
-            .await
-            .map_err(|e| TaskError::Failed(e.to_string()))?;
-        let listed = listed.map_err(TaskError::Failed)?;
+        let listed = tokio::task::spawn_blocking(move || {
+            let listed = crate::routines::list(&records)?;
+            let waits = super::runner::waits(&records, &listed.routines);
+            Ok::<_, String>((listed, waits))
+        })
+        .await
+        .map_err(|e| TaskError::Failed(e.to_string()))?;
+        let (listed, waits) = listed.map_err(TaskError::Failed)?;
         Ok(RoutineList {
             routines: listed
                 .routines
                 .into_iter()
-                .map(super::routines::to_v2)
+                .map(|r| {
+                    let until = waits.get(&(r.workspace.clone(), r.name.clone())).copied();
+                    let mut v2 = super::routines::to_v2(r);
+                    v2.waiting_until = until.map(|u| i64::try_from(u).unwrap_or(i64::MAX));
+                    v2
+                })
                 .collect(),
             problems: listed
                 .problems
@@ -744,7 +754,7 @@ impl Host for BridgeHost {
             .map_err(|e| match e {
                 StartError::Bad(m) | StartError::Unsupported(m) => TaskError::Invalid(m),
                 StartError::Busy(m) => TaskError::Busy(m),
-                StartError::Handled => TaskError::Busy(e.to_string()),
+                StartError::Handled | StartError::Waiting(_) => TaskError::Busy(e.to_string()),
                 StartError::Failed(m) => TaskError::Failed(m),
             })
     }

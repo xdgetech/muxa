@@ -160,9 +160,17 @@ impl Host for FakeHost {
             last: None,
             bot: None,
             on: None,
+            waiting_until: None,
         };
         Ok(RoutineList {
-            routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
+            routines: vec![
+                // Its logins are full: the due run waits for the reset (ADR 0091 §9).
+                muxa_protocol::v2::Routine {
+                    waiting_until: Some(1_700_003_600),
+                    ..routine("digest", Some("09:00"))
+                },
+                routine("audit", None),
+            ],
             problems: vec![],
             off: vec![muxa_protocol::v2::RoutinesOff {
                 workspace: "lab".into(),
