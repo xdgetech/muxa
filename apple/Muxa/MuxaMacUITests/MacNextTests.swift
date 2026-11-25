@@ -105,15 +105,18 @@ final class MacNextTests: XCTestCase {
         let any = app.descendants(matching: .any)
         XCTAssertTrue(any["pane.1"].waitForExistence(timeout: 5))
         XCTAssertFalse(any["terminal.t6"].exists, "a shell is not a Task of its own")
+        // t1 already has its shell t6 as pane 2, so ⌘D's shell is pane 3.
+        XCTAssertTrue(any["pane.2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(any["pane.3"].exists)
         app.typeKey("d", modifierFlags: .command)
-        XCTAssertTrue(any["pane.2"].waitForExistence(timeout: 5), "⌘D starts a shell beside the agent")
-        app.typeKey("[", modifierFlags: .command)
+        XCTAssertTrue(any["pane.3"].waitForExistence(timeout: 5), "⌘D starts a shell beside the agent")
+        app.typeKey("1", modifierFlags: .command)
         app.typeKey("w", modifierFlags: .command)
-        XCTAssertTrue(any["pane.2"].exists, "⌘W on the agent closes nothing")
+        XCTAssertTrue(any["pane.3"].exists, "⌘W on the agent closes nothing")
         XCTAssertTrue(any["pane.1"].exists, "the window stays")
-        app.typeKey("]", modifierFlags: .command)
+        app.typeKey("3", modifierFlags: .command)
         app.typeKey("w", modifierFlags: .command)
-        XCTAssertTrue(waitForGone(any["pane.2"]), "⌘W closes the shell")
+        XCTAssertTrue(waitForGone(any["pane.3"]), "⌘W closes the shell")
     }
 
     /// A tab's close button only hides the tab (ADR 0097): nothing asks, the

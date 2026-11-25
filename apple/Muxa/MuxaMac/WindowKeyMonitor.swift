@@ -25,7 +25,8 @@ enum PaneCommands {
 
     static func canSplit(nav: NextNavigation, model: NextModel) -> Bool {
         guard nav.focus, model.isConnected,
-              let agent = model.terminals.first(where: { $0.id == nav.terminal }), agent.isTaskAgent, agent.live
+              let agent = model.terminals.first(where: { $0.id == nav.terminal }), agent.isTaskAgent, agent.live,
+              agent.taskDir != nil
         else { return false }
         return model.shells(of: agent.id).count < maxShells
     }

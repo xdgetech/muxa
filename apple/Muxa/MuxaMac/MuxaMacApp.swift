@@ -50,6 +50,7 @@ struct MuxaMacApp: App {
                         await model.startDemo()
                         #if DEBUG
                         await Snapshot.runIfAsked(model: model, nav: nav, chrome: chrome)
+                        await KeyCheck.runIfAsked(model: model, nav: nav, chrome: chrome)
                         #endif
                     } else if model.prefersLocal, model.serverIsLocal {
                         await model.connectLocal()
