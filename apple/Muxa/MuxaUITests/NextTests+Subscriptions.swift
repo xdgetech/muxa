@@ -30,7 +30,9 @@ extension NextTests {
         app.swipeUp()
         XCTAssertTrue(task.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["fix-login"].exists)
-        XCTAssertTrue(app.staticTexts["1.2M in · 84k out · 9.4M cached"].exists, "app's tokens today")
+        // A row's name and value may read as one element.
+        let tokens = NSPredicate(format: "label CONTAINS %@", "1.2M in · 84k out · 9.4M cached")
+        XCTAssertTrue(app.descendants(matching: .any).matching(tokens).firstMatch.waitForExistence(timeout: 5), "app's tokens today")
     }
 
     @MainActor
