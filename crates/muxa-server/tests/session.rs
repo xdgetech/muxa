@@ -4,6 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
 use muxa_inbox::NewItem;
@@ -264,6 +266,11 @@ impl Host for FakeTasks {
             text: Some(text),
             ..ReaderContent::default()
         })
+    }
+
+    /// Not a zip: the folder and the terminal's folder it was asked of.
+    async fn reader_folder(&self, dir: &Path, folder: &str) -> Result<Vec<u8>, TaskError> {
+        Ok(format!("{folder} of {}", dir.display()).into_bytes())
     }
 }
 
@@ -1348,12 +1355,28 @@ async fn the_reader_follows_a_file_of_the_terminals_folder() {
     )
     .await;
     assert_eq!(closed["code"], "not-found", "an ended reader is closed");
+    let zipped = request(
+        &mut client,
+        json!({"type": "reader-folder", "id": 5, "terminal": agent.as_str(), "folder": "out"}),
+    )
+    .await;
+    let zip = zipped["zip"].as_str().unwrap();
+    assert_eq!(
+        STANDARD.decode(zip).unwrap(),
+        format!("out of {}", dir.display()).into_bytes()
+    );
 
     // A terminal muxa did not start has no folder.
     let shell = terminal(&backend).await;
     let refused = request(
         &mut client,
         json!({"type": "reader-list", "id": 4, "terminal": shell.as_str(), "kind": "docs"}),
+    )
+    .await;
+    assert_eq!(refused["code"], "bad-request");
+    let refused = request(
+        &mut client,
+        json!({"type": "reader-folder", "id": 6, "terminal": shell.as_str(), "folder": ""}),
     )
     .await;
     assert_eq!(refused["code"], "bad-request");

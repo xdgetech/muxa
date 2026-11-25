@@ -77,6 +77,14 @@ class ServerTest {
             } catch (e: V2Error.Refused) {
                 assertEquals("bad-request", e.code)
             }
+            val zip = c.readerFolder(demo.id, "")
+            assertEquals(listOf<Byte>(0x50, 0x4B, 0x05, 0x06), zip.take(4))
+            try {
+                c.readerFolder(demo.id, "docs")
+                fail("a folder with no listed files has no zip")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
             c.close()
         }
     }

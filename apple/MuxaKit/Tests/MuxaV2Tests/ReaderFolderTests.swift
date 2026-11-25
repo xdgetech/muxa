@@ -23,6 +23,17 @@ struct ReaderFolderTests {
         #expect(ReaderFolder.name(of: "PLAN.md") == "PLAN.md")
     }
 
+    @Test func aFilesAncestorsGoUpToTheListedFolder() {
+        #expect(ReaderFolder.ancestors(of: "output/qa/T-1/run/report.md") == ["output/qa/T-1/run", "output/qa/T-1", "output/qa", "output"])
+        #expect(ReaderFolder.ancestors(of: "PLAN.md").isEmpty)
+    }
+
+    @Test func aFoldersZipIsNamedAfterIt() {
+        #expect(ReaderFolder.zipName("output/qa/run", root: "app") == "run.zip")
+        #expect(ReaderFolder.zipName("", root: "app") == "app.zip")
+        #expect(ReaderFolder.zipName("", root: nil) == "Folder.zip")
+    }
+
     @Test func anEmptyListHasNoFolders() {
         #expect(folders([]).isEmpty)
     }

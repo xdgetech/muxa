@@ -43,6 +43,8 @@ final class NextModel {
     private(set) var routinesOff: [RoutinesOff] = []
     /// Why the last request failed, shown until the next one.
     var requestError: String?
+    /// Why the last Reader folder could not be saved, shared or dragged.
+    var readerFolderFailure: String?
     /// Followed conversations by chat number.
     private(set) var chats: [UInt32: [ChatEntry]] = [:]
     private(set) var chatPrompts: [UInt32: ChatPrompt] = [:]
@@ -617,6 +619,19 @@ final class NextModel {
         var list: ReaderList?
         await run { list = try await $0.readerList(terminal, kind: kind, html: kind == .docs) }
         return list
+    }
+
+    /// A Reader folder as a zip (ADR 0101). A failure also lands in
+    /// `readerFolderFailure`: a share or a drag has no place to show it.
+    func readerFolder(_ terminal: String, folder: String) async throws -> Data {
+        do {
+            guard let c = client else { throw ReaderFolderError(message: "Not connected.") }
+            return try await c.readerFolder(terminal, folder: folder)
+        } catch {
+            let failure = ReaderFolderError(message: (error as? ReaderFolderError)?.message ?? Self.describe(error))
+            readerFolderFailure = failure.message
+            throw failure
+        }
     }
 
     /// Opens a listed file; its content stays in `readerContents` until `closeReader`.

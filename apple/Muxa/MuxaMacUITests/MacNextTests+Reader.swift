@@ -50,6 +50,45 @@ extension MacNextTests {
         XCTAssertTrue(text.contains("@@"), "the diff's text")
     }
 
+    /// ADR 0101: a folder row saves the folder's listed files as one zip.
+    @MainActor
+    func testSaveFolderKeepsTheFoldersImagesInAZip() throws {
+        let app = openReader()
+        app.radioGroups["reader.kind"].radioButtons["Images"].click()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        folder.rightClick()
+        let item = app.menuItems["Save Folder…"]
+        XCTAssertTrue(item.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.menuItems["Share Folder"].exists)
+        item.click()
+        let saved = try save(in: app, expecting: "screenshots.zip")
+        let zip = try Data(contentsOf: saved)
+        XCTAssertEqual(Array(zip.prefix(4)), [0x50, 0x4B, 0x03, 0x04], "a zip")
+        for name in ["screenshots/login.png", "screenshots/session.png"] {
+            XCTAssertNotNil(zip.range(of: Data(name.utf8)), name)
+        }
+    }
+
+    /// A lone file's folder has no row: the file's menu saves it, or a folder above.
+    @MainActor
+    func testAFilesMenuSavesItsFolder() throws {
+        let app = openReader()
+        let report = app.descendants(matching: .any)["reader.file.output/qa/report.md"]
+        XCTAssertTrue(report.waitForExistence(timeout: 10))
+        report.rightClick()
+        let folder = app.menuItems["output/qa"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.menuItems["output"].exists)
+        folder.hover()
+        let item = folder.menuItems["Save Folder…"]
+        XCTAssertTrue(item.waitForExistence(timeout: 10))
+        item.click()
+        let saved = try save(in: app, expecting: "qa.zip")
+        let zip = try Data(contentsOf: saved)
+        XCTAssertNotNil(zip.range(of: Data("qa/report.md".utf8)))
+    }
+
     @MainActor
     private func openReader() -> XCUIApplication {
         let app = launch()

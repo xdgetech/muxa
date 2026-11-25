@@ -738,6 +738,14 @@ impl Host for BridgeHost {
         super::reader::read(dir, open).await
     }
 
+    async fn reader_folder(
+        &self,
+        dir: &std::path::Path,
+        folder: &str,
+    ) -> Result<Vec<u8>, TaskError> {
+        super::reader_folder::zip(dir, folder).await
+    }
+
     async fn workspaces(&self) -> Vec<String> {
         let records = Arc::clone(&self.records);
         let loaded = tokio::task::spawn_blocking(move || records.load_workspaces()).await;

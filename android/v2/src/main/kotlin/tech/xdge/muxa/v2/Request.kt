@@ -83,6 +83,8 @@ sealed interface V2Request {
         val scope: DiffScope = DiffScope.UNCOMMITTED,
     ) : V2Request
     data class ReaderClose(val reader: Int) : V2Request
+    /** The listed documents and images under [folder], as one zip (ADR 0101). */
+    data class ReaderFolder(val terminal: String, val folder: String) : V2Request
     data object Loops : V2Request
     data class LoopStart(val terminal: String, val spec: LoopSpec = LoopSpec(), val reset: Boolean = false) : V2Request
     data class LoopStop(val terminal: String) : V2Request
@@ -146,6 +148,7 @@ sealed interface V2Request {
                 put("html", r.html); put("scope", r.scope.wire)
             }
             is ReaderClose -> { type("reader-close"); put("reader", r.reader) }
+            is ReaderFolder -> { type("reader-folder"); put("terminal", r.terminal); put("folder", r.folder) }
             Loops -> type("loops")
             is LoopStart -> {
                 type("loop-start"); put("terminal", r.terminal); put("loop", json.encodeToJsonElement(r.spec)); put("reset", r.reset)

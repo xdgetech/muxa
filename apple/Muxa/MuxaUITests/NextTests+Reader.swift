@@ -26,6 +26,23 @@ extension NextTests {
         share(in: app, offers: "Save to Files")
     }
 
+    /// ADR 0101: a file's menu shares its folder as a zip.
+    @MainActor
+    func testAFilesMenuSharesItsFolder() throws {
+        let app = openReader()
+        let report = app.descendants(matching: .any)["reader.file.output/qa/report.md"]
+        XCTAssertTrue(report.waitForExistence(timeout: 10))
+        report.press(forDuration: 1.2)
+        let folder = app.buttons["output/qa"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        folder.tap()
+        let share = app.buttons["Share Folder"]
+        XCTAssertTrue(share.waitForExistence(timeout: 10))
+        share.tap()
+        let item = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Save to Files")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 15), "Save to Files")
+    }
+
     @MainActor
     private func openReader() -> XCUIApplication {
         let app = launch()

@@ -49,6 +49,8 @@ public enum V2Request: Sendable {
     case readerList(terminal: String, kind: ReaderKind, html: Bool = false)
     case readerOpen(terminal: String, kind: ReaderKind, path: String, html: Bool = false, scope: DiffScope = .uncommitted)
     case readerClose(reader: UInt32)
+    /// The listed documents and images under `folder`, as one zip (ADR 0101).
+    case readerFolder(terminal: String, folder: String)
     case loops
     case loopStart(terminal: String, spec: LoopSpec, reset: Bool = false)
     case loopStop(terminal: String)
@@ -109,6 +111,7 @@ public enum V2Request: Sendable {
             set("reader-open", ["terminal": terminal, "kind": kind.rawValue, "path": path, "html": html,
                                 "scope": scope.rawValue])
         case let .readerClose(reader): set("reader-close", ["reader": reader])
+        case let .readerFolder(terminal, folder): set("reader-folder", ["terminal": terminal, "folder": folder])
         case .loops: set("loops", [:])
         case let .loopStart(terminal, spec, reset):
             set("loop-start", ["terminal": terminal, "loop": spec.json, "reset": reset])

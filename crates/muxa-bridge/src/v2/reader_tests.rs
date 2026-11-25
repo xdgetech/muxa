@@ -118,3 +118,88 @@ async fn a_worktree_serves_its_uncommitted_diffs() {
     let docs = list(&d.0, ReaderKind::Docs, false).await.unwrap();
     assert_eq!(paths(&docs), ["README.md"]);
 }
+
+/// The folder's zip, as the host serves it (ADR 0101).
+async fn zip_folder(dir: &std::path::Path, folder: &str) -> Result<Vec<u8>, TaskError> {
+    crate::v2::reader_folder::zip(dir, folder).await
+}
+
+fn unzip(bytes: Vec<u8>) -> Vec<(String, Vec<u8>)> {
+    use std::io::Read;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut out: Vec<(String, Vec<u8>)> = (0..zip.len())
+        .map(|i| {
+            let mut f = zip.by_index(i).unwrap();
+            let mut data = Vec::new();
+            f.read_to_end(&mut data).unwrap();
+            (f.name().to_owned(), data)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[tokio::test]
+async fn a_folder_zips_only_its_listed_documents_and_images() {
+    let d = Dir::new("zip");
+    d.git(&["init", "-q", "-b", "main"]);
+    d.write(".gitignore", b"output/\n");
+    let run = "output/qa/T-1/run1";
+    d.write(&format!("{run}/report.md"), b"# Report\n");
+    d.write(&format!("{run}/page.html"), b"<title>Page</title>");
+    d.write(&format!("{run}/screens/a.png"), b"\x89PNG-a");
+    // Never listed, so never zipped (ADR 0099).
+    d.write(&format!("{run}/secret-notes.md"), b"key");
+    d.write(&format!("{run}/.env"), b"SECRET=1");
+    d.write(&format!("{run}/data.json"), b"{}");
+    d.write(&format!("{run}/node_modules/x.md"), b"dep");
+    d.write("output/qa/T-1/run10/other.md", b"# Other\n");
+    let zipped = zip_folder(&d.0, &format!("{run}/")).await.unwrap();
+    assert_eq!(
+        unzip(zipped),
+        [
+            ("run1/page.html".to_owned(), b"<title>Page</title>".to_vec()),
+            ("run1/report.md".to_owned(), b"# Report\n".to_vec()),
+            ("run1/screens/a.png".to_owned(), b"\x89PNG-a".to_vec()),
+        ]
+    );
+    let all = unzip(zip_folder(&d.0, "").await.unwrap());
+    assert_eq!(all.len(), 4);
+    assert!(
+        all.iter()
+            .all(|(name, _)| name.starts_with("muxa-v2-reader-"))
+    );
+}
+
+#[tokio::test]
+async fn a_folder_names_only_listed_paths() {
+    let d = Dir::new("zip-names");
+    d.write("output/qa/report.md", b"# Report\n");
+    for folder in [
+        "output/q",
+        "../output",
+        "/output",
+        "output/qa/report.md",
+        "nope",
+    ] {
+        assert!(
+            matches!(zip_folder(&d.0, folder).await, Err(TaskError::Invalid(_))),
+            "{folder}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_folder_over_the_limit_is_refused_whole() {
+    let d = Dir::new("zip-large");
+    let half = vec![0u8; 6 << 20];
+    d.write("shots/a.png", &half);
+    d.write("shots/b.png", &half);
+    let Err(TaskError::Invalid(message)) = zip_folder(&d.0, "shots").await else {
+        panic!("a 12 MiB folder was zipped");
+    };
+    assert_eq!(
+        message,
+        "shots has 12 MB of files. Save Folder sends at most 11 MB. Save a folder inside it."
+    );
+}

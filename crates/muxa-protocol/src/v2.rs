@@ -437,6 +437,13 @@ pub enum ClientMsg {
         id: u64,
         reader: u32,
     },
+    /// The documents and images listed under `folder` of the terminal's
+    /// folder, as one zip (ADR 0101). Empty `folder`: every listed file.
+    ReaderFolder {
+        id: u64,
+        terminal: String,
+        folder: String,
+    },
     /// The Task Loops of the live Task agents.
     Loops {
         id: u64,
@@ -1214,6 +1221,10 @@ pub enum Reply {
     Uploaded {
         path: String,
     },
+    /// A Reader folder as a zip, in base64.
+    Zipped {
+        zip: String,
+    },
     Empty {},
 }
 
@@ -1330,6 +1341,19 @@ mod tests {
             json!({"type": "reply", "id": 5, "reader": 2, "content": {"path": "a.rs", "text": "diff"}})
         );
         assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), opened);
+        let folder: ClientMsg = serde_json::from_value(json!({"type": "reader-folder", "id": 7,
+            "terminal": "t7", "folder": "output/qa"}))
+        .unwrap();
+        assert!(
+            matches!(folder, ClientMsg::ReaderFolder { ref folder, .. } if folder == "output/qa")
+        );
+        let zipped = ServerMsg::Reply {
+            id: 7,
+            body: Reply::Zipped { zip: "UEsF".into() },
+        };
+        let wire = serde_json::to_value(&zipped).unwrap();
+        assert_eq!(wire, json!({"type": "reply", "id": 7, "zip": "UEsF"}));
+        assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), zipped);
         let listed = ServerMsg::Reply {
             id: 6,
             body: Reply::Listed {

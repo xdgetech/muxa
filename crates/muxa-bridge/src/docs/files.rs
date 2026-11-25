@@ -339,6 +339,11 @@ pub fn read(doc: &Doc) -> Result<(String, Option<u64>), ReadError> {
     Ok((String::from_utf8_lossy(&bytes).into_owned(), mtime))
 }
 
+/// The bytes of `doc` as they are on disk, and its mtime.
+pub fn read_raw(doc: &Doc) -> Result<(Vec<u8>, Option<u64>), ReadError> {
+    read_bytes(&doc.file, &doc.root, &doc.info.path, MAX_DOC)
+}
+
 /// The bytes of the listed file `file`, named `path` in errors, and its mtime.
 /// Checked again on every read: a symlink can be changed after the file was listed.
 pub(super) fn read_bytes(

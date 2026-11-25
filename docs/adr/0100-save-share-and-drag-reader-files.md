@@ -21,6 +21,7 @@ Status: accepted (2026-11-25).
 
 - A screenshot an agent made on the host reaches a GitHub comment with one drag on the Mac or the iPad.
 - Android has none of this yet. It is a follow-up.
+- A whole folder saves and shares as a zip: ADR 0101.
 
 ## Alternatives not taken
 

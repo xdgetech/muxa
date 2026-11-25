@@ -261,6 +261,19 @@ impl Host for FakeHost {
             ..ReaderContent::default()
         })
     }
+
+    /// The root is the only folder; its zip is an empty one, the 22 bytes
+    /// of an end record. Clients only save what they get.
+    async fn reader_folder(&self, _dir: &Path, folder: &str) -> Result<Vec<u8>, TaskError> {
+        if !folder.is_empty() {
+            return Err(TaskError::Invalid(format!(
+                "{folder} has no documents or images the Reader lists"
+            )));
+        }
+        let mut zip = b"PK\x05\x06".to_vec();
+        zip.resize(22, 0);
+        Ok(zip)
+    }
 }
 
 fn fake_loop(terminal: &str, state: &str, reason: Option<&str>) -> LoopInfo {

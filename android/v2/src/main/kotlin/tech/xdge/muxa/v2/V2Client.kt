@@ -226,6 +226,13 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         request(V2Request.ReaderClose(reader))
     }
 
+    /** The documents and images the Reader lists under [folder], subfolders too, as a zip (ADR 0101). Empty: all. */
+    suspend fun readerFolder(terminal: String, folder: String): ByteArray {
+        val zip = field<String>("zip", request(V2Request.ReaderFolder(terminal, folder)))
+        return runCatching { java.util.Base64.getDecoder().decode(zip) }
+            .getOrElse { throw V2Error.BadMessage("zip: not base64") }
+    }
+
     // Chat
 
     /** Follows the conversation of a Task's agent: [V2Event.Chat] and [V2Event.ChatEnded] follow until [chatClose]. */

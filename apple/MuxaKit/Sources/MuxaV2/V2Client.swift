@@ -222,6 +222,14 @@ public actor V2Client {
         _ = try await request(.readerClose(reader: reader))
     }
 
+    /// The documents and images the Reader lists under `folder`, subfolders
+    /// too, as a zip under a folder of that name (ADR 0101). Empty: all.
+    public func readerFolder(_ terminal: String, folder: String) async throws -> Data {
+        let zip: String = try field("zip", of: await request(.readerFolder(terminal: terminal, folder: folder)))
+        guard let data = Data(base64Encoded: zip) else { throw V2Error.badMessage("zip: not base64") }
+        return data
+    }
+
     // MARK: Chat
 
     /// Follows the conversation of a Task's agent: `chat` and `chatEnded`

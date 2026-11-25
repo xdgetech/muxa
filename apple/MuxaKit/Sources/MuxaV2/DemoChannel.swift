@@ -271,6 +271,8 @@ actor DemoServer {
             reply(id, ["reader": n, "content": json(file.content)])
         case "reader-close":
             reply(id, [:])
+        case "reader-folder":
+            readerFolder(id, m["folder"] as? String ?? "")
         case "chat-open":
             let terminal = m["terminal"] as? String ?? ""
             guard content.terminals.contains(where: { $0.id == terminal && $0.isTaskAgent }) else {
@@ -577,6 +579,25 @@ actor DemoServer {
     }
 
     /// The kind of a Reader request on a terminal with a folder, or nil after an error.
+    /// The demo's listed documents and images under `folder`, zipped as the daemon does.
+    private func readerFolder(_ id: UInt64, _ asked: String) {
+        let folder = asked.hasSuffix("/") ? String(asked.dropLast()) : asked
+        let members: [DemoZip.Member] = [ReaderKind.docs, .images].flatMap { content.files[$0, default: []] }.compactMap { file in
+            let path = file.entry.path
+            let inside = folder.isEmpty ? path : path.hasPrefix(folder + "/") ? String(path.dropFirst(folder.count + 1)) : nil
+            guard let inside, let data = file.content.text.map({ Data($0.utf8) }) ?? file.content.bytes else { return nil }
+            return DemoZip.Member(path: inside, data: data)
+        }
+        guard !members.isEmpty else {
+            let shown = folder.isEmpty ? "This folder" : folder
+            return send(["type": "error", "id": id, "code": "bad-request",
+                         "message": "\(shown) has no documents or images the Reader lists"])
+        }
+        let top = folder.isEmpty ? "app" : ReaderFolder.name(of: folder)
+        let zip = DemoZip.stored(members.map { DemoZip.Member(path: top + "/" + $0.path, data: $0.data) })
+        reply(id, ["zip": zip.base64EncodedString()])
+    }
+
     private func readerKind(_ id: UInt64, _ m: [String: Any]) -> ReaderKind? {
         let t = content.terminals.first { $0.id == m["terminal"] as? String }
         guard t?.taskDir != nil else {

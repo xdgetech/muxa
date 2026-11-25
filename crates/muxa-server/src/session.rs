@@ -5,6 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::time::Duration;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use muxa_backend::{
     BackendError, Change, ChangeStream, Labels, SessionBackend, Size, TerminalId, TerminalInfo,
 };
@@ -495,6 +497,29 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     scope: scope.unwrap_or(DiffScope::Uncommitted),
                 };
                 self.open_reader(id, &terminal, open).await;
+            }
+            ClientMsg::ReaderFolder {
+                id,
+                terminal,
+                folder,
+            } => {
+                let zipped = match reader::folder(self.backend, &terminal).await {
+                    Ok(dir) => self
+                        .host
+                        .reader_folder(&dir, &folder)
+                        .await
+                        .map_err(|e| (task_code(&e), e.to_string())),
+                    Err(e) => Err(e),
+                };
+                match zipped {
+                    Ok(bytes) => self.reply(
+                        id,
+                        Reply::Zipped {
+                            zip: STANDARD.encode(bytes),
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
             }
             ClientMsg::ReaderClose { id, reader } => match self.readers.open.remove(&reader) {
                 Some(_) => self.reply(id, Reply::Empty {}),

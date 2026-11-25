@@ -16,8 +16,9 @@ use muxa_server::{ReaderOpen, TaskError};
 use crate::changes::git::{self, DiffError};
 use crate::docs::{self, files::ReadError};
 
-/// The largest image sent: its base64 fits in one 16 MiB frame.
-const MAX_IMAGE: u64 = 11 << 20;
+/// The most bytes sent in one reply, an image or a folder's zip: its base64
+/// fits in one 16 MiB frame.
+pub(super) const MAX_SENT: u64 = 11 << 20;
 
 pub async fn list(dir: &Path, kind: ReaderKind, html: bool) -> Result<ReaderList, TaskError> {
     let dir = dir.to_path_buf();
@@ -39,7 +40,7 @@ pub async fn read(dir: &Path, open: &ReaderOpen) -> Result<ReaderContent, TaskEr
     .await
 }
 
-async fn blocking<T: Send + 'static>(
+pub(super) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, TaskError> + Send + 'static,
 ) -> Result<T, TaskError> {
     tokio::task::spawn_blocking(f)
@@ -102,12 +103,12 @@ fn image_list(dir: &Path) -> ReaderList {
 fn read_image(dir: &Path, path: &str) -> Result<ReaderContent, TaskError> {
     let listing = docs::images::for_folder(dir);
     let image = listing.find(path).map_err(read_error)?;
-    if image.info.size.is_some_and(|n| n > MAX_IMAGE) {
-        return Err(read_error(ReadError::TooLarge(path.to_owned(), MAX_IMAGE)));
+    if image.info.size.is_some_and(|n| n > MAX_SENT) {
+        return Err(read_error(ReadError::TooLarge(path.to_owned(), MAX_SENT)));
     }
     let (bytes, mtime) = docs::images::read(image).map_err(read_error)?;
-    if bytes.len() as u64 > MAX_IMAGE {
-        return Err(read_error(ReadError::TooLarge(path.to_owned(), MAX_IMAGE)));
+    if bytes.len() as u64 > MAX_SENT {
+        return Err(read_error(ReadError::TooLarge(path.to_owned(), MAX_SENT)));
     }
     Ok(ReaderContent {
         path: path.to_owned(),
@@ -173,7 +174,7 @@ fn read_diff(dir: &Path, open: &ReaderOpen) -> Result<ReaderContent, TaskError> 
     })
 }
 
-fn read_error(e: ReadError) -> TaskError {
+pub(super) fn read_error(e: ReadError) -> TaskError {
     match e {
         ReadError::Io { .. } => {
             tracing::warn!(error = %e, "a v2 Reader file cannot be read");

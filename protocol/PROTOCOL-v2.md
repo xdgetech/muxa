@@ -99,6 +99,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"reader-list","terminal","kind","html"?}` | `{"list":ReaderList}`: the files of the terminal's folder. See Reader |
 | `{"type":"reader-open","terminal","kind","path","html"?,"scope"?}` | `{"reader","content":ReaderContent}`. `reader` and `reader-ended` notifications follow |
 | `{"type":"reader-close","reader"}` | `{}`. `not-found` after `reader-ended` |
+| `{"type":"reader-folder","terminal","folder"}` | `{"zip"}`: the listed files under `folder`, zipped, in base64. See Reader |
 | `{"type":"chat-open","terminal"}` | `{"chat","update":ChatUpdate}`: the conversation of a Task's agent. `chat` and `chat-ended` notifications follow |
 | `{"type":"chat-close","chat"}` | `{}`. `not-found` after `chat-ended` |
 | `{"type":"loops"}` | `{"loops":[Loop...]}`: the Task Loops of the live Task agents |
@@ -228,6 +229,8 @@ The Reader shows the files of a terminal's folder, its `muxa.dir` label (plan F2
 `ReaderEntry`: `{"path","title"?,"mtime"?,"size"?,"status"?,"old_path"?,"added"?,"removed"?,"ignored"?}`. Documents have `title` for HTML and `ignored: true` when git ignores the file; images `size`; changes `status` (`modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`), `old_path` for a rename and the line counts for a text file.
 
 `ReaderContent`: `{"path","text"?,"data"?,"binary"?,"mtime"?}`. A document or a diff is `text`; a diff of a binary file is `binary: true`; an image is `data`, its bytes in base64.
+
+`reader-folder` (ADR 0101) zips the files that `docs` (with HTML) and `images` list under `folder`, subfolders included; an empty `folder` means every listed file. `folder` is only compared with listed paths, never opened. The zip has one top folder named after `folder` (the repo's or the folder's name for an empty one), and its entries are stored. More than 11 MB of files, more than 1000 files, or none: `bad-request`, with a message for the user. Nothing is cut.
 
 The server reads each open file every 2 s and sends `reader` only when it changed. File content never reaches the server's log.
 

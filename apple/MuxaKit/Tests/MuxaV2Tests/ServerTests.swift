@@ -73,6 +73,9 @@ struct ServerTests {
         await #expect(throws: V2Error.self) {
             try await c.readerOpen(demo.id, kind: .docs, path: "../secret.md")
         }
+        let zip = try await c.readerFolder(demo.id, folder: "")
+        #expect(zip.prefix(4) == Data([0x50, 0x4B, 0x05, 0x06]))
+        await #expect(throws: V2Error.self) { try await c.readerFolder(demo.id, folder: "docs") }
         await c.close()
     }
 

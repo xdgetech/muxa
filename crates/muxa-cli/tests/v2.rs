@@ -200,6 +200,11 @@ impl Host for WorkTasks {
             ..ReaderContent::default()
         })
     }
+
+    /// Not a zip: the folder it was asked of.
+    async fn reader_folder(&self, _dir: &Path, folder: &str) -> Result<Vec<u8>, TaskError> {
+        Ok(format!("zip of {folder:?}").into_bytes())
+    }
 }
 
 struct TestHost {
@@ -467,6 +472,13 @@ async fn reader_lists_and_follows_a_tasks_file() {
     );
     changer.await.unwrap();
     assert_eq!(read, "# one\n# two\n");
+    let out = host.dir.join("all.zip");
+    let out_arg = out.display().to_string();
+    let saved = host
+        .cli(&["reader-folder", agent.as_str(), ".", &out_arg])
+        .await;
+    assert!(saved.status.success(), "{saved:?}");
+    assert_eq!(std::fs::read(&out).unwrap(), b"zip of \"\"");
     let shell = host.terminal().await;
     let refused = host.cli(&["reader", shell.as_str(), "docs"]).await;
     assert!(!refused.status.success());

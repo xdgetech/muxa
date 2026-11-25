@@ -13,6 +13,7 @@ mod git;
 mod mcp;
 mod places;
 pub mod reader;
+mod reader_folder;
 pub mod review_runs;
 mod routines;
 pub mod runner;

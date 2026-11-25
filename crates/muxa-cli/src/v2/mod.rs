@@ -57,6 +57,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                 [--timeout SECONDS] [--reset]
        muxa-cli v2 [--bridge CMD] loop-stop TERMINAL
        muxa-cli v2 [--bridge CMD] reader TERMINAL docs|changes|images [--html] [--json]
+       muxa-cli v2 [--bridge CMD] reader-folder TERMINAL FOLDER OUT.zip
        muxa-cli v2 [--bridge CMD] read TERMINAL docs|changes|images PATH [--html] [--commits]
                 [--seconds N]
 
@@ -95,7 +96,9 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   chat           the conversation of a Task's agent, from its own records
   reader         the files of a Task's or a Routine run's folder; read prints
                  one (an image as its bytes), and with --seconds each change;
-                 --commits: a change's diff over the branch's commits";
+                 --commits: a change's diff over the branch's commits
+  reader-folder  writes the documents and images the Reader lists under FOLDER
+                 (. for all) as one zip to OUT.zip; at most 11 MB";
 
 /// ADR 0075: every agent of a Workspace gets all its connections and servers.
 const CHOICE_DEPRECATED: &str = "muxa-cli: --connection and --mcp are deprecated and ignored: \
@@ -190,6 +193,11 @@ enum Cmd {
         json: bool,
     },
     Read(reader::Read),
+    ReaderFolder {
+        terminal: String,
+        folder: String,
+        out: String,
+    },
 }
 
 /// Runs `muxa-cli v2 <args>`; `Ok(None)` printed the usage.
@@ -398,6 +406,15 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             html,
             json,
         },
+        ["reader-folder", t, folder, out] => Cmd::ReaderFolder {
+            terminal: (*t).to_owned(),
+            folder: if *folder == "." {
+                String::new()
+            } else {
+                (*folder).to_owned()
+            },
+            out: (*out).to_owned(),
+        },
         ["read", t, k, path] => Cmd::Read(reader::Read {
             terminal: (*t).to_owned(),
             kind: reader::kind(k)?,
@@ -567,6 +584,11 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             json,
         } => reader::list(bridge, &terminal, &kind, html, json).await,
         Cmd::Read(r) => reader::read(bridge, &r).await,
+        Cmd::ReaderFolder {
+            terminal,
+            folder,
+            out,
+        } => reader::folder(bridge, &terminal, &folder, &out).await,
         Cmd::Workspaces { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "workspaces"})).await?;

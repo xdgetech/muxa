@@ -327,6 +327,16 @@ pub trait Host: Send + Sync {
     ) -> impl Future<Output = Result<ReaderContent, TaskError>> + Send {
         async { Err(TaskError::Invalid("this host has no Reader".into())) }
     }
+
+    /// The listed documents and images under `folder` of `dir`, as one zip
+    /// (ADR 0101). Nothing the lists leave out goes in.
+    fn reader_folder(
+        &self,
+        _dir: &Path,
+        _folder: &str,
+    ) -> impl Future<Output = Result<Vec<u8>, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no Reader".into())) }
+    }
 }
 
 /// The Task's live agent terminal, or a new one. `true` when it was running.

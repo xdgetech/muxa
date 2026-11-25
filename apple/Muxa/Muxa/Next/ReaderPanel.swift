@@ -113,6 +113,10 @@ struct ReaderPanel: View {
         }
         .groundList()
         .refreshable { await reload() }
+        .dialog("Could not save the folder",
+                isPresented: Binding(get: { model.readerFolderFailure != nil },
+                                     set: { if !$0 { model.readerFolderFailure = nil } }),
+                message: model.readerFolderFailure, cancel: "OK")
     }
 
     private var empty: String {
@@ -137,6 +141,7 @@ struct ReaderPanel: View {
                             .readerCount()
                     }
                     .readerRow(lines: 1)
+                    .readerFolderActions(folder.path, zip: folderZip(folder.path), when: hasFolderZip)
                     #if os(iOS)
                     // On iOS an identifier on the group also lands on every file row,
                     // and the rows lose their own; it goes on the folder's label there.
@@ -196,7 +201,25 @@ struct ReaderPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            // The file's folder and those above it: a lone file's folder has no row.
+            if hasFolderZip {
+                ForEach(ReaderFolder.ancestors(of: e.path), id: \.self) { folder in
+                    Menu(folder) { ReaderFolderActions(folder: folder, zip: folderZip(folder)) }
+                }
+            }
+        }
         .accessibilityIdentifier("reader.file.\(e.path)")
+    }
+
+    /// Documents and images are files of the folder; a diff is not (ADR 0101).
+    private var hasFolderZip: Bool { kind != .changes }
+
+    private func folderZip(_ folder: String) -> ReaderFolderZip {
+        let (model, terminal) = (model, terminal.id)
+        return ReaderFolderZip(name: ReaderFolder.zipName(folder, root: list?.root)) {
+            try await model.readerFolder(terminal, folder: folder)
+        }
     }
 
     private func export(of target: ReaderTarget) -> ReaderExport? {

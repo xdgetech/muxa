@@ -56,6 +56,20 @@ pub async fn list(
     Ok(())
 }
 
+/// Writes the zip of `folder` (ADR 0101) to `out`.
+pub async fn folder(bridge: &str, terminal: &str, folder: &str, out: &str) -> Result<(), String> {
+    let (mut c, _child) = super::open(bridge, State::default()).await?;
+    let msg = json!({"type": "reader-folder", "terminal": terminal, "folder": folder});
+    let reply = c.request(msg).await?;
+    let zip = reply["zip"].as_str().ok_or("the reply has no zip")?;
+    let bytes = STANDARD
+        .decode(zip)
+        .map_err(|e| format!("the zip is not base64: {e}"))?;
+    std::fs::write(out, &bytes).map_err(|e| format!("cannot write {out}: {e}"))?;
+    println!("{out}: {} bytes", bytes.len());
+    Ok(())
+}
+
 fn row(e: &Value) -> String {
     let path = e["path"].as_str().unwrap_or("?");
     match (e["status"].as_str(), e["title"].as_str()) {

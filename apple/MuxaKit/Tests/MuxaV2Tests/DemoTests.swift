@@ -189,6 +189,37 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func aReaderFolderComesAsAZipOfItsListedFiles() async throws {
+        let c = try await open()
+        let agent = try #require(try await c.terminals().first { $0.isTaskAgent })
+        let zip = try await c.readerFolder(agent.id, folder: "screenshots")
+        let files = Self.storedFiles(zip)
+        #expect(files.map(\.name) == ["screenshots/login.png", "screenshots/session.png"])
+        #expect(files.first?.data.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]))
+        #expect(DemoZip.crc32(Data("123456789".utf8)) == 0xCBF4_3926)
+        let all = Self.storedFiles(try await c.readerFolder(agent.id, folder: ""))
+        #expect(all.map(\.name).contains("app/output/qa/report.md"))
+        #expect(!all.map(\.name).contains("app/src/auth/session.ts"), "a diff is not a file of the folder")
+        await #expect(throws: V2Error.self) { try await c.readerFolder(agent.id, folder: "screen") }
+    }
+
+    /// The names and bytes of a stored zip's local entries.
+    private static func storedFiles(_ zip: Data) -> [(name: String, data: Data)] {
+        let bytes = [UInt8](zip)
+        func le(_ at: Int, _ n: Int) -> Int { (0..<n).reduce(0) { $0 | Int(bytes[at + $1]) << (8 * $1) } }
+        var files: [(name: String, data: Data)] = []
+        var at = 0
+        while at + 30 <= bytes.count, le(at, 4) == 0x0403_4B50 {
+            let size = le(at + 18, 4), nameLength = le(at + 26, 2), extra = le(at + 28, 2)
+            let name = String(decoding: bytes[(at + 30)..<(at + 30 + nameLength)], as: UTF8.self)
+            let start = at + 30 + nameLength + extra
+            files.append((name, Data(bytes[start..<(start + size)])))
+            at = start + size
+        }
+        return files
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func aLoopStartsAndStopsAndWatchersSeeIt() async throws {
         let c = try await open()
         try await c.watch()
