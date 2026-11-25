@@ -160,6 +160,17 @@ impl SessionBackend for FakeBackend {
 
     async fn run(&self, launch: &Launch) -> Result<TerminalInfo> {
         let mut s = lock(&self.state);
+        if let Some(name) = &launch.name
+            && s.terms
+                .values()
+                .any(|t| t.info.live && t.info.name.as_ref() == Some(name))
+        {
+            // As herdr-core: a live terminal's name is taken.
+            return Err(BackendError::failed(
+                "run",
+                format!("a live terminal is already named {name:?}"),
+            ));
+        }
         s.launches.push(launch.clone());
         s.next += 1;
         let id = TerminalId::new(format!("f{}", s.next));
