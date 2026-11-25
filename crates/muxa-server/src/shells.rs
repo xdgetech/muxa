@@ -41,12 +41,10 @@ pub(crate) async fn start<B: SessionBackend, H: Host>(
             format!("{terminal} has no working place"),
         ));
     };
-    let all = backend
-        .list()
+    let live = of_dir(backend, &dir)
         .await
         .map_err(|e| (code_of(&e), e.to_string()))?;
-    let live = all.iter().filter(|t| is_shell_of(t, &dir)).count();
-    if live >= MAX_SHELLS {
+    if live.len() >= MAX_SHELLS {
         let message = format!("a Task has at most {MAX_SHELLS} shells; close one first");
         return Err((ErrorCode::Conflict, message));
     }
@@ -63,10 +61,7 @@ pub(crate) async fn start<B: SessionBackend, H: Host>(
     let launch = Launch {
         argv: host.shell(),
         cwd: Some(dir.into()),
-        name: agent
-            .name
-            .as_ref()
-            .map(|n| free_name(&format!("{n}-sh"), &all)),
+        name: agent.name.as_ref().map(|n| format!("{n}-sh")),
         labels,
         env: Default::default(),
     };
@@ -119,27 +114,6 @@ pub(crate) async fn close_all<B: SessionBackend>(backend: &B, dir: &str) {
     }
 }
 
-/// `base`, else `base` with the first number from 2 that no live terminal
-/// has: herdr-core refuses a name a live terminal has.
-fn free_name(base: &str, terminals: &[TerminalInfo]) -> String {
-    let taken = |name: &str| {
-        terminals
-            .iter()
-            .any(|t| t.live && t.name.as_deref() == Some(name))
-    };
-    if !taken(base) {
-        return base.to_owned();
-    }
-    (2..)
-        .map(|n| format!("{base}{n}"))
-        .find(|name| !taken(name))
-        .unwrap_or_else(|| base.to_owned())
-}
-
-fn is_shell_of(t: &TerminalInfo, dir: &str) -> bool {
-    t.live && is_shell(t) && t.labels.get(DIR).map(String::as_str) == Some(dir)
-}
-
 async fn of_dir<B: SessionBackend>(
     backend: &B,
     dir: &str,
@@ -148,6 +122,6 @@ async fn of_dir<B: SessionBackend>(
         .list()
         .await?
         .into_iter()
-        .filter(|t| is_shell_of(t, dir))
+        .filter(|t| t.live && is_shell(t) && t.labels.get(DIR).map(String::as_str) == Some(dir))
         .collect())
 }

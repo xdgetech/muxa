@@ -481,14 +481,9 @@ impl Client {
 }
 
 async fn terminal(backend: &FakeBackend) -> TerminalId {
-    // herdr-core names are unique among live terminals.
-    let n = backend.list().await.unwrap().len();
-    let name = ["one", "two", "three", "four"]
-        .get(n)
-        .map_or_else(|| format!("term-{n}"), |s| (*s).to_owned());
     backend
         .run(&Launch {
-            name: Some(name),
+            name: Some("one".into()),
             ..Launch::default()
         })
         .await
@@ -1571,10 +1566,8 @@ async fn workspaces_show_every_live_task_agent_under_each_connection_and_server(
 async fn task_agent(backend: &FakeBackend, dir: &str) -> TerminalId {
     let places = json!([{"kind": "branch", "path": dir, "branch": "fix"},
                         {"kind": "read", "path": "/src/docs"}]);
-    // herdr-core names are unique among live terminals: name it by its folder.
-    let name = dir.rsplit('/').next().unwrap_or(dir);
     let launch = Launch {
-        name: Some(name.into()),
+        name: Some("fix".into()),
         labels: [
             ("muxa.kind".to_owned(), "task".to_owned()),
             ("muxa.role".to_owned(), "agent".to_owned()),
@@ -1887,8 +1880,8 @@ async fn a_tasks_shells_start_in_its_place_and_only_they_close() {
     )
     .await;
     assert_eq!(wrong["code"], "bad-request");
-    // herdr-core refuses a taken name, so each shell gets its own.
-    for (id, name) in [(3, "fix-sh2"), (4, "fix-sh3")] {
+    // A taken name gets a number from the backend, as herdr-core needs.
+    for (id, name) in [(3, "fix-sh-2"), (4, "fix-sh-3")] {
         let more = request(
             &mut client,
             json!({"type": "task-shell", "id": id, "terminal": agent.as_str()}),

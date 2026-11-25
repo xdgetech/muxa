@@ -55,13 +55,19 @@ pub async fn check<B: SessionBackend>(
         ));
     }
     let id = info.id.clone();
-    // herdr-core refuses a second live terminal with a taken name.
-    if let Ok(twin) = backend.run(&launch).await {
-        let _ = backend.kill(&twin.id).await;
-        let _ = backend.remove(&twin.id).await;
+    // A taken name still runs, under a name of its own.
+    let twin = backend.run(&launch).await;
+    if let Ok(t) = &twin {
+        let _ = backend.kill(&t.id).await;
+        let _ = backend.remove(&t.id).await;
+    }
+    let twin_ok = matches!(&twin, Ok(t) if t.name.is_some() && t.name != info.name);
+    if !twin_ok {
         let _ = backend.kill(&id).await;
         let _ = backend.remove(&id).await;
-        return Err("run took a name a live terminal has".into());
+        return Err(format!(
+            "a second run with a live terminal's name gave {twin:?}"
+        ));
     }
     let result = scenario(backend, &id, &mut changes).await;
     // Clean up whatever happened; a cleanup error matters only after success.
