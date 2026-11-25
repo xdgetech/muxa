@@ -465,6 +465,13 @@ pub enum ClientMsg {
     Subscriptions {
         id: u64,
     },
+    /// The tokens agents used on one day, by Workspace and by Task (ADR 0091
+    /// §6). `day` is `YYYY-MM-DD` on the host's clock; absent, today.
+    TokenUsage {
+        id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        day: Option<String>,
+    },
     /// Opens the agent's own login for a subscription in a host terminal,
     /// or the one already open (ADR 0091 §7). Answers `started`.
     LoginStart {
@@ -547,6 +554,47 @@ pub struct SubscriptionUsage {
     /// Unix seconds of the last report; None before the first.
     #[serde(default)]
     pub as_of: Option<u64>,
+}
+
+/// The tokens of one day on the host's clock, from the agents' transcripts
+/// (ADR 0091 §6). Tokens only: no vendor tells a share of a plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenUsage {
+    /// `YYYY-MM-DD`.
+    pub day: String,
+    /// Most first.
+    pub workspaces: Vec<WorkspaceTokens>,
+    /// The folders inside a Workspace other than its root, most first: a
+    /// Task's working place or a Routine's run folder. At most 50.
+    pub tasks: Vec<TaskTokens>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceTokens {
+    pub workspace: String,
+    #[serde(flatten)]
+    pub tokens: Tokens,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskTokens {
+    pub workspace: String,
+    /// The working folder, as a Task agent's `muxa.dir` names it.
+    pub dir: String,
+    /// The folder's name.
+    pub title: String,
+    #[serde(flatten)]
+    pub tokens: Tokens,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tokens {
+    /// Input not read from a cache.
+    pub input: u64,
+    /// Input read from a cache.
+    pub cached: u64,
+    /// Output, reasoning included.
+    pub output: u64,
 }
 
 /// One plan window: 300 minutes, 10080 minutes (a week).
@@ -1242,6 +1290,9 @@ pub enum Reply {
     },
     Subscriptions {
         subscriptions: Vec<SubscriptionUsage>,
+    },
+    TokenUsage {
+        token_usage: TokenUsage,
     },
     Settings {
         settings: Settings,

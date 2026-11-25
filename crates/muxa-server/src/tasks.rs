@@ -188,6 +188,15 @@ pub trait Host: Send + Sync {
         async { Ok(Vec::new()) }
     }
 
+    /// The tokens agents used on `day` (`YYYY-MM-DD`, else today), by
+    /// Workspace and by Task (ADR 0091 §6).
+    fn token_usage(
+        &self,
+        _day: Option<String>,
+    ) -> impl Future<Output = Result<muxa_protocol::v2::TokenUsage, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host counts no tokens".into())) }
+    }
+
     /// Whether closing a Task with `places` may go on: with
     /// [`WorktreeMode::Remove`], [`TaskError::WouldLoseWork`] when a branch
     /// worktree has uncommitted or unmerged work. Changes nothing.

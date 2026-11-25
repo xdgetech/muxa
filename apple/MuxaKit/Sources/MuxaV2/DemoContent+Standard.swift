@@ -183,7 +183,22 @@ extension DemoContent {
             ],
             losesWork: ["d8": "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"],
             settings: settings,
-            subscriptions: usage)
+            subscriptions: usage,
+            tokenUsage: tokens)
+    }()
+
+    /// Today's tokens: the Tasks' folders are the demo agents' `muxa.dir`.
+    private static let tokens: TokenUsage = {
+        let day = Date().formatted(.iso8601.year().month().day())
+        return TokenUsage(day: day, workspaces: [
+            WorkspaceTokens(workspace: "app", input: 1_200_000, cached: 9_400_000, output: 84_000),
+            WorkspaceTokens(workspace: "Personal", input: 310_000, cached: 1_900_000, output: 22_000),
+        ], tasks: [
+            TaskTokens(workspace: "app", dir: "/demo/app-fix-login", title: "app-fix-login",
+                       input: 640_000, cached: 5_100_000, output: 41_000),
+            TaskTokens(workspace: "app", dir: "/demo/runs/dependency-digest", title: "dependency-digest",
+                       input: 220_000, cached: 1_300_000, output: 9_000),
+        ])
     }()
 
     /// The limits the demo's agents last reported (ADR 0091): one near its

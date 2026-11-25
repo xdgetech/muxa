@@ -517,6 +517,10 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Ok(subscriptions) => self.reply(id, Reply::Subscriptions { subscriptions }),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
+            ClientMsg::TokenUsage { id, day } => match self.host.token_usage(day).await {
+                Ok(token_usage) => self.reply(id, Reply::TokenUsage { token_usage }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
             ClientMsg::InboxApprove { id, item, worktree } => {
                 let mode = worktree.unwrap_or_default();
                 let done =

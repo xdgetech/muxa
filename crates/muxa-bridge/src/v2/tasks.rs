@@ -660,6 +660,44 @@ impl Host for BridgeHost {
         .await
     }
 
+    async fn token_usage(
+        &self,
+        day: Option<String>,
+    ) -> Result<muxa_protocol::v2::TokenUsage, TaskError> {
+        let zone = jiff::tz::TimeZone::system();
+        let date = match day {
+            Some(d) => d
+                .parse::<jiff::civil::Date>()
+                .map_err(|_| TaskError::Invalid("day must be YYYY-MM-DD".into()))?,
+            None => jiff::Timestamp::now().to_zoned(zone.clone()).date(),
+        };
+        let day = crate::tokens::Day::new(date, &zone)
+            .ok_or_else(|| TaskError::Invalid(format!("no day {date} on this host")))?;
+        let (records, mut claude) = (Arc::clone(&self.records), self.claude_dirs.clone());
+        blocking(move || {
+            let all = records.load_workspaces().map_err(|e| e.to_string())?;
+            let mut dirs =
+                crate::agents::data_dirs(&[], records.home.as_deref(), |key| all.agent_dirs(key));
+            for d in dirs.remove(crate::agents::claude::ID).unwrap_or_default() {
+                if !claude.contains(&d) {
+                    claude.push(d);
+                }
+            }
+            let codex = dirs.remove(crate::agents::codex::ID).unwrap_or_default();
+            let by = crate::tokens::by_folder(&claude, &codex, &day);
+            let roots: Vec<(String, PathBuf)> = all
+                .all()
+                .iter()
+                .map(|w| {
+                    let root = w.root.canonicalize().unwrap_or_else(|_| w.root.clone());
+                    (w.name.clone(), root)
+                })
+                .collect();
+            Ok(crate::tokens::assign(by, &roots, &day))
+        })
+        .await
+    }
+
     async fn workspace_list(&self) -> Result<Vec<muxa_protocol::v2::Workspace>, TaskError> {
         let (records, command) = (Arc::clone(&self.records), self.command.clone());
         blocking(move || {

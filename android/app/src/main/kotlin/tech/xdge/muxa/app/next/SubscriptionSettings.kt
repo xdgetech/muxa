@@ -38,6 +38,7 @@ import tech.xdge.muxa.v2.Settings
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SubscriptionUsage
 import tech.xdge.muxa.v2.Terminal
+import tech.xdge.muxa.v2.TokenUsage
 import tech.xdge.muxa.v2.UsageWindow
 import java.text.DateFormat
 import java.util.Date
@@ -148,7 +149,7 @@ private fun LoginButton(model: NextModel, name: String, command: String, open: (
 
 /** The Usage part of Settings (ADR 0091 §8): each subscription's windows as its agents last reported them. */
 @Composable
-fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>) {
+fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>, tokens: TokenUsage?, terminals: List<Terminal>) {
     val subs = editor.settings?.subscriptions.orEmpty()
     if (subs.isEmpty()) return
     SettingsHeader("Usage")
@@ -167,8 +168,44 @@ fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>) {
     }
     SettingsNote(
         "Limits come from the agents' own reports: Claude Code's status line while a session runs, and Codex's session logs. " +
-            "At ${PlanWindow.WARN}% muxa warns; from ${PlanWindow.SWITCH}% new agents take the next subscription in their list.",
+            "At ${PlanWindow.WARN}% muxa warns; from ${PlanWindow.SWITCH}% new agents take the next subscription in their list. " +
+            "Tokens come from the agents' transcripts on the host.",
     )
+    tokens?.let { TokenCards(it, terminals) }
+}
+
+/** Today's tokens (ADR 0091 §6): each Workspace, then the ten Task folders that used most. */
+@Composable
+private fun TokenCards(tokens: TokenUsage, terminals: List<Terminal>) {
+    SettingsHeader("Today by Workspace")
+    SettingsCard(Modifier.testTag("usage.workspaces").semantics(mergeDescendants = true) {}) {
+        if (tokens.workspaces.isEmpty()) TokenRow("No agent used tokens today.", null, "")
+        for (w in tokens.workspaces) {
+            TokenRow(w.workspace, null, TokenText.line(w.input, w.cached, w.output))
+            CardDivider()
+        }
+    }
+    if (tokens.tasks.isEmpty()) return
+    SettingsHeader("Today by Task")
+    SettingsCard(Modifier.testTag("usage.tasks")) {
+        for (t in tokens.tasks.take(TokenText.TASKS)) {
+            Box(Modifier.testTag("usage.task.${t.title}").semantics(mergeDescendants = true) {}) {
+                TokenRow(TokenText.taskName(t, terminals), t.workspace, TokenText.line(t.input, t.cached, t.output))
+            }
+            CardDivider()
+        }
+    }
+}
+
+@Composable
+private fun TokenRow(name: String, detail: String?, line: String) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(name, fontSize = 14.sp)
+            detail?.let { Text(it, color = Palette.textSecondary, fontSize = 12.sp) }
+        }
+        Text(line, color = Palette.textSecondary, fontSize = 13.sp)
+    }
 }
 
 @Composable

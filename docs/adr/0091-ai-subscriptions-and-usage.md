@@ -62,7 +62,7 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
    - **Codex:** muxa reads `rate_limits` from the `token_count` events of the rollouts of that subscription's running agents. `account/rateLimits/read` through a one-shot `codex app-server` is a later step, after a finding shows it starts no daemon in the home.
    - **The record.** `<state dir>/subscriptions/<name>.json` keeps each window's `used_percent`, `resets_at` and `as_of`. The writer is reachable by any agent, so the input is checked as untrusted (invariant 3): the name must exist, percentages 0–100, `resets_at` within 8 days. Writes are atomic. A report with an older `resets_at` than the stored one is dropped. A window past its `resets_at` shows as "reset, no new data".
    - **Logged in** is not read. A subscription shows "last reported <time>" from its record, and "no data yet" before its first agent runs.
-   - **Tokens per Task:** summed from the agent's transcript (Claude `message.usage`, Codex `token_count`), by Task and by Workspace per day. muxa shows tokens, never a share of the plan limit: the vendors do not give one, and invariant 6 forbids inventing it.
+   - **Tokens per Task:** summed from the agent's transcript (Claude `message.usage`, each message once by its id; the growth of Codex's cumulative `token_count` totals), by working folder, on request for one day on the host's clock. A folder inside a Workspace other than its root is a Task (or a Routine's run folder); a folder outside every Workspace is left out. muxa stores no token count and shows tokens, never a share of the plan limit: the vendors do not give one, and invariant 6 forbids inventing it.
 
 7. **Onboarding.**
    1. **Find.** Settings → Subscriptions, empty, lists the logins muxa can see without opening a file: `~/.claude` and `~/.codex` if the folders exist, and each Workspace's env `CLAUDE_CONFIG_DIR`/`CODEX_HOME`. Each row has a suggested name. "Add all" makes them subscriptions in one `settings-update`. A Workspace whose env path is added gets `subscriptions = [<name>]`, and the env key is removed in the same update, so its agents keep the same login.
@@ -128,7 +128,7 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
 | S2 | Usage reading (Claude status line through one settings writer, Codex rollouts), the record, `subscriptions` wire, `muxa-cli v2 subscriptions` | `make check`, `make test-apple-v2`, `make test-android-v2` |
 | S3 | Apps: onboarding (find, add, the login terminal), Settings → Subscriptions, the Usage page (meters), the Start Task line, Bot and assistant pickers | `make test-app`, `make test-app-iphone`, `make test-android-app`, `make test-mac-app` |
 | S4 | Limits: warn items, switch, pause unattended work (done 2026-11-25; the Task Loop as S4b, done 2026-11-25) | `make check` with recorded usage files |
-| S5 | Tokens per Task and Workspace, `token-usage`, the Usage page's lower half | `make check` with fixture transcripts |
+| S5 | Tokens per Task and Workspace, `token-usage`, the Usage page's lower half (done 2026-11-25; a Task row names the Task but does not open it yet) | `make check` with fixture transcripts |
 | Later | Codex `account/rateLimits/read`; Gemini/Antigravity; Copilot (`premium_request/usage` with a connection) | — |
 
 ## Decided with the developer (2026-11-24)

@@ -2,8 +2,8 @@ import MuxaV2
 import SwiftUI
 
 /// The Usage page (ADR 0091 §8): each subscription's plan windows as its
-/// agents last reported them. A login with no running agent shows its last
-/// report, and "as of" says when that was.
+/// agents last reported them, then today's tokens by Workspace and by Task.
+/// A login with no running agent shows its last report, and "as of" says when.
 struct PlanUsageView: View {
     @Environment(NextModel.self) private var model
 
@@ -40,11 +40,15 @@ struct PlanUsageView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("usage.\(sub.name)")
             }
+            if let tokens = model.settings.tokenUsage {
+                TokenSections(tokens: tokens)
+            }
             Section {
                 EmptyView()
             } footer: {
                 Text("Limits come from the agents' own reports: Claude Code's status line while a session runs, and Codex's "
-                    + "session logs. At 80% muxa warns; from 95% new agents take the next subscription in their list.")
+                    + "session logs. At 80% muxa warns; from 95% new agents take the next subscription in their list. "
+                    + "Tokens come from the agents' transcripts on the host.")
             }
         }
         .navigationTitle("Usage")
@@ -53,5 +57,42 @@ struct PlanUsageView: View {
         .task {
             if model.settings.settings == nil { await model.settings.load() } else { await model.settings.loadPlanUsage() }
         }
+    }
+}
+
+/// Today's tokens (ADR 0091 §6): each Workspace, then the ten Task folders
+/// that used most. A Task whose agent still runs goes by its name.
+private struct TokenSections: View {
+    @Environment(NextModel.self) private var model
+    let tokens: TokenUsage
+
+    var body: some View {
+        Section("Today by Workspace") {
+            if tokens.workspaces.isEmpty {
+                Text("No agent used tokens today.").foregroundStyle(Palette.textSecondary)
+            }
+            ForEach(tokens.workspaces) { w in
+                LabeledContent(w.workspace, value: TokenText.line(input: w.input, cached: w.cached, output: w.output))
+            }
+        }
+        .accessibilityIdentifier("usage.workspaces")
+        if !tokens.tasks.isEmpty {
+            Section("Today by Task") {
+                ForEach(tokens.tasks.prefix(10)) { t in
+                    LabeledContent {
+                        Text(TokenText.line(input: t.input, cached: t.cached, output: t.output))
+                    } label: {
+                        Text(name(t))
+                        Text(t.workspace)
+                    }
+                    .accessibilityIdentifier("usage.task.\(t.title)")
+                }
+            }
+        }
+    }
+
+    private func name(_ t: TaskTokens) -> String {
+        let agent = model.terminals.first { $0.labels["muxa.dir"] == t.dir && $0.labels["muxa.role"] == "agent" }
+        return agent?.name ?? t.title
     }
 }

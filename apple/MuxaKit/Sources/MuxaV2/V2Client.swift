@@ -189,6 +189,12 @@ public actor V2Client {
         try field("subscriptions", of: await request(.subscriptions), decoder: Coding.plainDecoder)
     }
 
+    /// The tokens agents used on `day` (`YYYY-MM-DD`; nil for today on the
+    /// host's clock). An older server refuses the request.
+    public func tokenUsage(day: String? = nil) async throws -> TokenUsage {
+        try field("token_usage", of: await request(.tokenUsage(day: day)), decoder: Coding.plainDecoder)
+    }
+
     /// The host's editable settings.
     public func settings() async throws -> Settings {
         try field("settings", of: await request(.settings), decoder: Coding.plainDecoder)

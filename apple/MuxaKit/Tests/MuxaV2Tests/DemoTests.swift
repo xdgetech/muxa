@@ -335,6 +335,18 @@ struct DemoTests {
         #expect(usage[1].windows.isEmpty && usage[1].asOf == nil)
     }
 
+    /// ADR 0091 §6: today's tokens, whose Task folders are the demo agents'.
+    @Test(.timeLimit(.minutes(1)))
+    func tokenUsageNamesTheTasksFolders() async throws {
+        let c = try await open()
+        let usage = try await c.tokenUsage()
+        #expect(usage.workspaces.map(\.workspace) == ["app", "Personal"])
+        #expect(usage.tasks.first?.dir == "/demo/app-fix-login")
+        #expect(try await c.tokenUsage(day: "2026-11-01").day == "2026-11-01")
+        #expect(TokenText.line(input: 1_200_000, cached: 0, output: 84_000) == "1.2M in · 84k out")
+        #expect(TokenText.line(input: 950, cached: 12_400_000, output: 9_960) == "950 in · 10k out · 12M cached")
+    }
+
     /// ADR 0091 §7: onboarding adopts app's env login, and a login terminal
     /// opens once per subscription.
     @Test(.timeLimit(.minutes(1)))

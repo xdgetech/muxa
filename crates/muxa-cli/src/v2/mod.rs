@@ -45,6 +45,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] upload TERMINAL FILE
        muxa-cli v2 [--bridge CMD] workspaces [--json]
        muxa-cli v2 [--bridge CMD] subscriptions [--json]
+       muxa-cli v2 [--bridge CMD] token-usage [--day YYYY-MM-DD] [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
        muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
@@ -89,6 +90,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                  without --check, the Workspace's only allowed one
   subscriptions  each agent login muxa names, with the plan limits its agents last
                  reported: used percent and reset time per window (ADR 0091)
+  token-usage    the tokens agents used today, or on --day, by Workspace and by
+                 Task folder, from their transcripts: input, cached input, output
   settings       the host's workspaces.toml and routines files as the apps edit them;
                  env values and secrets never show
   settings-set   applies settings ops (protocol/PROTOCOL-v2.md, Settings) from FILE
@@ -119,6 +122,10 @@ enum Cmd {
         json: bool,
     },
     Subscriptions {
+        json: bool,
+    },
+    TokenUsage {
+        day: Option<String>,
         json: bool,
     },
     Inbox {
@@ -230,6 +237,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut note: Option<String> = None;
     let (mut force, mut dry_run) = (false, false);
     let mut revision: Option<String> = None;
+    let mut day: Option<String> = None;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -288,6 +296,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             }),
             Long("all-read") => places.push(PlaceSpec::AllRead),
             Long("revision") => revision = Some(p.value()?.string()?),
+            Long("day") => day = Some(p.value()?.string()?),
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
@@ -298,6 +307,10 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
         ["terminals"] => Cmd::Terminals { json },
         ["workspaces"] => Cmd::Workspaces { json },
         ["subscriptions"] => Cmd::Subscriptions { json },
+        ["token-usage"] => Cmd::TokenUsage {
+            day: day.clone(),
+            json,
+        },
         ["approve", i] => Cmd::Inbox {
             action: inbox::Action::Approve {
                 item: (*i).to_owned(),
@@ -595,6 +608,32 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
                 for s in reply["subscriptions"].as_array().into_iter().flatten() {
                     println!("{}", subscription_row(s));
                 }
+            }
+            Ok(())
+        }
+        Cmd::TokenUsage { day, json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let mut req = json!({"type": "token-usage"});
+            if let Some(d) = day {
+                req["day"] = json!(d);
+            }
+            let reply = c.request(req).await?;
+            let usage = &reply["token_usage"];
+            if json {
+                println!("{usage}");
+                return Ok(());
+            }
+            println!("{}", usage["day"].as_str().unwrap_or("?"));
+            for w in usage["workspaces"].as_array().into_iter().flatten() {
+                println!("{}", token_row(w["workspace"].as_str().unwrap_or("?"), w));
+            }
+            for t in usage["tasks"].as_array().into_iter().flatten() {
+                let name = format!(
+                    "  {}/{}",
+                    t["workspace"].as_str().unwrap_or("?"),
+                    t["title"].as_str().unwrap_or("?")
+                );
+                println!("{}", token_row(&name, t));
             }
             Ok(())
         }
@@ -915,6 +954,17 @@ fn v1_row(t: &Value) -> String {
 }
 
 /// `name agent plan 300m:42%@<resets_at> ...`, or `no report yet`.
+/// `name\tin 1200\tcached 9000\tout 84`.
+fn token_row(name: &str, t: &Value) -> String {
+    let n = |k: &str| t[k].as_u64().unwrap_or(0);
+    format!(
+        "{name}\tin {}\tcached {}\tout {}",
+        n("input"),
+        n("cached"),
+        n("output")
+    )
+}
+
 fn subscription_row(s: &Value) -> String {
     let text = |v: &Value| v.as_str().unwrap_or("").to_owned();
     let windows: Vec<String> = s["windows"]

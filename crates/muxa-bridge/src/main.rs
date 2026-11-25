@@ -17,6 +17,7 @@ mod routines;
 mod settings;
 mod status_line;
 mod thresholds;
+mod tokens;
 mod usage;
 mod utc;
 mod v2;

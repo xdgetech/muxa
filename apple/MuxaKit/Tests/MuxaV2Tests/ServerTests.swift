@@ -150,6 +150,19 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func tokenUsageComesByWorkspaceAndTask() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let usage = try await c.tokenUsage(day: "2026-11-24")
+        #expect(usage == TokenUsage(day: "2026-11-24", workspaces: [
+            WorkspaceTokens(workspace: "Personal", input: 1_200_000, cached: 9_000_000, output: 84_000),
+        ], tasks: [
+            TaskTokens(workspace: "Personal", dir: "/work/demo", title: "demo", input: 800_000, cached: 6_000_000, output: 60_000),
+        ]))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func settingsShowTheHostsFilesWithoutSecrets() async throws {
         let server = try Server()
         let c = try await server.connect()

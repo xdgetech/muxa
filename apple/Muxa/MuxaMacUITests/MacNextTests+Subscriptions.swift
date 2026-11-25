@@ -27,5 +27,8 @@ extension MacNextTests {
         row.click()
         XCTAssertTrue(app.descendants(matching: .any)["usage.claude-personal"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["82%"].waitForExistence(timeout: 5))
+        // Today's tokens: a Task whose agent still runs goes by its name.
+        XCTAssertTrue(app.descendants(matching: .any)["usage.task.app-fix-login"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["1.2M in · 84k out · 9.4M cached"].exists, "app's tokens today")
     }
 }

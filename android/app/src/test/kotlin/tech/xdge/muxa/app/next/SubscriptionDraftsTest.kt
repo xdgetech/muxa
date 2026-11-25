@@ -6,6 +6,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import tech.xdge.muxa.v2.FoundLogin
 import tech.xdge.muxa.v2.LoopInfo
+import tech.xdge.muxa.v2.TaskTokens
+import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Settings
 import tech.xdge.muxa.v2.SettingsAssistant
 import tech.xdge.muxa.v2.SettingsBot
@@ -79,6 +81,16 @@ class SubscriptionDraftsTest {
         val held = LoopInfo("t1", "make test", 3, 600, "paused", 1, 1, 2, reason = "limit-reset", resumesAt = now)
         assertEquals("Paused: its subscription is at its limit", LoopText.state(held))
         assertEquals("Paused: the agent waits for you", LoopText.state(held.copy(reason = "waiting")))
+    }
+
+    @Test
+    fun tokensReadShortAndATaskGoesByItsRunningAgent() {
+        assertEquals("1.2M in · 84k out", TokenText.line(1_200_000, 0, 84_000))
+        assertEquals("950 in · 10k out · 12M cached", TokenText.line(950, 12_400_000, 9_960))
+        val t = TaskTokens("app", "/w/app-fix", "app-fix", 1, 0, 1)
+        val agent = Terminal("t1", "fix-login", true, labels = mapOf("muxa.dir" to "/w/app-fix", "muxa.role" to "agent"), cols = 80, rows = 24)
+        assertEquals("fix-login", TokenText.taskName(t, listOf(agent)))
+        assertEquals("app-fix", TokenText.taskName(t, emptyList()))
     }
 
     private fun settings() = Settings(

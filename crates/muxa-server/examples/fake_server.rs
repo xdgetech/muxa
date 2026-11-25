@@ -119,6 +119,31 @@ impl Host for FakeHost {
         }])
     }
 
+    async fn token_usage(
+        &self,
+        day: Option<String>,
+    ) -> Result<muxa_protocol::v2::TokenUsage, TaskError> {
+        use muxa_protocol::v2::{TaskTokens, TokenUsage, Tokens, WorkspaceTokens};
+        let tokens = |input, cached, output| Tokens {
+            input,
+            cached,
+            output,
+        };
+        Ok(TokenUsage {
+            day: day.unwrap_or_else(|| "2026-11-25".into()),
+            workspaces: vec![WorkspaceTokens {
+                workspace: "Personal".into(),
+                tokens: tokens(1_200_000, 9_000_000, 84_000),
+            }],
+            tasks: vec![TaskTokens {
+                workspace: "Personal".into(),
+                dir: "/work/demo".into(),
+                title: "demo".into(),
+                tokens: tokens(800_000, 6_000_000, 60_000),
+            }],
+        })
+    }
+
     async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
         Ok(vec![Workspace {
             name: "Personal".into(),

@@ -5,6 +5,9 @@ import tech.xdge.muxa.v2.Settings
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SubscriptionSpec
 import tech.xdge.muxa.v2.SubscriptionUsage
+import tech.xdge.muxa.v2.TaskTokens
+import tech.xdge.muxa.v2.Terminal
+import java.util.Locale
 
 // Subscriptions (ADR 0091) as the Settings screens show and save them. The host checks the rest.
 
@@ -103,6 +106,33 @@ fun Settings.runsOn(workspace: String, agent: String?, usage: List<SubscriptionU
     val kind = if (agent?.endsWith("codex") == true) CODEX else CLAUDE_CODE
     val name = names.firstOrNull { n -> subscriptions.any { it.name == n && it.agent == kind } } ?: return null
     return "Runs on $name · ${PlanWindow.line(usage.firstOrNull { it.name == name })}"
+}
+
+/** How token counts read (ADR 0091 §6): `84`, `84k`, `1.2M`. */
+object TokenText {
+    /** How many Tasks Usage lists. */
+    const val TASKS = 10
+
+    fun short(n: Long): String = when {
+        n < THOUSAND -> "$n"
+        n < MILLION -> rounded(n.toDouble() / THOUSAND) + "k"
+        else -> rounded(n.toDouble() / MILLION) + "M"
+    }
+
+    /** `1.2M in · 84k out · 9.4M cached`. */
+    fun line(input: Long, cached: Long, output: Long): String =
+        listOfNotNull("${short(input)} in", "${short(output)} out", "${short(cached)} cached".takeIf { cached > 0 }).joinToString(" · ")
+
+    /** The name of the Task agent that still runs in [t]'s folder, else the folder's name. */
+    fun taskName(t: TaskTokens, terminals: List<Terminal>): String =
+        terminals.firstOrNull { it.labels["muxa.dir"] == t.dir && it.labels["muxa.role"] == "agent" }?.name ?: t.title
+
+    /** One decimal below 10, none from 10: `1.2`, `84`. */
+    private fun rounded(x: Double): String = if (x < ONE_DECIMAL_BELOW) String.format(Locale.ROOT, "%.1f", x) else String.format(Locale.ROOT, "%.0f", x)
+
+    private const val THOUSAND = 1_000L
+    private const val MILLION = 1_000_000L
+    private const val ONE_DECIMAL_BELOW = 9.95
 }
 
 private const val CLAUDE_CODE = WorkerDraft.CLAUDE_CODE

@@ -477,6 +477,9 @@ class NextTest {
         compose.onNodeWithTag("usage.claude-personal").performScrollTo().assert(hasContentDescription("82% of 5 h", substring = true))
         compose.onNodeWithTag("usage.claude-spare").performScrollTo()
             .assert(hasText("No data yet. It shows after the first agent on this login answers."))
+        // Today's tokens: a Task whose agent still runs goes by its name.
+        compose.onNodeWithTag("usage.workspaces").performScrollTo().assert(hasText("1.2M in · 84k out · 9.4M cached", substring = true))
+        compose.onNodeWithTag("usage.task.app-fix-login").performScrollTo().assert(hasText("fix-login"))
     }
 
     @Test

@@ -69,6 +69,8 @@ data class DemoContent(
     val botCounts: List<BotCount> = emptyList(),
     /** What `subscriptions` answers (ADR 0091). */
     val subscriptions: List<SubscriptionUsage> = emptyList(),
+    /** What `token-usage` answers, for any day (ADR 0091 §6). */
+    val tokenUsage: TokenUsage = TokenUsage(""),
 ) {
     companion object {
         /**
@@ -96,6 +98,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private var nextChat = 1
     private val settings = DemoSettings(content.settings)
     private val subscriptions = content.subscriptions
+    private val tokenUsage = content.tokenUsage
     private var inbox = Inbox(1, content.inbox, emptyList(), content.botCounts)
 
     /** Uploads by folder and file name, so a second one with the same name gets a number. */
@@ -233,6 +236,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             "inbox-suggestion" -> suggestion(id, item, (m["accept"] as? JsonPrimitive)?.booleanOrNull == true)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
             "subscriptions" -> reply(id, "subscriptions" to enc(subscriptions))
+            "token-usage" -> reply(id, "token_usage" to enc(tokenUsage.copy(day = m.str("day") ?: tokenUsage.day)))
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {}, "off" to enc(routinesOff()))
             "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
             "reader-list" -> {
@@ -853,8 +857,22 @@ private fun standardContent(): DemoContent {
         // d10 and d11 counted against pr-watch's daily items today, as the host counts them (ADR 0086).
         botCounts = listOf(BotCount("app", "pr-watch", done = 4, deleted = 1, day = LocalDate.now().toString(), added = 2)),
         subscriptions = demoUsage(System.currentTimeMillis() / 1000),
+        tokenUsage = demoTokens(LocalDate.now().toString()),
     )
 }
+
+/** Today's tokens: the Tasks' folders are the demo agents' `muxa.dir`. */
+private fun demoTokens(day: String) = TokenUsage(
+    day,
+    workspaces = listOf(
+        WorkspaceTokens("app", input = 1_200_000, cached = 9_400_000, output = 84_000),
+        WorkspaceTokens("Personal", input = 310_000, cached = 1_900_000, output = 22_000),
+    ),
+    tasks = listOf(
+        TaskTokens("app", "/demo/app-fix-login", "app-fix-login", input = 640_000, cached = 5_100_000, output = 41_000),
+        TaskTokens("app", "/demo/runs/dependency-digest", "dependency-digest", input = 220_000, cached = 1_300_000, output = 9_000),
+    ),
+)
 
 private const val SCAN_SCHEDULE = "*/30 9-18 * * 1-5"
 

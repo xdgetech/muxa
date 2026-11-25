@@ -240,6 +240,22 @@ class ServerTest {
     }
 
     @Test
+    fun tokenUsageComesByWorkspaceAndTask() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(
+                TokenUsage(
+                    "2026-11-24",
+                    listOf(WorkspaceTokens("Personal", 1_200_000, 9_000_000, 84_000)),
+                    listOf(TaskTokens("Personal", "/work/demo", "demo", 800_000, 6_000_000, 60_000)),
+                ),
+                c.tokenUsage("2026-11-24"),
+            )
+            c.close()
+        }
+    }
+
+    @Test
     fun settingsShowTheFilesAndApplyOpsOnce() = runBlocking {
         withTimeout(10_000) {
             val c = connect()

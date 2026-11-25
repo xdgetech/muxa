@@ -35,6 +35,7 @@ import tech.xdge.muxa.v2.RoutineProblem
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SubscriptionUsage
 import tech.xdge.muxa.v2.Terminal
+import tech.xdge.muxa.v2.TokenUsage
 import tech.xdge.muxa.v2.V2Client
 import tech.xdge.muxa.v2.V2Error
 import tech.xdge.muxa.v2.V2Event
@@ -428,6 +429,10 @@ class NextModel(
     var planUsage: List<SubscriptionUsage> by mutableStateOf(emptyList())
         private set
 
+    /** Today's tokens by Workspace and Task (ADR 0091 §6); null from a host without `token-usage`. */
+    var tokenUsage: TokenUsage? by mutableStateOf(null)
+        private set
+
     /**
      * Reads [planUsage] again. A failure keeps the last copy and leaves [requestError] alone: an older host
      * refuses the request, and its screens then show "no data yet".
@@ -440,6 +445,13 @@ class NextModel(
             throw e
         } catch (_: Exception) {
             // Kept: the screens show the last copy, or "no data yet".
+        }
+        try {
+            tokenUsage = c.tokenUsage()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // An older host refuses `token-usage`: Usage then shows the limits only.
         }
     }
 

@@ -583,6 +583,19 @@ class DemoTest {
         }
     }
 
+    /** ADR 0091 §6: today's tokens, whose Task folders are the demo agents'. */
+    @Test
+    fun tokenUsageNamesTheTasksFolders() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val usage = c.tokenUsage()
+            assertEquals(listOf("app", "Personal"), usage.workspaces.map { it.workspace })
+            assertEquals("/demo/app-fix-login", usage.tasks.first().dir)
+            assertEquals("2026-11-01", c.tokenUsage("2026-11-01").day)
+            c.close()
+        }
+    }
+
     /** ADR 0091 §7: onboarding adopts app's env login, and a login terminal opens once per subscription. */
     @Test
     fun aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() = runBlocking {

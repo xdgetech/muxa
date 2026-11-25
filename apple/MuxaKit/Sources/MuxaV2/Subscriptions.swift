@@ -83,3 +83,84 @@ public struct UsageWindow: Codable, Equatable, Sendable {
         try c.encode(UInt64(resetsAt.timeIntervalSince1970), forKey: .resetsAt)
     }
 }
+
+/// The tokens agents used on one day on the host's clock, from their own
+/// transcripts (ADR 0091 §6). Tokens only, never a share of a plan.
+public struct TokenUsage: Codable, Equatable, Sendable {
+    /// `YYYY-MM-DD`.
+    public var day: String
+    /// Most first.
+    public var workspaces: [WorkspaceTokens]
+    /// The folders inside a Workspace other than its root, most first.
+    public var tasks: [TaskTokens]
+
+    public init(day: String, workspaces: [WorkspaceTokens] = [], tasks: [TaskTokens] = []) {
+        self.day = day
+        self.workspaces = workspaces
+        self.tasks = tasks
+    }
+}
+
+public struct WorkspaceTokens: Codable, Equatable, Sendable, Identifiable {
+    public var workspace: String
+    /// Input not read from a cache.
+    public var input: UInt64
+    /// Input read from a cache.
+    public var cached: UInt64
+    /// Output, reasoning included.
+    public var output: UInt64
+
+    public var id: String { workspace }
+
+    public init(workspace: String, input: UInt64, cached: UInt64 = 0, output: UInt64) {
+        self.workspace = workspace
+        self.input = input
+        self.cached = cached
+        self.output = output
+    }
+}
+
+public struct TaskTokens: Codable, Equatable, Sendable, Identifiable {
+    public var workspace: String
+    /// The working folder, as a Task agent's `muxa.dir` names it.
+    public var dir: String
+    /// The folder's name.
+    public var title: String
+    public var input: UInt64
+    public var cached: UInt64
+    public var output: UInt64
+
+    public var id: String { dir }
+
+    public init(workspace: String, dir: String, title: String, input: UInt64, cached: UInt64 = 0, output: UInt64) {
+        self.workspace = workspace
+        self.dir = dir
+        self.title = title
+        self.input = input
+        self.cached = cached
+        self.output = output
+    }
+}
+
+/// How token counts read: `84`, `84k`, `1.2M`.
+public enum TokenText {
+    public static func short(_ n: UInt64) -> String {
+        switch n {
+        case 0..<1_000: "\(n)"
+        case 1_000..<1_000_000: rounded(Double(n) / 1_000) + "k"
+        default: rounded(Double(n) / 1_000_000) + "M"
+        }
+    }
+
+    /// `1.2M in · 84k out · 9.4M cached`.
+    public static func line(input: UInt64, cached: UInt64, output: UInt64) -> String {
+        var parts = ["\(short(input)) in", "\(short(output)) out"]
+        if cached > 0 { parts.append("\(short(cached)) cached") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// One decimal below 10, none from 10: `1.2`, `84`.
+    private static func rounded(_ x: Double) -> String {
+        x < 9.95 ? String(format: "%.1f", x) : String(format: "%.0f", x)
+    }
+}

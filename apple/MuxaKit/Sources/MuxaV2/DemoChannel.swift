@@ -41,12 +41,15 @@ public struct DemoContent: Sendable {
     public var settings: Settings
     /// What `subscriptions` answers (ADR 0091).
     public var subscriptions: [SubscriptionUsage]
+    /// What `token-usage` answers, for any day (ADR 0091 §6).
+    public var tokenUsage: TokenUsage
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
                 taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:],
                 losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1"),
-                subscriptions: [SubscriptionUsage] = []) {
+                subscriptions: [SubscriptionUsage] = [], tokenUsage: TokenUsage = TokenUsage(day: "")) {
         self.subscriptions = subscriptions
+        self.tokenUsage = tokenUsage
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
@@ -244,6 +247,10 @@ actor DemoServer {
             reply(id, ["workspaces": json(content.taskWorkspaces.map(withTasks))])
         case "subscriptions":
             reply(id, ["subscriptions": plain(content.subscriptions)])
+        case "token-usage":
+            var usage = content.tokenUsage
+            usage.day = m["day"] as? String ?? usage.day
+            reply(id, ["token_usage": plain(usage)])
         case "settings":
             reply(id, ["settings": plain(content.settings)])
         case "settings-update":

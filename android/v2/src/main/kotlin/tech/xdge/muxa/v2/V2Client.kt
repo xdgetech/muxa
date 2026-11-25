@@ -190,6 +190,9 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** Each subscription with the limits its agents last reported (ADR 0091). An older server refuses the request. */
     suspend fun subscriptions(): List<SubscriptionUsage> = field("subscriptions", request(V2Request.Subscriptions))
 
+    /** The tokens agents used on [day] (`YYYY-MM-DD`; null for today on the host's clock). An older server refuses it. */
+    suspend fun tokenUsage(day: String? = null): TokenUsage = field("token_usage", request(V2Request.TokenUsage(day)))
+
     /** The Routines, the Workspaces whose Routines could not be read, and those that turn them off. */
     suspend fun routines(): Triple<List<Routine>, List<RoutineProblem>, List<RoutinesOff>> {
         val reply = request(V2Request.Routines)
