@@ -541,11 +541,13 @@ public struct ReaderEntry: Codable, Equatable, Sendable, Identifiable {
     public var oldPath: String?
     public var added: UInt32?
     public var removed: UInt32?
+    /// Documents: git ignores the file, so it is not in the repo (ADR 0099).
+    public var ignored: Bool?
 
     public var id: String { path }
 
     public init(path: String, title: String? = nil, mtime: Int64? = nil, size: Int64? = nil, status: String? = nil,
-                oldPath: String? = nil, added: UInt32? = nil, removed: UInt32? = nil) {
+                oldPath: String? = nil, added: UInt32? = nil, removed: UInt32? = nil, ignored: Bool? = nil) {
         self.path = path
         self.title = title
         self.mtime = mtime
@@ -554,6 +556,7 @@ public struct ReaderEntry: Codable, Equatable, Sendable, Identifiable {
         self.oldPath = oldPath
         self.added = added
         self.removed = removed
+        self.ignored = ignored
     }
 }
 

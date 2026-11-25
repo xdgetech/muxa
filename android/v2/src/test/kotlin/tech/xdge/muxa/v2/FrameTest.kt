@@ -95,6 +95,15 @@ class FrameTest {
     }
 
     @Test
+    fun readerEntriesSayWhenGitIgnoresThem() {
+        val wire = """{"entries":[{"path":"README.md"},{"path":"output/qa/report.md","ignored":true}]}"""
+        val entries = field<List<ReaderEntry>>("entries", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals(listOf(ReaderEntry("README.md"), ReaderEntry("output/qa/report.md", ignored = true)), entries)
+        // A tracked file sends no `ignored`.
+        assertEquals(null, (json.encodeToJsonElement(ReaderEntry.serializer(), entries[0]) as JsonObject)["ignored"])
+    }
+
+    @Test
     fun connectionsAndServersSayWhoUsesThem() {
         val wire = """{"workspaces":[{"name":"a","root":"/a","repos":[],"loop":null,
             "connections":[{"name":"github","default":false,"used_by":{"routines":["digest"],"tasks":["t4"]},"last_used":1700000000}],

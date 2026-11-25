@@ -146,6 +146,8 @@ extension DemoContent {
                     DemoFile(entry: ReaderEntry(path: "PLAN.md"), content: ReaderContent(path: "PLAN.md", text: plan)),
                     DemoFile(entry: ReaderEntry(path: ".muxa/TASK.md"),
                              content: ReaderContent(path: ".muxa/TASK.md", text: "# fix-login\n\nRefresh the session before it expires.\n")),
+                    DemoFile(entry: ReaderEntry(path: "output/qa/report.md", ignored: true),
+                             content: ReaderContent(path: "output/qa/report.md", text: qaReport)),
                 ],
                 .changes: [
                     DemoFile(entry: ReaderEntry(path: "src/auth/session.ts", status: "modified", added: 2, removed: 1),
@@ -284,6 +286,14 @@ extension DemoContent {
         3. Add a test for a session that expired while the app slept.
 
         The goal is in [the Task's brief](.muxa/TASK.md).
+
+        """
+
+    private static let qaReport = """
+        # QA report
+
+        - [x] A session refreshes 60 s before it expires.
+        - [x] A failed refresh retries once.
 
         """
 

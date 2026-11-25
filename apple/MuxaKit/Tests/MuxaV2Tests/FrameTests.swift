@@ -90,6 +90,12 @@ struct FrameTests {
         #expect(throws: (any Error).self) { let _: [Workspace] = try field("workspaces", of: Data(bad.utf8)) }
     }
 
+    @Test func readerEntriesSayWhenGitIgnoresThem() throws {
+        let wire = #"{"entries":[{"path":"README.md"},{"path":"output/qa/report.md","ignored":true}]}"#
+        let entries: [ReaderEntry] = try field("entries", of: Data(wire.utf8))
+        #expect(entries == [ReaderEntry(path: "README.md"), ReaderEntry(path: "output/qa/report.md", ignored: true)])
+    }
+
     @Test func connectionsAndServersSayWhoUsesThem() throws {
         let wire = #"{"workspaces":[{"name":"a","root":"/a","repos":[],"loop":null,"connections":[{"name":"github","default":false,"used_by":{"routines":["digest"],"tasks":["t4"]},"last_used":1700000000}],"mcp":[{"name":"docs","default":true,"used_by":{"routines":[],"tasks":[]},"last_used":null}]}]}"#
         let ws: [Workspace] = try field("workspaces", of: Data(wire.utf8))

@@ -219,13 +219,13 @@ The Reader shows the files of a terminal's folder, its `muxa.dir` label (plan F2
 
 `kind` is one of:
 
-- `docs`: the repo's Markdown files, or outside a repo every Markdown file in the folder, then `.muxa/TASK.md`, `.muxa/HANDOFF.md` and `.muxa/CHECK.md` when present. `html: true` adds HTML files (ADR 0065). Names that start with a dot are never listed, except those three.
+- `docs`: the repo's Markdown files, or outside a repo every Markdown file in the folder, then `.muxa/TASK.md`, `.muxa/HANDOFF.md` and `.muxa/CHECK.md` when present. `html: true` adds HTML files (ADR 0065). In a repo, ignored files are listed too, with `ignored: true`, except under a dependency or build folder (`node_modules`, `target`, `vendor`…) or with `secret`, `credential`, `password`, `token` or `private` in the name (ADR 0099). Tracked and untracked files come first when the list is cut. Names that start with a dot are never listed, except those three.
 - `changes`: the files that differ from HEAD (staged, unstaged and untracked), and in `branch` what the branch's commits changed since it left its base. Outside a repo: `bad-request`. `scope` in `reader-open` is `uncommitted` (the default) or `branch`.
 - `images`: the repo's PNG, JPEG, GIF, WebP and HEIC files, ignored ones too, newest first; outside a repo, the folder's. At most 11 MiB each, so one fits in a frame.
 
 `ReaderList`: `{"root"?,"entries":[ReaderEntry...],"truncated"?,"branch"?:{"base","commits","entries","truncated"?}}`. `root` is the repo's folder name.
 
-`ReaderEntry`: `{"path","title"?,"mtime"?,"size"?,"status"?,"old_path"?,"added"?,"removed"?}`. Documents have `title` for HTML; images `size`; changes `status` (`modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`), `old_path` for a rename and the line counts for a text file.
+`ReaderEntry`: `{"path","title"?,"mtime"?,"size"?,"status"?,"old_path"?,"added"?,"removed"?,"ignored"?}`. Documents have `title` for HTML and `ignored: true` when git ignores the file; images `size`; changes `status` (`modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`), `old_path` for a rename and the line counts for a text file.
 
 `ReaderContent`: `{"path","text"?,"data"?,"binary"?,"mtime"?}`. A document or a diff is `text`; a diff of a binary file is `binary: true`; an image is `data`, its bytes in base64.
 

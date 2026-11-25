@@ -805,6 +805,10 @@ private fun standardContent(): DemoContent {
                     ReaderEntry(".muxa/TASK.md"),
                     ReaderContent(".muxa/TASK.md", text = "# fix-login\n\nRefresh the session before it expires.\n"),
                 ),
+                DemoFile(
+                    ReaderEntry("output/qa/report.md", ignored = true),
+                    ReaderContent("output/qa/report.md", text = DEMO_QA_REPORT),
+                ),
             ),
             ReaderKind.CHANGES to listOf(
                 DemoFile(
@@ -867,6 +871,14 @@ private val NIGHTLY_SWEEP_OPS = listOf(
     // A bot-update replaces the whole Bot, so it keeps the commands it already has.
     SettingsOp.BotUpdate("app", BotSpec("pr-watch", "Watches the app's open PRs and their CI", commands = PR_WATCH_COMMANDS)),
 )
+
+private val DEMO_QA_REPORT = """
+    # QA report
+
+    - [x] A session refreshes 60 s before it expires.
+    - [x] A failed refresh retries once.
+
+""".trimIndent()
 
 private val DEMO_PLAN = """
     # Plan

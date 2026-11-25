@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -165,6 +167,11 @@ private fun FileRow(e: ReaderEntry, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             e.status?.let { Text(it.take(1).uppercase() + " ", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Text(e.title ?: e.path, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (e.ignored) {
+                Text("ignored ", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics { contentDescription = "not in git" }.testTag("reader.ignored.${e.path}"))
+            }
             if (e.added != null && e.removed != null) {
                 Text("+${e.added} −${e.removed}", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)

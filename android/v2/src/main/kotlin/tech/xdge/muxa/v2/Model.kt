@@ -351,6 +351,8 @@ data class ReaderEntry(
     @SerialName("old_path") val oldPath: String? = null,
     val added: Int? = null,
     val removed: Int? = null,
+    /** Documents: git ignores the file, so it is not in the repo (ADR 0099). */
+    val ignored: Boolean = false,
 )
 
 @Serializable

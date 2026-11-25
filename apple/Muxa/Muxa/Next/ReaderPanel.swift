@@ -166,6 +166,11 @@ struct ReaderPanel: View {
                     if let under { Text(under).font(ReaderRowLook.pathFont).foregroundStyle(Palette.textSecondary).lineLimit(1) }
                 }
                 Spacer()
+                if e.ignored == true {
+                    Text("ignored").font(.caption).foregroundStyle(Palette.textSecondary)
+                        .accessibilityLabel("not in git")
+                        .accessibilityIdentifier("reader.ignored.\(e.path)")
+                }
                 if let added = e.added, let removed = e.removed {
                     Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(Palette.textSecondary)
                 }

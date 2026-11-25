@@ -59,6 +59,7 @@ fn doc_list(dir: &Path, html: bool) -> ReaderList {
                 path: d.info.path,
                 title: d.info.title,
                 mtime: d.info.mtime,
+                ignored: d.ignored,
                 ..ReaderEntry::default()
             })
             .collect(),

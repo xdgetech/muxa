@@ -766,6 +766,9 @@ pub struct ReaderEntry {
     pub added: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<u32>,
+    /// Documents: git ignores the file (ADR 0099).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignored: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1331,12 +1334,19 @@ mod tests {
             id: 6,
             body: Reply::Listed {
                 list: ReaderList {
-                    entries: vec![ReaderEntry {
-                        path: "a.rs".into(),
-                        status: Some(crate::ChangeStatus::Renamed),
-                        old_path: Some("b.rs".into()),
-                        ..ReaderEntry::default()
-                    }],
+                    entries: vec![
+                        ReaderEntry {
+                            path: "a.rs".into(),
+                            status: Some(crate::ChangeStatus::Renamed),
+                            old_path: Some("b.rs".into()),
+                            ..ReaderEntry::default()
+                        },
+                        ReaderEntry {
+                            path: "out/report.md".into(),
+                            ignored: true,
+                            ..ReaderEntry::default()
+                        },
+                    ],
                     ..ReaderList::default()
                 },
             },
@@ -1344,7 +1354,10 @@ mod tests {
         let wire = serde_json::to_value(&listed).unwrap();
         assert_eq!(
             wire["list"],
-            json!({"entries": [{"path": "a.rs", "status": "renamed", "old_path": "b.rs"}]})
+            json!({"entries": [
+                {"path": "a.rs", "status": "renamed", "old_path": "b.rs"},
+                {"path": "out/report.md", "ignored": true}
+            ]})
         );
         assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), listed);
         let err = ServerMsg::Error {

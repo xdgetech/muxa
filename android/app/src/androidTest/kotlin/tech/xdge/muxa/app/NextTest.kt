@@ -673,6 +673,11 @@ class NextTest {
         compose.onNodeWithTag("reader.file.PLAN.md").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("reader"), TIMEOUT)
         compose.onNodeWithTag("reader.back").performClick()
+        // A file git ignores is listed, marked as not in git.
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader.ignored.output/qa/report.md"), TIMEOUT)
+        compose.onNodeWithTag("reader.file.output/qa/report.md").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader"), TIMEOUT)
+        compose.onNodeWithTag("reader.back").performClick()
         compose.onNodeWithTag("reader.kind.changes").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("reader.file.src/auth/session.ts"), TIMEOUT)
         compose.onNodeWithTag("reader.kind.images").performClick()

@@ -306,6 +306,19 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheReaderListsAnIgnoredReport() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let report = app.descendants(matching: .any)["reader.file.output/qa/report.md"]
+        XCTAssertTrue(report.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["reader.ignored.output/qa/report.md"].exists)
+        report.click()
+        XCTAssertTrue(app.webViews["reader"].staticTexts["QA report"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testTheArrowKeysMoveThroughTheReadersImages() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()

@@ -141,7 +141,9 @@ class DemoTest {
             val c = open()
             val terminals = c.terminals()
             val agent = terminals.first { it.isTaskAgent }
-            assertEquals(listOf("PLAN.md", ".muxa/TASK.md"), c.readerList(agent.id, ReaderKind.DOCS).entries.map { it.path })
+            val docs = c.readerList(agent.id, ReaderKind.DOCS).entries
+            assertEquals(listOf("PLAN.md", ".muxa/TASK.md", "output/qa/report.md"), docs.map { it.path })
+            assertEquals(listOf(false, false, true), docs.map { it.ignored })
             val (reader, plan) = c.readerOpen(agent.id, ReaderKind.DOCS, "PLAN.md")
             assertEquals(true, plan.text?.startsWith("# Plan"))
             // The plan links another listed document, for the Reader's links.
