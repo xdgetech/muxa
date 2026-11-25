@@ -156,7 +156,7 @@ fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>, tokens:
     SettingsCard(Modifier.testTag("settings.usage")) {
         for (s in subs) {
             val u = usage.firstOrNull { it.name == s.name }
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp).testTag("usage.${s.name}"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp).testTag("usage.${s.name}").semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(s.name, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     u?.asOf?.let { EntryDetail("as of ${time(it)}") }

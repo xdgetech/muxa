@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -474,7 +475,9 @@ class NextTest {
     fun usageShowsEachSubscriptionsLastReport() {
         launch()
         compose.openSettings()
-        compose.onNodeWithTag("usage.claude-personal").performScrollTo().assert(hasContentDescription("82% of 5 h", substring = true))
+        compose.onNodeWithTag("usage.claude-personal").performScrollTo()
+        // Each window's meter is its own element inside the card.
+        compose.onNode(hasContentDescription("82% of 5 h", substring = true) and hasAnyAncestor(hasTestTag("usage.claude-personal"))).assertExists()
         compose.onNodeWithTag("usage.claude-spare").performScrollTo()
             .assert(hasText("No data yet. It shows after the first agent on this login answers."))
         // Today's tokens: a Task whose agent still runs goes by its name.
