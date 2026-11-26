@@ -229,7 +229,7 @@ internal class DemoSettings(initial: Settings) {
         requireCommands(bot.commands)
     }
 
-    /** A subscription is a Claude Code or a Codex login (ADR 0091). */
+    /** A subscription is a Claude Code or a Codex login (ADR 0103). */
     private fun requireAgent(sub: SubscriptionSpec) {
         require(sub.agent == "claude-code" || sub.agent == "codex") { "agent is claude-code or codex" }
     }

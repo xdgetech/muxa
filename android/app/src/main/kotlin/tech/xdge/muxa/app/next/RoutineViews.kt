@@ -82,7 +82,7 @@ fun RoutinePane(model: NextModel, routine: Routine) {
         Fact("Runs", routine.whenText)
         routine.nextDue?.let { Fact("Next run", time(it)) }
         routine.runningSince?.let { Fact("Running since", time(it)) }
-        // ADR 0091 §9: every subscription it may use is at its limit.
+        // ADR 0103 §9: every subscription it may use is at its limit.
         routine.waitingUntil?.let { Fact("Waiting for a limit reset", time(it)) }
         routine.last?.let { last ->
             HorizontalDivider()

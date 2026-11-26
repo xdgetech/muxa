@@ -44,7 +44,7 @@ pub enum Action {
     /// `connect [--daemon-dir DIR]`: relay a protocol v2 client to the daemon.
     Connect(Args),
     /// `statusline --subscription NAME --state-dir DIR`: Claude Code's status
-    /// line for an agent muxa started (ADR 0091).
+    /// line for an agent muxa started (ADR 0103).
     StatusLine {
         subscription: String,
         state_dir: std::path::PathBuf,

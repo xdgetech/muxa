@@ -132,7 +132,7 @@ async fn start_members<B: SessionBackend>(
     }
 }
 
-/// Handoffs that wait for a limit reset (ADR 0091 §9): the lead's run and
+/// Handoffs that wait for a limit reset (ADR 0103 §9): the lead's run and
 /// Routine, beside its handoffs file, which stays.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Held {
@@ -513,7 +513,7 @@ fn lead_run_dirs(config: &crate::config::Config) -> Vec<(String, PathBuf)> {
 }
 
 /// Pure. When a step's members may start, while one member's Claude
-/// logins are all full (ADR 0091 §9): the last such reset.
+/// logins are all full (ADR 0103 §9): the last such reset.
 fn members_wait(
     workspaces: &Workspaces,
     workspace: &str,

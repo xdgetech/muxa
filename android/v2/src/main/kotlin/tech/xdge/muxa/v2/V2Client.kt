@@ -156,7 +156,7 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 
-    /** The login terminal of [subscription] (ADR 0091 §7), and whether it was open already. */
+    /** The login terminal of [subscription] (ADR 0103 §7), and whether it was open already. */
     suspend fun loginStart(subscription: String): Pair<Terminal, Boolean> {
         val reply = request(V2Request.LoginStart(subscription))
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
@@ -187,7 +187,7 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** The host's Workspaces, with what starting a Task in each may use. */
     suspend fun workspaces(): List<Workspace> = field("workspaces", request(V2Request.Workspaces))
 
-    /** Each subscription with the limits its agents last reported (ADR 0091). An older server refuses the request. */
+    /** Each subscription with the limits its agents last reported (ADR 0103). An older server refuses the request. */
     suspend fun subscriptions(): List<SubscriptionUsage> = field("subscriptions", request(V2Request.Subscriptions))
 
     /** The tokens agents used on [day] (`YYYY-MM-DD`; null for today on the host's clock). An older server refuses it. */

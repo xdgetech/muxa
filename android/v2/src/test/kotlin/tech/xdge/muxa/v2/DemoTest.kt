@@ -569,7 +569,7 @@ class DemoTest {
         }
     }
 
-    /** ADR 0091: each subscription with its last report; one never used has none. */
+    /** ADR 0103: each subscription with its last report; one never used has none. */
     @Test
     fun subscriptionsShowTheirLastReport() = runBlocking {
         withTimeout(10_000) {
@@ -583,7 +583,7 @@ class DemoTest {
         }
     }
 
-    /** ADR 0091 §6: today's tokens, whose Task folders are the demo agents'. */
+    /** ADR 0103 §6: today's tokens, whose Task folders are the demo agents'. */
     @Test
     fun tokenUsageNamesTheTasksFolders() = runBlocking {
         withTimeout(10_000) {
@@ -596,7 +596,7 @@ class DemoTest {
         }
     }
 
-    /** ADR 0091 §7: onboarding adopts app's env login, and a login terminal opens once per subscription. */
+    /** ADR 0103 §7: onboarding adopts app's env login, and a login terminal opens once per subscription. */
     @Test
     fun aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() = runBlocking {
         withTimeout(10_000) {
@@ -615,7 +615,7 @@ class DemoTest {
         }
     }
 
-    /** ADR 0091: a login is named once and Workspaces list it; one a Workspace lists cannot go. */
+    /** ADR 0103: a login is named once and Workspaces list it; one a Workspace lists cannot go. */
     @Test
     fun subscriptionsAreAddedListedAndKeptWhileListed() = runBlocking {
         withTimeout(10_000) {

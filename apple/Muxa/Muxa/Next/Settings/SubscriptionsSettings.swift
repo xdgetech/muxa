@@ -1,7 +1,7 @@
 import MuxaV2
 import SwiftUI
 
-/// The host's subscriptions (ADR 0091): agent logins muxa names. First the
+/// The host's subscriptions (ADR 0103): agent logins muxa names. First the
 /// logins it found that are no subscription yet, then the subscriptions with
 /// their 5-hour meter. The login itself stays with the agent.
 struct SubscriptionsSettings: View {
@@ -49,7 +49,7 @@ struct SubscriptionsSettings: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Onboarding (ADR 0091 §7): what muxa found, each with a suggested name.
+    /// Onboarding (ADR 0103 §7): what muxa found, each with a suggested name.
     private func foundSection(_ found: [FoundLogin]) -> some View {
         Section {
             ForEach(found, id: \.self) { f in

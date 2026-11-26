@@ -53,13 +53,13 @@ public enum V2Request: Sendable {
     case chatOpen(terminal: String)
     case chatClose(chat: UInt32)
     case workspaces
-    /// Each subscription and its agents' last report of the plan limits (ADR 0091).
+    /// Each subscription and its agents' last report of the plan limits (ADR 0103).
     case subscriptions
     /// Opens the agent's own login for `subscription` in a host terminal, or
-    /// the one already open (ADR 0091 §7).
+    /// the one already open (ADR 0103 §7).
     case loginStart(subscription: String)
     /// The tokens agents used on `day` (`YYYY-MM-DD`, nil for today), by
-    /// Workspace and by Task (ADR 0091 §6).
+    /// Workspace and by Task (ADR 0103 §6).
     case tokenUsage(day: String?)
     /// The host's editable settings (ADR 0074).
     case settings

@@ -37,7 +37,7 @@ impl Chats {
         }
     }
 
-    /// Reads the adapters' folders again after a settings change (ADR 0091).
+    /// Reads the adapters' folders again after a settings change (ADR 0103).
     pub async fn reload_agents(&self) {
         let registry = Arc::clone(&self.registry);
         if let Err(e) = tokio::task::spawn_blocking(move || registry.reload()).await {

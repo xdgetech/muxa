@@ -1,5 +1,5 @@
 //! `<state dir>/subscriptions/<name>.json`: the plan limits a subscription's
-//! agent last reported (ADR 0091 §6). Percentages and times only. The input
+//! agent last reported (ADR 0103 §6). Percentages and times only. The input
 //! comes from an agent's status line or log, so it is checked as untrusted.
 
 use std::fs::DirBuilder;
@@ -91,7 +91,7 @@ fn valid(w: &Window, now: u64) -> bool {
 
 /// Pure. `old` with `fresh` laid over it, window by window: a report with an
 /// older reset than the stored one is dropped, since it came from a stale
-/// agent (ADR 0091 §6).
+/// agent (ADR 0103 §6).
 pub fn merge(old: &Record, fresh: &[Window], now: u64) -> Record {
     let mut windows: Vec<Window> = old.windows.clone();
     for w in fresh.iter().filter(|w| valid(w, now)) {
@@ -229,7 +229,7 @@ fn last_codex_limits(log: &Path) -> Option<Vec<Window>> {
 }
 
 /// Blocking. Records the limits in each Codex subscription's newest log, as
-/// of the log's time (ADR 0091 §6). A failure is logged by name only.
+/// of the log's time (ADR 0103 §6). A failure is logged by name only.
 pub fn scan_codex(state_dir: &Path, subs: &[subscriptions::Subscription], now: u64) {
     for s in subs
         .iter()

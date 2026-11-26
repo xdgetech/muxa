@@ -490,7 +490,7 @@ class NextTest {
         compose.waitUntilAtLeastOneExists(hasTestTag("task.terminal.t1"), TIMEOUT)
     }
 
-    /** ADR 0091 §4: Use makes a login Current for the next Tasks; switching when full is the Workspace's choice. */
+    /** ADR 0103 §4: Use makes a login Current for the next Tasks; switching when full is the Workspace's choice. */
     @Test
     fun useMakesASubscriptionCurrentForNextTasks() {
         launch()

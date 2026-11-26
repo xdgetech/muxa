@@ -187,7 +187,7 @@ fn an_adopted_place_resumes_in_the_login_that_holds_its_conversation() {
     );
 }
 
-/// ADR 0091 §9: a full login is skipped; when every login of the kind is
+/// ADR 0103 §9: a full login is skipped; when every login of the kind is
 /// full, new work still gets the first, and unattended work waits for the
 /// earliest reset.
 #[test]
@@ -235,7 +235,7 @@ fn a_full_login_is_skipped_and_all_full_means_wait() {
     assert_eq!(kept.name, "work");
 }
 
-/// ADR 0091 §4: with switching off, a Workspace keeps the first login of
+/// ADR 0103 §4: with switching off, a Workspace keeps the first login of
 /// each kind, also when it is full; moving another to the top switches.
 #[test]
 fn with_switching_off_the_first_login_of_its_kind_stays_until_the_user_moves_one_up() {

@@ -158,7 +158,7 @@ data class Routine(
     val bot: String? = null,
     /** The event that runs it, e.g. `review` (ADR 0084). */
     val on: String? = null,
-    /** Unix seconds: a due run waits until then, while every subscription it may use is at its limit (ADR 0091 §9). */
+    /** Unix seconds: a due run waits until then, while every subscription it may use is at its limit (ADR 0103 §9). */
     @SerialName("waiting_until") val waitingUntil: Long? = null,
 ) {
     val id: String get() = "$workspace/$name"
@@ -467,7 +467,7 @@ data class LoopInfo(
     /** `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
     val reason: String? = null,
     @SerialName("last_check") val lastCheck: LastCheck? = null,
-    /** Paused for `limit-reset`: when the fix prompt is typed (ADR 0091 §9). */
+    /** Paused for `limit-reset`: when the fix prompt is typed (ADR 0103 §9). */
     @SerialName("resumes_at") val resumesAt: Long? = null,
 ) {
     /** It still works on the Task. */

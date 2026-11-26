@@ -1,4 +1,4 @@
-//! What a subscription's last report means for new work (ADR 0091 §9): a
+//! What a subscription's last report means for new work (ADR 0103 §9): a
 //! warning at 80%, and from 95% new agents take the next login while
 //! unattended work waits for the reset. A window past its reset means nothing.
 

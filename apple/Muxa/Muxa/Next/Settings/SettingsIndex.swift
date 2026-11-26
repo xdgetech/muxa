@@ -7,7 +7,7 @@ enum SettingsPlace: Hashable {
     case workers
     /// The Capture assistant (ADR 0084).
     case assistant
-    /// Agent logins and onboarding (ADR 0091).
+    /// Agent logins and onboarding (ADR 0103).
     case subscriptions
     /// The plan limits of each subscription.
     case usage

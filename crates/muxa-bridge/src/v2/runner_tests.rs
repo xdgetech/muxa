@@ -543,7 +543,7 @@ async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     assert!(deny.len() > 1, "muxa's own deny rule stays: {deny:?}");
 }
 
-/// ADR 0091: a run takes its Workspace's first login, a Bot's run its own
+/// ADR 0103: a run takes its Workspace's first login, a Bot's run its own
 /// list's, with the login's variable and a `muxa.subscription` label.
 #[tokio::test]
 async fn a_run_gets_its_login_and_a_bot_run_its_bots_login() {
@@ -612,7 +612,7 @@ async fn a_run_gets_its_login_and_a_bot_run_its_bots_login() {
     );
 }
 
-/// ADR 0091 §9: from 95% new runs take the next login; when every login is
+/// ADR 0103 §9: from 95% new runs take the next login; when every login is
 /// full, a scheduled run waits unclaimed, and Run now still starts.
 #[tokio::test]
 async fn a_full_login_is_skipped_and_scheduled_runs_wait_when_all_are_full() {

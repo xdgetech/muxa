@@ -39,7 +39,7 @@ pub const MCP: &str = "muxa.mcp";
 pub const CHECKOUT: &str = "muxa.checkout";
 /// The Bot a talk Task talks with (ADR 0083).
 pub const BOT: &str = "muxa.bot";
-/// The subscription, a named login, the agent runs on (ADR 0091). A restart
+/// The subscription, a named login, the agent runs on (ADR 0103). A restart
 /// keeps it: the conversation lives in that login's folder.
 pub const SUBSCRIPTION: &str = "muxa.subscription";
 
@@ -107,7 +107,7 @@ pub struct Prepared {
     pub env: BTreeMap<String, String>,
     /// The Bot of a talk Task (ADR 0083).
     pub bot: Option<String>,
-    /// The subscription the agent runs on (ADR 0091).
+    /// The subscription the agent runs on (ADR 0103).
     pub subscription: Option<String>,
 }
 
@@ -172,7 +172,7 @@ pub trait Host: Send + Sync {
         async { Ok(Vec::new()) }
     }
 
-    /// What runs for `subscription`'s login terminal (ADR 0091 §7).
+    /// What runs for `subscription`'s login terminal (ADR 0103 §7).
     fn login_launch(
         &self,
         _subscription: &str,
@@ -180,7 +180,7 @@ pub trait Host: Send + Sync {
         async { Err(TaskError::Invalid("this host has no subscriptions".into())) }
     }
 
-    /// Each subscription and the limits its agents last reported (ADR 0091).
+    /// Each subscription and the limits its agents last reported (ADR 0103).
     fn subscriptions(
         &self,
     ) -> impl Future<Output = Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError>> + Send
@@ -189,7 +189,7 @@ pub trait Host: Send + Sync {
     }
 
     /// The tokens agents used on `day` (`YYYY-MM-DD`, else today), by
-    /// Workspace and by Task (ADR 0091 §6).
+    /// Workspace and by Task (ADR 0103 §6).
     fn token_usage(
         &self,
         _day: Option<String>,

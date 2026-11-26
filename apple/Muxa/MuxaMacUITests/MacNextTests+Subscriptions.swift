@@ -1,6 +1,6 @@
 import XCTest
 
-/// Subscriptions and Usage in the Settings window (ADR 0091), as the iOS
+/// Subscriptions and Usage in the Settings window (ADR 0103), as the iOS
 /// `NextTests+Subscriptions`.
 extension MacNextTests {
     @MainActor
@@ -18,7 +18,7 @@ extension MacNextTests {
         XCTAssertTrue(waitFor(personal, labelContaining: "82% of 5 h"))
     }
 
-    /// ADR 0091 §4, as on iOS.
+    /// ADR 0103 §4, as on iOS.
     @MainActor
     func testUseMakesASubscriptionCurrentForNextTasks() throws {
         let app = launch()

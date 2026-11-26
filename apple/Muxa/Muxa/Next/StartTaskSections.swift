@@ -116,7 +116,7 @@ struct TaskToolsSection: View {
     }
 
     /// The Workspace's other logins of this agent's kind. Picking one makes
-    /// it Current for this Task and the next ones (ADR 0091 §4).
+    /// it Current for this Task and the next ones (ADR 0103 §4).
     @ViewBuilder
     private var change: some View {
         let names = Self.names(for: workspace, settings: model.settings)
@@ -144,7 +144,7 @@ struct TaskToolsSection: View {
         return names.filter { n in subs.contains { $0.name == n && $0.agent == kind } }
     }
 
-    /// "Runs on claude-work · 82% of 5 h" (ADR 0091 §7): the first of the
+    /// "Runs on claude-work · 82% of 5 h" (ADR 0103 §7): the first of the
     /// Workspace's subscriptions for its agent, as the host picks it.
     static func login(for ws: Workspace, settings: SettingsModel) -> String? {
         guard let name = names(for: ws, settings: settings).first else { return nil }

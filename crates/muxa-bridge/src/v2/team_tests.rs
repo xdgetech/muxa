@@ -48,7 +48,7 @@ fn a_team_starts_at_most_its_handoffs_a_day() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// ADR 0091 §9: while a member's logins are all full, its step's handoffs
+/// ADR 0103 §9: while a member's logins are all full, its step's handoffs
 /// stay, held; once one has room, the step starts and the hold goes.
 #[test]
 fn handoffs_wait_while_a_members_logins_are_full() {

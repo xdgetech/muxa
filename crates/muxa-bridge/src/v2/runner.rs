@@ -77,7 +77,7 @@ struct Ready {
     /// The names of the connections and MCP servers the agent gets.
     connections: Vec<String>,
     mcp: Vec<String>,
-    /// The subscription the agent runs on (ADR 0091).
+    /// The subscription the agent runs on (ADR 0103).
     subscription: Option<String>,
 }
 
@@ -509,7 +509,7 @@ fn made(
         )
     };
     crate::connections::merge(&mut resolved.environment.env, agent.env);
-    // The loader refuses a login variable beside subscriptions (ADR 0091).
+    // The loader refuses a login variable beside subscriptions (ADR 0103).
     resolved
         .environment
         .env
@@ -528,7 +528,7 @@ fn made(
     })
 }
 
-/// The status line that records `login`'s usage (ADR 0091 §6); None without
+/// The status line that records `login`'s usage (ADR 0103 §6); None without
 /// a login or a state dir.
 pub(crate) fn hook_for(
     config: &crate::config::Config,
@@ -544,7 +544,7 @@ pub(crate) fn unattended(when: When, extra: Option<&RunExtra>) -> bool {
 }
 
 /// Pure. When `routine` may start again, while every Claude subscription it
-/// may use is full (ADR 0091 §9). Routines run Claude Code only.
+/// may use is full (ADR 0103 §9). Routines run Claude Code only.
 pub(crate) fn run_wait(
     workspaces: &Workspaces,
     routine: &Routine,
@@ -591,7 +591,7 @@ pub(crate) fn waits(
 }
 
 /// An agent's list: its Bot's when it has one, else the Workspace's, as
-/// the Workspace's switching allows (ADR 0091 §4).
+/// the Workspace's switching allows (ADR 0103 §4).
 pub(crate) fn names_for(
     workspaces: &Workspaces,
     ws: &crate::records::Workspace,
@@ -666,7 +666,7 @@ pub(crate) fn bot_agent_in(
 }
 
 /// How a background agent starts beyond its command and access: as a Bot,
-/// and with the status line that records its login's usage (ADR 0091).
+/// and with the status line that records its login's usage (ADR 0103).
 struct Start<'a> {
     bot: bool,
     hook: Option<&'a crate::status_line::Hook>,

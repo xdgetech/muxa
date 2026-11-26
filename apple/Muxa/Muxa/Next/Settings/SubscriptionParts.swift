@@ -9,7 +9,7 @@ enum PlanWindow {
         return "\(minutes) min"
     }
 
-    /// Green below 80%, amber to 95%, red from 95%: the thresholds of ADR 0091.
+    /// Green below 80%, amber to 95%, red from 95%: the thresholds of ADR 0103.
     static func color(_ percent: UInt32) -> Color {
         if percent >= 95 { return Theme.failure }
         if percent >= 80 { return Theme.attention }
@@ -24,7 +24,7 @@ enum PlanWindow {
     }
 }
 
-/// One window as a bar, its percent and when it resets (ADR 0091 §8).
+/// One window as a bar, its percent and when it resets (ADR 0103 §8).
 struct PlanMeter: View {
     let window: UsageWindow
     var now = Date()
@@ -79,7 +79,7 @@ struct SubscriptionOrder: View {
     /// What may be added, in the host's order.
     let available: [String]
     let id: String
-    /// Puts a login first of its kind at once (ADR 0091 §4); nil: no
+    /// Puts a login first of its kind at once (ADR 0103 §4); nil: no
     /// Current mark and no Use button.
     var use: ((String) -> Void)?
 

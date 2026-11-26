@@ -26,9 +26,9 @@ data class Settings(
     val workers: List<WorkerSpec> = emptyList(),
     /** The Capture assistant (ADR 0084); null from an older server. */
     val assistant: SettingsAssistant? = null,
-    /** `[[subscription]]`: named agent logins (ADR 0091). */
+    /** `[[subscription]]`: named agent logins (ADR 0103). */
     val subscriptions: List<SubscriptionSpec> = emptyList(),
-    /** Logins on the host that are no subscription yet, for onboarding (ADR 0091 §7). */
+    /** Logins on the host that are no subscription yet, for onboarding (ADR 0103 §7). */
     @SerialName("found_logins") val foundLogins: List<FoundLogin> = emptyList(),
 )
 
@@ -46,7 +46,7 @@ data class FoundLogin(
     val workspace: String? = null,
 )
 
-/** `[[subscription]]` (ADR 0091): an agent login muxa names. The login stays with the agent; muxa keeps the name and the folder. */
+/** `[[subscription]]` (ADR 0103): an agent login muxa names. The login stays with the agent; muxa keeps the name and the folder. */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class SubscriptionSpec(
@@ -68,7 +68,7 @@ data class SettingsAssistant(
     @SerialName("soul_text") val soulText: String? = null,
     /** Read only: the assistant writes it. */
     @SerialName("memory_text") val memoryText: String? = null,
-    /** The Claude subscriptions it runs on, in order (ADR 0091). */
+    /** The Claude subscriptions it runs on, in order (ADR 0103). */
     val subscriptions: List<String> = emptyList(),
 )
 
@@ -93,9 +93,9 @@ data class SettingsWorkspace(
     @SerialName("claude_connectors") val claudeConnectors: Boolean = false,
     /** `[workspace.bots]`: Claude Code permission rules for the Workspace's Bots only (ADR 0087). */
     @SerialName("bot_rules") val botRules: BotRules = BotRules(),
-    /** The subscriptions its agents use, in order (ADR 0091). */
+    /** The subscriptions its agents use, in order (ADR 0103). */
     val subscriptions: List<String> = emptyList(),
-    /** False: each agent keeps the first of its kind, full or not; the user switches by the order (ADR 0091 §4). */
+    /** False: each agent keeps the first of its kind, full or not; the user switches by the order (ADR 0103 §4). */
     @SerialName("switch_subscriptions") val switchSubscriptions: Boolean = true,
     val connections: List<SettingsConnection> = emptyList(),
     val mcp: List<McpSpec> = emptyList(),
@@ -226,7 +226,7 @@ data class BotSpec(
     @SerialName("handoffs_per_day") val handoffsPerDay: Int? = null,
     /** Shell command patterns only this Bot may run, each the inside of a `Bash(...)` rule (ADR 0088). Absent when empty. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val commands: List<String> = emptyList(),
-    /** Its own order of its Workspace's subscriptions (ADR 0091); empty: the Workspace's. Absent when empty. */
+    /** Its own order of its Workspace's subscriptions (ADR 0103); empty: the Workspace's. Absent when empty. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val subscriptions: List<String> = emptyList(),
 )
 

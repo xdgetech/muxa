@@ -94,7 +94,7 @@ struct RoutinePane: View {
                     LabeledContent("Running since", value: Date(timeIntervalSince1970: TimeInterval(since)).formatted())
                 }
                 if let until = routine.waitingUntil {
-                    // ADR 0091 §9: every subscription it may use is at its limit.
+                    // ADR 0103 §9: every subscription it may use is at its limit.
                     LabeledContent("Waiting for a limit reset", value: Date(timeIntervalSince1970: TimeInterval(until)).formatted())
                         .accessibilityIdentifier("routine.waiting")
                 }

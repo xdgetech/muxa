@@ -46,7 +46,7 @@ fun ColumnScope.BotSettingsTab(model: NextModel, editor: SettingsEditor, e: BotE
             "it tells you what it needed.",
         style = MaterialTheme.typography.bodySmall,
     )
-    // A Bot runs on its Workspace's logins only (ADR 0091 §4): a login carries connectors and settings.
+    // A Bot runs on its Workspace's logins only (ADR 0103 §4): a login carries connectors and settings.
     if (ws.subscriptions.isNotEmpty()) {
         Text("Subscriptions", style = MaterialTheme.typography.titleSmall)
         SubscriptionOrder(d.subscriptions, ws.subscriptions, model.planUsage, "bot.subs", on) { d = d.copy(subscriptions = it) }

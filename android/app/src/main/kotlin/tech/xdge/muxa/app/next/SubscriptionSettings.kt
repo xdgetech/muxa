@@ -45,7 +45,7 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * The host's subscriptions (ADR 0091): first the logins it found that are no subscription yet, then the
+ * The host's subscriptions (ADR 0103): first the logins it found that are no subscription yet, then the
  * subscriptions with their 5-hour line. The login itself stays with the agent. [open] shows a login terminal.
  */
 @Composable
@@ -73,7 +73,7 @@ fun SubscriptionsSection(editor: SettingsEditor, model: NextModel, usage: List<S
     }
 }
 
-/** Onboarding (ADR 0091 §7): what the host found, each with a suggested name. */
+/** Onboarding (ADR 0103 §7): what the host found, each with a suggested name. */
 @Composable
 private fun FoundCard(editor: SettingsEditor, found: List<FoundLogin>) {
     val scope = rememberCoroutineScope()
@@ -148,7 +148,7 @@ private fun LoginButton(model: NextModel, name: String, command: String, open: (
     Text("Log in in that terminal; muxa does not see it. In a shell on the host: $command", style = MaterialTheme.typography.bodySmall)
 }
 
-/** The Usage part of Settings (ADR 0091 §8): each subscription's windows as its agents last reported them. */
+/** The Usage part of Settings (ADR 0103 §8): each subscription's windows as its agents last reported them. */
 @Composable
 fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>, tokens: TokenUsage?, terminals: List<Terminal>, open: (Terminal) -> Unit) {
     val subs = editor.settings?.subscriptions.orEmpty()
@@ -175,7 +175,7 @@ fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>, tokens:
     tokens?.let { TokenCards(it, terminals, open) }
 }
 
-/** Today's tokens (ADR 0091 §6): each Workspace, then the ten Task folders that used most. A running Task's row opens it. */
+/** Today's tokens (ADR 0103 §6): each Workspace, then the ten Task folders that used most. A running Task's row opens it. */
 @Composable
 private fun TokenCards(tokens: TokenUsage, terminals: List<Terminal>, open: (Terminal) -> Unit) {
     SettingsHeader("Today by Workspace")
@@ -245,7 +245,7 @@ fun PlanMeter(window: UsageWindow) {
     }
 }
 
-/** Green below 80%, amber to 95%, red from 95%: the thresholds of ADR 0091. */
+/** Green below 80%, amber to 95%, red from 95%: the thresholds of ADR 0103. */
 fun meterColor(percent: Int): Color = when {
     percent >= PlanWindow.SWITCH -> Theme.failure
     percent >= PlanWindow.WARN -> Theme.attention
@@ -267,7 +267,7 @@ fun SubscriptionOrder(
     enabled: Boolean,
     /** The first of each kind; shown as Current when [use] is set. */
     current: Set<String> = emptySet(),
-    /** Puts a login first of its kind at once (ADR 0091 §4); null: no Current and no Use. */
+    /** Puts a login first of its kind at once (ADR 0103 §4); null: no Current and no Use. */
     use: ((String) -> Unit)? = null,
     change: (List<String>) -> Unit,
 ) {

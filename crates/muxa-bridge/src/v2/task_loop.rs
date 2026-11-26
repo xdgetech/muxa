@@ -4,7 +4,7 @@
 //! until `max_attempts`, then makes a Failed item. The loop lives in the
 //! working place's `.muxa/loop.json`, so a restarted daemon goes on with it.
 //! While the agent's subscription is at its limit, the fail prompt waits
-//! for the reset (ADR 0091 §9). Neither the check nor its output reaches the log.
+//! for the reset (ADR 0103 §9). Neither the check nor its output reaches the log.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -34,7 +34,7 @@ struct Agent {
     workspace: String,
     /// What items call the Task: its branch, else its title.
     title: String,
-    /// The login it runs on, which it keeps (ADR 0091 §5).
+    /// The login it runs on, which it keeps (ADR 0103 §5).
     subscription: Option<String>,
 }
 
@@ -346,7 +346,7 @@ impl TaskLoops {
         self.finish(id, &agent, stop, item).await;
     }
 
-    /// Until when the agent's subscription takes no more work (ADR 0091 §9).
+    /// Until when the agent's subscription takes no more work (ADR 0103 §9).
     /// None without a subscription, below the limit, or without current data.
     async fn full_until(&self, agent: &Agent) -> Option<u64> {
         let name = agent.subscription.clone()?;

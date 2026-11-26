@@ -16,9 +16,9 @@ public struct Settings: Codable, Equatable, Sendable {
     public var workers: [WorkerSpec]
     /// The Capture assistant (ADR 0084); nil from an older server.
     public var assistant: SettingsAssistant?
-    /// `[[subscription]]`: named agent logins (ADR 0091).
+    /// `[[subscription]]`: named agent logins (ADR 0103).
     public var subscriptions: [SubscriptionSpec]
-    /// Logins on the host that are no subscription yet, for onboarding (ADR 0091 §7).
+    /// Logins on the host that are no subscription yet, for onboarding (ADR 0103 §7).
     public var foundLogins: [FoundLogin]
 
     public init(revision: String, readOnly: Bool = false, problem: String? = nil, workspaces: [SettingsWorkspace] = [],
@@ -73,7 +73,7 @@ public struct FoundLogin: Codable, Equatable, Sendable, Hashable {
     enum CodingKeys: String, CodingKey { case agent, home, workspace }
 }
 
-/// `[[subscription]]` (ADR 0091): an agent login muxa names. The login stays
+/// `[[subscription]]` (ADR 0103): an agent login muxa names. The login stays
 /// with the agent; muxa keeps the name and the folder.
 public struct SubscriptionSpec: Codable, Equatable, Sendable, Identifiable {
     /// Lowercase letters, digits, `-` and `_`, as a Bot's name.
@@ -107,7 +107,7 @@ public struct SettingsAssistant: Codable, Equatable, Sendable {
     public var soulText: String?
     /// `assistant/memory.md`, which the assistant writes.
     public var memoryText: String?
-    /// The Claude subscriptions it runs on, in order (ADR 0091).
+    /// The Claude subscriptions it runs on, in order (ADR 0103).
     public var subscriptions: [String]
 
     public init(enabled: Bool = false, worker: String? = nil, soulText: String? = "", memoryText: String? = "",
@@ -155,10 +155,10 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var claudeConnectors: Bool
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     public var botRules: BotRules
-    /// The subscriptions its agents use, in order (ADR 0091).
+    /// The subscriptions its agents use, in order (ADR 0103).
     public var subscriptions: [String] = []
     /// False: each agent keeps the first of its kind, full or not; the user
-    /// switches by moving one to the top (ADR 0091 §4).
+    /// switches by moving one to the top (ADR 0103 §4).
     public var switchSubscriptions: Bool = true
     public var connections: [SettingsConnection]
     public var mcp: [McpSpec]
@@ -521,7 +521,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     /// Shell commands only this Bot may run (ADR 0088): the inside of a
     /// Claude Code `Bash(...)` rule, such as `/path/collect.sh delivery:*`.
     public var commands: [String]
-    /// Its own order of its Workspace's subscriptions (ADR 0091). Empty: the
+    /// Its own order of its Workspace's subscriptions (ADR 0103). Empty: the
     /// Workspace's.
     public var subscriptions: [String]
 

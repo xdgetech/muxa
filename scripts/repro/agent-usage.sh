@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Facts (docs/findings/agent-usage.md, ADR 0091 S0): what a login reports
+# Facts (docs/findings/agent-usage.md, ADR 0103 S0): what a login reports
 # about its plan limits. Needs a real login, so humans only, with
 # MUXA_REPRO_LOGIN=1; CI skips. It keeps only rate limit fields, never a
 # transcript, a prompt or a token.

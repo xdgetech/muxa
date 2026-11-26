@@ -60,7 +60,7 @@ struct BotDraft: Identifiable {
     var handoffs = ""
     /// Shell commands only this Bot may run (ADR 0088).
     var commands: [EditableLine] = []
-    /// Its own order of its Workspace's subscriptions (ADR 0091); empty: the Workspace's.
+    /// Its own order of its Workspace's subscriptions (ADR 0103); empty: the Workspace's.
     var subscriptions: [String] = []
     var soul = ""
     /// The Soul as read; nil when it could not be read.
@@ -262,7 +262,7 @@ struct BotSettingsSections: View {
         logins
     }
 
-    /// A Bot runs on its Workspace's logins only (ADR 0091 §4): a login carries
+    /// A Bot runs on its Workspace's logins only (ADR 0103 §4): a login carries
     /// connectors and settings, and the Workspace is the boundary.
     @ViewBuilder
     private var logins: some View {

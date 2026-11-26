@@ -3,7 +3,7 @@ package tech.xdge.muxa.v2
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** A subscription, a named agent login, and the plan limits its agents last reported (ADR 0091). No credential and no account. */
+/** A subscription, a named agent login, and the plan limits its agents last reported (ADR 0103). No credential and no account. */
 @Serializable
 data class SubscriptionUsage(
     val name: String,
@@ -30,7 +30,7 @@ data class UsageWindow(
     fun hasReset(nowSeconds: Long = System.currentTimeMillis() / 1000): Boolean = resetsAt <= nowSeconds
 }
 
-/** The tokens agents used on one day on the host's clock, from their own transcripts (ADR 0091 §6). Tokens only. */
+/** The tokens agents used on one day on the host's clock, from their own transcripts (ADR 0103 §6). Tokens only. */
 @Serializable
 data class TokenUsage(
     /** `YYYY-MM-DD`. */

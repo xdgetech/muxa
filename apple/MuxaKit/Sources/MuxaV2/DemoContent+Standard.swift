@@ -201,7 +201,7 @@ extension DemoContent {
         ])
     }()
 
-    /// The limits the demo's agents last reported (ADR 0091): one near its
+    /// The limits the demo's agents last reported (ADR 0103): one near its
     /// 5-hour limit, one never used yet.
     private static let usage: [SubscriptionUsage] = {
         let now = Date()

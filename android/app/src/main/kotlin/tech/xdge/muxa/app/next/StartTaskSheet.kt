@@ -134,7 +134,7 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
                         if (ws != null) {
                             val logins = settings?.loginsFor(ws.name, ws.agent).orEmpty()
                             val runsOn = settings?.runsOn(ws.name, ws.agent, model.planUsage)
-                            // Use for next Tasks (ADR 0091 §4): the Workspace's order changes on the host.
+                            // Use for next Tasks (ADR 0103 §4): the Workspace's order changes on the host.
                             val use: (String) -> Unit = { name ->
                                 settings?.let { s ->
                                     val all = s.workspaces.firstOrNull { it.name == ws.name }?.subscriptions.orEmpty()
@@ -183,7 +183,7 @@ private fun TaskOptions(
 ) {
     Places(ws, choices, change)
     toolsLine(ws)?.let { Text(it, Modifier.testTag("task.tools"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium) }
-    // The Workspace's order picks the login (ADR 0091 §4); Change moves another first.
+    // The Workspace's order picks the login (ADR 0103 §4); Change moves another first.
     runsOn?.let {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(it, Modifier.weight(1f).testTag("task.subscription"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium)

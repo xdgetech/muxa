@@ -72,7 +72,7 @@ struct WorkspaceAgentForm: View {
         }
     }
 
-    /// The subscriptions its agents use, in order (ADR 0091): each agent takes
+    /// The subscriptions its agents use, in order (ADR 0103): each agent takes
     /// the first of its kind. A login its env names is adopted from here.
     private var logins: some View {
         Section {

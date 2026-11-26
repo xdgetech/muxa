@@ -235,7 +235,7 @@ fn launch(
     let config_file = mcp::write(&dir, &[], &[])?;
     let command = mcp::with_flags(command, &config_file, true);
     let rules = [bot_run::deny(&files.bound)];
-    // Its own list, else the default login as before (ADR 0091 §4).
+    // Its own list, else the default login as before (ADR 0103 §4).
     let login = crate::records::subscriptions::login(
         all.subscriptions(),
         &all.assistant().subscriptions,

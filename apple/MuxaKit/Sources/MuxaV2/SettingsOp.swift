@@ -47,9 +47,9 @@ public enum SettingsOp: Equatable, Sendable {
     /// Renames a Bot with its Routines, teams, folder and Inbox items (ADR 0089).
     case botRename(workspace: String, from: String, to: String)
     /// The Capture assistant (ADR 0084). `soulText` replaces its `soul.md`.
-    /// `subscriptions` nil keeps the list; an array replaces it (ADR 0091).
+    /// `subscriptions` nil keeps the list; an array replaces it (ADR 0103).
     case assistantUpdate(enabled: Bool, worker: String? = nil, soulText: String? = nil, subscriptions: [String]? = nil)
-    /// A named agent login (ADR 0091). The login itself stays with the agent.
+    /// A named agent login (ADR 0103). The login itself stays with the agent.
     case subscriptionAdd(subscription: SubscriptionSpec)
     /// Replaces the subscription named `subscription.name`.
     case subscriptionUpdate(subscription: SubscriptionSpec)

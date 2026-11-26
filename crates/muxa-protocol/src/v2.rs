@@ -461,11 +461,11 @@ pub enum ClientMsg {
     Workspaces {
         id: u64,
     },
-    /// Each subscription and the plan limits its agents last reported (ADR 0091).
+    /// Each subscription and the plan limits its agents last reported (ADR 0103).
     Subscriptions {
         id: u64,
     },
-    /// The tokens agents used on one day, by Workspace and by Task (ADR 0091
+    /// The tokens agents used on one day, by Workspace and by Task (ADR 0103
     /// §6). `day` is `YYYY-MM-DD` on the host's clock; absent, today.
     TokenUsage {
         id: u64,
@@ -473,7 +473,7 @@ pub enum ClientMsg {
         day: Option<String>,
     },
     /// Opens the agent's own login for a subscription in a host terminal,
-    /// or the one already open (ADR 0091 §7). Answers `started`.
+    /// or the one already open (ADR 0103 §7). Answers `started`.
     LoginStart {
         id: u64,
         subscription: String,
@@ -540,7 +540,7 @@ pub enum WorktreeMode {
 }
 
 /// A subscription, a named agent login, and the plan limits its agents last
-/// reported (ADR 0091). No credential and no account.
+/// reported (ADR 0103). No credential and no account.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubscriptionUsage {
     pub name: String,
@@ -557,7 +557,7 @@ pub struct SubscriptionUsage {
 }
 
 /// The tokens of one day on the host's clock, from the agents' transcripts
-/// (ADR 0091 §6). Tokens only: no vendor tells a share of a plan.
+/// (ADR 0103 §6). Tokens only: no vendor tells a share of a plan.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
     /// `YYYY-MM-DD`.
@@ -788,7 +788,7 @@ pub struct LoopInfo {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_check: Option<LastCheck>,
-    /// Paused for `limit-reset`: when the fail prompt is typed (ADR 0091 §9).
+    /// Paused for `limit-reset`: when the fail prompt is typed (ADR 0103 §9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumes_at: Option<u64>,
 }
@@ -1088,7 +1088,7 @@ pub struct Routine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on: Option<String>,
     /// Unix seconds: a due run waits until then, while every subscription it
-    /// may use is at its limit (ADR 0091 §9).
+    /// may use is at its limit (ADR 0103 §9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiting_until: Option<i64>,
 }

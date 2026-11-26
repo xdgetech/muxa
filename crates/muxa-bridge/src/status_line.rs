@@ -1,4 +1,4 @@
-//! Claude Code's status line as muxa's usage source (ADR 0091 §6). muxa adds
+//! Claude Code's status line as muxa's usage source (ADR 0103 §6). muxa adds
 //! `muxa-bridge statusline` to an agent's `--settings`; it records the plan
 //! limits from its stdin, then runs and prints the login's own status line.
 
@@ -179,7 +179,7 @@ fn run_own(command: &str, input: &[u8]) -> String {
         .unwrap_or_default()
 }
 
-/// Pure. A subscription's login terminal (ADR 0091 §7): the agent in a
+/// Pure. A subscription's login terminal (ADR 0103 §7): the agent in a
 /// login `shell`, so its PATH is the user's, with the subscription's folder.
 /// Claude Code asks to log in on a new folder, or takes `/login`; Codex has
 /// `codex login`.

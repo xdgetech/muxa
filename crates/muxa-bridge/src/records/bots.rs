@@ -45,7 +45,7 @@ pub struct Bot {
     pub handoffs_per_day: u32,
     /// Shell command patterns only this Bot may run (ADR 0088).
     pub commands: Vec<String>,
-    /// Its logins in order, from its Workspace's list (ADR 0091). Empty:
+    /// Its logins in order, from its Workspace's list (ADR 0103). Empty:
     /// the Workspace's list.
     pub subscriptions: Vec<String>,
 }
@@ -118,7 +118,7 @@ impl RawBot {
         }
         check_commands(&self.commands).map_err(|r| at(&r))?;
         // A login carries connectors and settings: a Bot stays inside its
-        // Workspace's list (ADR 0087, 0091).
+        // Workspace's list (ADR 0087, 0103).
         let allowed: Vec<&str> = workspace.subscriptions.iter().map(String::as_str).collect();
         let owner = format!("bot {:?} of {:?}", self.name, workspace.name);
         let subscriptions = super::subscriptions::keep_known(self.subscriptions, &allowed, &owner);

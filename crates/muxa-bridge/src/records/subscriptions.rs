@@ -1,4 +1,4 @@
-//! `[[subscription]]` in `workspaces.toml` (ADR 0091): a named agent login on
+//! `[[subscription]]` in `workspaces.toml` (ADR 0103): a named agent login on
 //! the host. muxa keeps its name and folder; the login itself stays with the
 //! agent. Workspaces, Bots and the Capture assistant name them in order.
 
@@ -25,7 +25,7 @@ pub struct Subscription {
     pub home: PathBuf,
     /// A label only.
     pub plan: Option<String>,
-    /// The agent's own default folder: it gets no variable (ADR 0091 §1).
+    /// The agent's own default folder: it gets no variable (ADR 0103 §1).
     pub default_login: bool,
 }
 
@@ -141,7 +141,7 @@ pub(super) fn check_list(names: &[String], all: &[Subscription]) -> Result<(), S
 }
 
 /// The names of `wanted` that `allowed` has, in `wanted`'s order. A list in a
-/// file agents write never blocks a load (ADR 0091 §4): the rest are dropped
+/// file agents write never blocks a load (ADR 0103 §4): the rest are dropped
 /// and named in the log.
 pub(super) fn keep_known(wanted: Vec<String>, allowed: &[&str], owner: &str) -> Vec<String> {
     let (kept, dropped): (Vec<String>, Vec<String>) = wanted
@@ -168,7 +168,7 @@ pub fn agent_of(command: &super::workers::LaunchCommand) -> Option<WorkerAgent> 
 
 /// The subscription an agent started with `command` uses: `keep` when it
 /// still exists for that agent (a restart keeps its conversation's login,
-/// ADR 0091 §5), else [`pick`] from `names`.
+/// ADR 0103 §5), else [`pick`] from `names`.
 pub fn choose<'a>(
     all: &'a [Subscription],
     names: &[String],
@@ -207,7 +207,7 @@ pub fn login(
 }
 
 /// The Claude subscription among `names` whose folder holds a conversation
-/// for `dir`: an adopted place resumes there (ADR 0091 §5).
+/// for `dir`: an adopted place resumes there (ADR 0103 §5).
 pub fn holding(all: &[Subscription], names: &[String], dir: &Path) -> Option<String> {
     names
         .iter()
@@ -217,7 +217,7 @@ pub fn holding(all: &[Subscription], names: &[String], dir: &Path) -> Option<Str
         .map(|s| s.name.clone())
 }
 
-/// `names` as a Workspace lets its agents use them (ADR 0091 §4): all of
+/// `names` as a Workspace lets its agents use them (ADR 0103 §4): all of
 /// them in order, or with switching off only the first of each kind, which
 /// the user moves to the top to switch by hand.
 pub fn order(all: &[Subscription], names: &[String], switch: bool) -> Vec<String> {
@@ -251,7 +251,7 @@ fn of_kind<'a, 'n>(
         .filter(move |s| s.agent == agent)
 }
 
-/// The first subscription in `names` for `agent` below 95% (ADR 0091 §9).
+/// The first subscription in `names` for `agent` below 95% (ADR 0103 §9).
 /// When every one is full, still the first: the user's own Task starts, and
 /// unattended work asks [`wait_until`] first.
 pub fn pick<'a>(

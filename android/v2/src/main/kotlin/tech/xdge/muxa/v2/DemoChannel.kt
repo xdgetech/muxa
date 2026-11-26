@@ -67,9 +67,9 @@ data class DemoContent(
     val settings: Settings = Settings("1"),
     /** How the Bots' items ended before; Done and Delete add to them. */
     val botCounts: List<BotCount> = emptyList(),
-    /** What `subscriptions` answers (ADR 0091). */
+    /** What `subscriptions` answers (ADR 0103). */
     val subscriptions: List<SubscriptionUsage> = emptyList(),
-    /** What `token-usage` answers, for any day (ADR 0091 §6). */
+    /** What `token-usage` answers, for any day (ADR 0103 §6). */
     val tokenUsage: TokenUsage = TokenUsage(""),
 ) {
     companion object {
@@ -416,7 +416,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
     }
 
-    /** A subscription's login terminal (ADR 0091 §7): one per subscription; its screen shows where the agent asks to log in. */
+    /** A subscription's login terminal (ADR 0103 §7): one per subscription; its screen shows where the agent asks to log in. */
     private fun loginStart(id: Long, name: String?) {
         val sub = settings.current.subscriptions.firstOrNull { it.name == name }
             ?: return send(error(id, "bad-request", "no subscription named ${name.orEmpty()}"))
@@ -919,7 +919,7 @@ private val DEMO_DIFF = """
 /** A 1×1 PNG. */
 private const val DEMO_PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
-/** The limits the demo's agents last reported (ADR 0091): one near its 5-hour limit, one never used yet. */
+/** The limits the demo's agents last reported (ADR 0103): one near its 5-hour limit, one never used yet. */
 private fun demoUsage(now: Long): List<SubscriptionUsage> {
     val hours = { h: Double -> now + (h * 3600).toLong() }
     return listOf(

@@ -39,9 +39,9 @@ public struct DemoContent: Sendable {
     public var losesWork: [String: String]
     /// What `settings` answers first; `settings-update` changes it in memory.
     public var settings: Settings
-    /// What `subscriptions` answers (ADR 0091).
+    /// What `subscriptions` answers (ADR 0103).
     public var subscriptions: [SubscriptionUsage]
-    /// What `token-usage` answers, for any day (ADR 0091 §6).
+    /// What `token-usage` answers, for any day (ADR 0103 §6).
     public var tokenUsage: TokenUsage
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
@@ -502,7 +502,7 @@ actor DemoServer {
         if watching { send(["type": "changed", "terminal": json(t)]) }
     }
 
-    /// A subscription's login terminal (ADR 0091 §7): one per subscription; the
+    /// A subscription's login terminal (ADR 0103 §7): one per subscription; the
     /// demo's screen shows where the agent asks to log in.
     private func loginStart(_ id: UInt64, _ name: String?) {
         guard let name, let sub = content.settings.subscriptions.first(where: { $0.name == name }) else {

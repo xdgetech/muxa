@@ -80,11 +80,11 @@ pub struct Workspace {
     pub claude_connectors: bool,
     /// Permission rules for this Workspace's Bots only (ADR 0087).
     pub bot_rules: super::bots::BotRules,
-    /// The logins its agents use, in order (ADR 0091). Empty: as before,
+    /// The logins its agents use, in order (ADR 0103). Empty: as before,
     /// the env's `CLAUDE_CONFIG_DIR` or `CODEX_HOME`, else the default login.
     pub subscriptions: Vec<String>,
     /// A full login gives way to the next of its kind. Off: the first of
-    /// its kind only, chosen by the order the user sets (ADR 0091 §4).
+    /// its kind only, chosen by the order the user sets (ADR 0103 §4).
     pub switch_subscriptions: bool,
 }
 
@@ -100,7 +100,7 @@ pub struct Workspaces {
     codex_threads: bool,
     /// `[assistant]` (ADR 0084).
     assistant: Assistant,
-    /// `[[subscription]]` (ADR 0091), in file order.
+    /// `[[subscription]]` (ADR 0103), in file order.
     subscriptions: Vec<Subscription>,
 }
 
@@ -364,7 +364,7 @@ impl Workspaces {
 
     /// Every folder the agent with `key` (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`)
     /// keeps a login in: the Workspaces' env, then every subscription that
-    /// sets the variable (ADR 0016, 0091). No duplicates.
+    /// sets the variable (ADR 0016, 0103). No duplicates.
     pub fn agent_dirs(&self, key: &str) -> Vec<PathBuf> {
         let mut out =
             super::agent_env::dirs_of(self.list.iter().filter_map(|w| w.agent.as_ref()), key);

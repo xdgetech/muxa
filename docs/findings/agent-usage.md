@@ -1,6 +1,6 @@
 # Agent usage and plan limits: what muxa can read
 
-ADR 0091 relies on these facts. Sources were read on 2026-11-24. Rows marked *local* were seen in files on a Mac with Claude Code 2.1.331 and codex-cli 0.171.0. Rows marked *docs* were not probed. `scripts/repro/agent-usage.sh` checks the status line and Codex rows on a real login (humans only, `MUXA_REPRO_LOGIN=1`). Re-check after an agent upgrade.
+ADR 0103 relies on these facts. Sources were read on 2026-11-24. Rows marked *local* were seen in files on a Mac with Claude Code 2.1.331 and codex-cli 0.171.0. Rows marked *docs* were not probed. `scripts/repro/agent-usage.sh` checks the status line and Codex rows on a real login (humans only, `MUXA_REPRO_LOGIN=1`). Re-check after an agent upgrade.
 
 ## Claude Code (Pro, Max, Ultra login)
 

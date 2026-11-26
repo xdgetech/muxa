@@ -203,7 +203,7 @@ data class BotDraft(
     val handoffs: String = "",
     /** Shell commands only this Bot may run (ADR 0088), as the inside of `Bash(...)`. */
     val commands: List<String> = emptyList(),
-    /** Its own order of its Workspace's subscriptions (ADR 0091); empty: the Workspace's. */
+    /** Its own order of its Workspace's subscriptions (ADR 0103); empty: the Workspace's. */
     val subscriptions: List<String> = emptyList(),
 ) {
     val problem: String?
@@ -284,11 +284,11 @@ data class AssistantDraft(
     val soul: String = "",
     /** The Soul as read; null when it could not be read. */
     val originalSoul: String? = null,
-    /** The Claude subscriptions it runs on, in order (ADR 0091). */
+    /** The Claude subscriptions it runs on, in order (ADR 0103). */
     val subscriptions: List<String> = emptyList(),
     val originalSubscriptions: List<String> = emptyList(),
 ) {
-    /** The list goes only when it changed, so a host older than ADR 0091 takes the rest. */
+    /** The list goes only when it changed, so a host older than ADR 0103 takes the rest. */
     fun op() = SettingsOp.AssistantUpdate(
         enabled, worker, soul.takeIf { it != (originalSoul ?: "") }, subscriptions.takeIf { it != originalSubscriptions },
     )

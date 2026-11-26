@@ -11,7 +11,7 @@ final class SettingsModel {
     private(set) var settings: Settings?
     /// The `workspaces` reply by name, for `used_by` and `last_used`.
     private(set) var usage: [String: Workspace] = [:]
-    /// What each subscription's agents last reported of its plan limits (ADR 0091).
+    /// What each subscription's agents last reported of its plan limits (ADR 0103).
     private(set) var planUsage: [SubscriptionUsage] = []
     /// Today's tokens by Workspace and Task; nil from a host without `token-usage`.
     private(set) var tokenUsage: TokenUsage?

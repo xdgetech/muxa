@@ -196,7 +196,7 @@ extension Settings {
     }
 }
 
-/// A subscription is a Claude Code or a Codex login (ADR 0091).
+/// A subscription is a Claude Code or a Codex login (ADR 0103).
 private func checkAgent(_ s: SubscriptionSpec) throws {
     guard s.agent == "claude-code" || s.agent == "codex" else { throw refusal("agent is claude-code or codex") }
 }

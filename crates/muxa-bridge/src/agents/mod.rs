@@ -89,7 +89,7 @@ impl Registry {
     }
 
     /// The standard set from `source`, which [`Registry::reload`] reads
-    /// again: a settings change can add a subscription's folder (ADR 0091).
+    /// again: a settings change can add a subscription's folder (ADR 0103).
     pub fn reloadable(source: DirSource) -> Self {
         let adapters = Self::standard(&source()).take();
         Self {

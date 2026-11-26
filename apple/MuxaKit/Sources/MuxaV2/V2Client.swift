@@ -142,7 +142,7 @@ public actor V2Client {
 
     /// A new shell beside the Task's agent `terminal`; `refused(code: "conflict")`
     /// when the Task has its 3 shells.
-    /// The login terminal of `subscription` (ADR 0091 §7); `existing` when it was open already.
+    /// The login terminal of `subscription` (ADR 0103 §7); `existing` when it was open already.
     public func loginStart(_ subscription: String) async throws -> (Terminal, existing: Bool) {
         let reply = try await request(.loginStart(subscription: subscription))
         return (try field("terminal", of: reply), try field("existing", of: reply))
@@ -183,7 +183,7 @@ public actor V2Client {
         try field("workspaces", of: await request(.workspaces))
     }
 
-    /// Each subscription with the limits its agents last reported (ADR 0091).
+    /// Each subscription with the limits its agents last reported (ADR 0103).
     /// An older server refuses the request.
     public func subscriptions() async throws -> [SubscriptionUsage] {
         try field("subscriptions", of: await request(.subscriptions), decoder: Coding.plainDecoder)

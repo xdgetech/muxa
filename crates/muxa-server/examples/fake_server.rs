@@ -189,7 +189,7 @@ impl Host for FakeHost {
         };
         Ok(RoutineList {
             routines: vec![
-                // Its logins are full: the due run waits for the reset (ADR 0091 §9).
+                // Its logins are full: the due run waits for the reset (ADR 0103 §9).
                 muxa_protocol::v2::Routine {
                     waiting_until: Some(1_700_003_600),
                     ..routine("digest", Some("09:00"))

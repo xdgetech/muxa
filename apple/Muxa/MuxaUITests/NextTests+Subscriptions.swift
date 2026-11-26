@@ -1,6 +1,6 @@
 import XCTest
 
-/// Subscriptions and Usage (ADR 0091) against the demo: app's env login is
+/// Subscriptions and Usage (ADR 0103) against the demo: app's env login is
 /// found and adopted, and each subscription shows its last report.
 extension NextTests {
     @MainActor
@@ -16,7 +16,7 @@ extension NextTests {
         XCTAssertTrue(waitFor(personal, labelContaining: "82% of 5 h"))
     }
 
-    /// ADR 0091 §4: Use makes a login Current for the next Tasks; switching
+    /// ADR 0103 §4: Use makes a login Current for the next Tasks; switching
     /// when full is the Workspace's choice.
     @MainActor
     func testUseMakesASubscriptionCurrentForNextTasks() throws {

@@ -2027,7 +2027,7 @@ async fn an_upload_goes_to_the_tasks_folder_by_the_host() {
     assert_eq!(UPLOADS.with(|u| u.borrow().len()), 1);
 }
 
-/// ADR 0091 §7: one login terminal per subscription, labelled so clients
+/// ADR 0103 §7: one login terminal per subscription, labelled so clients
 /// find it; asking again opens the same one.
 #[tokio::test]
 async fn a_subscriptions_login_runs_once_in_its_own_terminal() {

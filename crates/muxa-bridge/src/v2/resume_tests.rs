@@ -342,7 +342,7 @@ async fn migrate_adds_each_open_task_once_and_resume_adopts_its_place() {
     assert_eq!(backend.list().await.unwrap().len(), 1);
 }
 
-/// `w` with two Claude logins (ADR 0091) and an agent of `claude`.
+/// `w` with two Claude logins (ADR 0103) and an agent of `claude`.
 fn with_logins(f: &Fixture) -> (String, String) {
     let home = |n: &str| f.base.join(n).to_string_lossy().into_owned();
     std::fs::write(

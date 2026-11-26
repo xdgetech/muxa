@@ -70,13 +70,13 @@ sealed interface V2Request {
     data class InboxSuggestion(val item: String, val accept: Boolean) : V2Request
     data object Workspaces : V2Request
 
-    /** Each subscription and its agents' last report of the plan limits (ADR 0091). */
+    /** Each subscription and its agents' last report of the plan limits (ADR 0103). */
     data object Subscriptions : V2Request
 
-    /** Opens the agent's own login for [subscription] in a host terminal, or the one already open (ADR 0091 §7). */
+    /** Opens the agent's own login for [subscription] in a host terminal, or the one already open (ADR 0103 §7). */
     data class LoginStart(val subscription: String) : V2Request
 
-    /** The tokens agents used on [day] (`YYYY-MM-DD`, null for today), by Workspace and by Task (ADR 0091 §6). */
+    /** The tokens agents used on [day] (`YYYY-MM-DD`, null for today), by Workspace and by Task (ADR 0103 §6). */
     data class TokenUsage(val day: String? = null) : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request

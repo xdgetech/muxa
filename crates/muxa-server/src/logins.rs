@@ -1,4 +1,4 @@
-//! A login terminal (ADR 0091 §7): the agent's own login for one
+//! A login terminal (ADR 0103 §7): the agent's own login for one
 //! subscription, run on the host so a user can log in from a phone. muxa
 //! starts it, labels it, and never reads what is typed into it.
 

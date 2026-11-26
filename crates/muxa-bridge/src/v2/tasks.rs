@@ -122,7 +122,7 @@ impl BridgeHost {
             && crate::agents::claude::has_conversation(&dirs, dir)
     }
 
-    /// `line` with the status line that records `login`'s usage (ADR 0091 §6).
+    /// `line` with the status line that records `login`'s usage (ADR 0103 §6).
     async fn with_status_line(
         &self,
         line: String,
@@ -137,7 +137,7 @@ impl BridgeHost {
         blocking(move || crate::status_line::add_to_line(line, &dir, &hook)).await
     }
 
-    /// The login an agent started with `line` runs on (ADR 0091): a talk's
+    /// The login an agent started with `line` runs on (ADR 0103): a talk's
     /// Bot list when it has one, else the Workspace's. `keep` wins while it
     /// exists; an adopted place keeps the login that holds its conversation.
     async fn login(
@@ -562,7 +562,7 @@ impl Host for BridgeHost {
             .clone()
             .or_else(|| made.branch.clone())
             .unwrap_or_else(|| "Task".into());
-        // The conversation lives in the ended agent's login (ADR 0091 §5).
+        // The conversation lives in the ended agent's login (ADR 0103 §5).
         let keep = ended.labels.get(SUBSCRIPTION).cloned();
         let bot = ended.labels.get(BOT).cloned();
         let login = self.login(&ws, bot.as_deref(), &line, keep, None).await?;

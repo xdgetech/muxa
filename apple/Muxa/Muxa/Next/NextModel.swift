@@ -408,7 +408,7 @@ final class NextModel {
         return started
     }
 
-    /// The login terminal of a subscription (ADR 0091 §7), kept at once so Focus shows it.
+    /// The login terminal of a subscription (ADR 0103 §7), kept at once so Focus shows it.
     func startLogin(_ subscription: String) async -> Terminal? {
         var started: Terminal?
         await run { c in

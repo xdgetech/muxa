@@ -1,7 +1,7 @@
 import MuxaV2
 import SwiftUI
 
-/// The Usage page (ADR 0091 §8): each subscription's plan windows as its
+/// The Usage page (ADR 0103 §8): each subscription's plan windows as its
 /// agents last reported them, then today's tokens by Workspace and by Task.
 /// A login with no running agent shows its last report, and "as of" says when.
 struct PlanUsageView: View {
@@ -60,7 +60,7 @@ struct PlanUsageView: View {
     }
 }
 
-/// Today's tokens (ADR 0091 §6): each Workspace, then the ten Task folders
+/// Today's tokens (ADR 0103 §6): each Workspace, then the ten Task folders
 /// that used most. A Task whose agent still runs goes by its name and opens
 /// in Focus; an ended one has nothing to open.
 private struct TokenSections: View {

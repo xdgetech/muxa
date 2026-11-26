@@ -87,7 +87,7 @@ impl Setup {
             home: home.clone(),
         };
         // Read at start and after each settings change: Workspace env and
-        // subscription folders (ADR 0016, 0091).
+        // subscription folders (ADR 0016, 0103).
         let (flags, path, home_dir) = (
             args.agent_dirs.clone(),
             config.workspaces.clone(),

@@ -425,11 +425,11 @@ class NextModel(
 
     private fun connected(): V2Client = client ?: throw IllegalStateException("Not connected.")
 
-    /** Each subscription with the limits its agents last reported (ADR 0091), as [loadPlanUsage] last read them. */
+    /** Each subscription with the limits its agents last reported (ADR 0103), as [loadPlanUsage] last read them. */
     var planUsage: List<SubscriptionUsage> by mutableStateOf(emptyList())
         private set
 
-    /** Today's tokens by Workspace and Task (ADR 0091 §6); null from a host without `token-usage`. */
+    /** Today's tokens by Workspace and Task (ADR 0103 §6); null from a host without `token-usage`. */
     var tokenUsage: TokenUsage? by mutableStateOf(null)
         private set
 
@@ -455,7 +455,7 @@ class NextModel(
         }
     }
 
-    /** Opens the login terminal of [subscription] (ADR 0091 §7); null with [requestError] set. */
+    /** Opens the login terminal of [subscription] (ADR 0103 §7); null with [requestError] set. */
     suspend fun startLogin(subscription: String): Terminal? {
         var started: Terminal? = null
         request { c ->

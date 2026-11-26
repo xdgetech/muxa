@@ -53,9 +53,9 @@ sealed class SettingsOp(val op: String) {
         val claudeConnectors: Boolean? = null,
         /** Replaces both lists of `[workspace.bots]`; null keeps them. */
         val botRules: BotRules? = null,
-        /** The subscriptions its agents use, in order (ADR 0091); null keeps them. */
+        /** The subscriptions its agents use, in order (ADR 0103); null keeps them. */
         val subscriptions: List<String>? = null,
-        /** Whether a full login gives way to the next of its kind (ADR 0091 §4); null keeps it. */
+        /** Whether a full login gives way to the next of its kind (ADR 0103 §4); null keeps it. */
         val switchSubscriptions: Boolean? = null,
     ) : SettingsOp("workspace-update")
 
@@ -123,11 +123,11 @@ sealed class SettingsOp(val op: String) {
         val enabled: Boolean,
         val worker: String? = null,
         val soulText: String? = null,
-        /** Null keeps the list (ADR 0091). */
+        /** Null keeps the list (ADR 0103). */
         val subscriptions: List<String>? = null,
     ) : SettingsOp("assistant-update")
 
-    /** A named agent login (ADR 0091). The login itself stays with the agent. */
+    /** A named agent login (ADR 0103). The login itself stays with the agent. */
     data class SubscriptionAdd(val subscription: SubscriptionSpec) : SettingsOp("subscription-add")
 
     /** Replaces the subscription named `subscription.name`. */

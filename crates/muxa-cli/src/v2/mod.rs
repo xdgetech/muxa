@@ -89,7 +89,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   --loop         a Task Loop: after each finished turn the host runs the check;
                  without --check, the Workspace's only allowed one
   subscriptions  each agent login muxa names, with the plan limits its agents last
-                 reported: used percent and reset time per window (ADR 0091)
+                 reported: used percent and reset time per window (ADR 0103)
   token-usage    the tokens agents used today, or on --day, by Workspace and by
                  Task folder, from their transcripts: input, cached input, output
   settings       the host's workspaces.toml and routines files as the apps edit them;

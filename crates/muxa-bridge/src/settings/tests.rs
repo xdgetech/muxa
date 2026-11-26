@@ -747,7 +747,7 @@ fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
 #[path = "tests_bots.rs"]
 mod bots;
 
-/// ADR 0091: the onboarding's "Add all" in one update. The Workspace's env
+/// ADR 0103: the onboarding's "Add all" in one update. The Workspace's env
 /// login becomes a subscription it lists, and the loader still accepts it.
 #[test]
 fn a_login_becomes_a_subscription_that_workspaces_bots_and_the_assistant_use() {
@@ -820,7 +820,7 @@ fn a_login_becomes_a_subscription_that_workspaces_bots_and_the_assistant_use() {
     assert!(!text(&h).contains("[[subscription]]"));
 }
 
-/// ADR 0091 §7: onboarding finds Work's env login without showing its path,
+/// ADR 0103 §7: onboarding finds Work's env login without showing its path,
 /// and one op makes it a subscription Work lists.
 #[test]
 fn a_workspaces_env_login_is_found_and_adopted_without_its_path_crossing_the_wire() {
@@ -879,7 +879,7 @@ fn a_workspaces_env_login_is_found_and_adopted_without_its_path_crossing_the_wir
     );
 }
 
-/// ADR 0091 §4: only switching off is written; on is the default again.
+/// ADR 0103 §4: only switching off is written; on is the default again.
 #[test]
 fn a_workspaces_switching_is_written_only_when_off() {
     let h = host("switching");

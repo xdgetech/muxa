@@ -10,7 +10,7 @@ import tech.xdge.muxa.v2.TaskTokens
 import tech.xdge.muxa.v2.Terminal
 import java.util.Locale
 
-// Subscriptions (ADR 0091) as the Settings screens show and save them. The host checks the rest.
+// Subscriptions (ADR 0103) as the Settings screens show and save them. The host checks the rest.
 
 /** How a plan window reads: `5 h`, `7 d`, `45 min`, and the thresholds it is colored by. */
 object PlanWindow {
@@ -34,7 +34,7 @@ object PlanWindow {
     private const val MINUTES_A_DAY = 1440
 }
 
-/** How onboarding names and adds a login the host found (ADR 0091 §7). */
+/** How onboarding names and adds a login the host found (ADR 0103 §7). */
 object Found {
     /** `claude`, `codex`, or `claude-<workspace>` for a Workspace's env login. */
     fun name(f: FoundLogin): String {
@@ -114,7 +114,7 @@ fun Settings.loginsFor(workspace: String, agent: String?): List<String> {
     return names.filter { n -> subscriptions.any { it.name == n && it.agent == kind } }
 }
 
-/** The first of each agent kind in [names]: Current, the login the next agent of that kind takes (ADR 0091 §4). */
+/** The first of each agent kind in [names]: Current, the login the next agent of that kind takes (ADR 0103 §4). */
 fun Settings.currentOf(names: List<String>): Set<String> {
     val kinds = mutableSetOf<String>()
     return names.filter { n -> subscriptions.firstOrNull { it.name == n }?.let { kinds.add(it.agent) } == true }.toSet()
@@ -130,7 +130,7 @@ fun switchNote(ws: SettingsWorkspace): String = when {
     else -> "New agents take the Current login of their kind, also when it is full. Use another to switch."
 }
 
-/** How token counts read (ADR 0091 §6): `84`, `84k`, `1.2M`. */
+/** How token counts read (ADR 0103 §6): `84`, `84k`, `1.2M`. */
 object TokenText {
     /** How many Tasks Usage lists. */
     const val TASKS = 10

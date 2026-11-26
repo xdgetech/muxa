@@ -324,7 +324,7 @@ struct DemoTests {
         #expect(s.workers.map(\.name) == ["reviewer"])
     }
 
-    /// ADR 0091: each subscription with its last report; one never used has none.
+    /// ADR 0103: each subscription with its last report; one never used has none.
     @Test(.timeLimit(.minutes(1)))
     func subscriptionsShowTheirLastReport() async throws {
         let c = try await open()
@@ -335,7 +335,7 @@ struct DemoTests {
         #expect(usage[1].windows.isEmpty && usage[1].asOf == nil)
     }
 
-    /// ADR 0091 §6: today's tokens, whose Task folders are the demo agents'.
+    /// ADR 0103 §6: today's tokens, whose Task folders are the demo agents'.
     @Test(.timeLimit(.minutes(1)))
     func tokenUsageNamesTheTasksFolders() async throws {
         let c = try await open()
@@ -347,7 +347,7 @@ struct DemoTests {
         #expect(TokenText.line(input: 950, cached: 12_400_000, output: 9_960) == "950 in · 10k out · 12M cached")
     }
 
-    /// ADR 0091 §7: onboarding adopts app's env login, and a login terminal
+    /// ADR 0103 §7: onboarding adopts app's env login, and a login terminal
     /// opens once per subscription.
     @Test(.timeLimit(.minutes(1)))
     func aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() async throws {
@@ -366,7 +366,7 @@ struct DemoTests {
         await #expect(throws: V2Error.self) { _ = try await c.loginStart("nope") }
     }
 
-    /// ADR 0091: a login is named once and Workspaces list it; one that a
+    /// ADR 0103: a login is named once and Workspaces list it; one that a
     /// Workspace lists cannot go.
     @Test(.timeLimit(.minutes(1)))
     func subscriptionsAreAddedListedAndKeptWhileListed() async throws {

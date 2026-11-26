@@ -34,7 +34,7 @@ pub struct Loop {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_check: Option<LastCheck>,
     /// While paused for `limit-reset`: when the agent's subscription resets
-    /// and the fail prompt is typed (ADR 0091 §9).
+    /// and the fail prompt is typed (ADR 0103 §9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumes_at: Option<u64>,
     /// Fields written by a newer muxa; kept on rewrite.

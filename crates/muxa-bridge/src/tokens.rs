@@ -1,4 +1,4 @@
-//! Tokens for one day from the agents' own transcripts (ADR 0091 §6): Claude
+//! Tokens for one day from the agents' own transcripts (ADR 0103 §6): Claude
 //! Code's `message.usage` and Codex's `token_count` totals, by working folder.
 //! Tokens only, never a share of a plan limit. No text of a line is kept.
 

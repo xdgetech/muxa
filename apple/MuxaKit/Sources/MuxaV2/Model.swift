@@ -415,7 +415,7 @@ public struct Routine: Codable, Equatable, Sendable, Identifiable {
     /// The event that runs it: `review` (ADR 0084).
     public var on: String? = nil
     /// Unix seconds: a due run waits until then, while every subscription
-    /// it may use is at its limit (ADR 0091 §9).
+    /// it may use is at its limit (ADR 0103 §9).
     public var waitingUntil: Int64? = nil
 
     public var id: String { "\(workspace)/\(name)" }
@@ -650,7 +650,7 @@ public struct LoopInfo: Codable, Equatable, Sendable, Identifiable {
     /// `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `not-sent`, `user`…
     public var reason: String?
     public var lastCheck: LastCheck?
-    /// Paused for `limit-reset`: when the fix prompt is typed (ADR 0091 §9).
+    /// Paused for `limit-reset`: when the fix prompt is typed (ADR 0103 §9).
     public var resumesAt: Int64?
 
     public var id: String { terminal }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A subscription, a named agent login, and the plan limits its agents last
-/// reported (ADR 0091). No credential and no account.
+/// reported (ADR 0103). No credential and no account.
 public struct SubscriptionUsage: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     /// `claude-code` or `codex`.
@@ -85,7 +85,7 @@ public struct UsageWindow: Codable, Equatable, Sendable {
 }
 
 /// The tokens agents used on one day on the host's clock, from their own
-/// transcripts (ADR 0091 §6). Tokens only, never a share of a plan.
+/// transcripts (ADR 0103 §6). Tokens only, never a share of a plan.
 public struct TokenUsage: Codable, Equatable, Sendable {
     /// `YYYY-MM-DD`.
     public var day: String

@@ -453,7 +453,7 @@ fn subscription_shape(sub: &muxa_protocol::settings::SubscriptionSpec) -> Result
     Ok(())
 }
 
-/// A Workspace may list only subscriptions that exist (ADR 0091).
+/// A Workspace may list only subscriptions that exist (ADR 0103).
 fn known_subscriptions(s: &Settings, names: &[String]) -> Result<(), String> {
     match names
         .iter()

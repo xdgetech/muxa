@@ -92,7 +92,7 @@
 #                  checklist in docs/adr/0028 passes.
 #
 # [[subscription]]  optional; a named agent login, such as a Claude Max or a
-#   ChatGPT plan (ADR 0091). One account has one limit, whichever workspace
+#   ChatGPT plan (ADR 0103). One account has one limit, whichever workspace
 #   uses it, so subscriptions sit beside the workspaces.
 #   name   lowercase letters, digits, - or _.
 #   agent  "claude-code" or "codex".

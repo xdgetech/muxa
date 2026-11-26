@@ -75,7 +75,7 @@ impl FileWorkspace {
     }
 }
 
-/// Logins on the host that are no subscription yet (ADR 0091 §7): the
+/// Logins on the host that are no subscription yet (ADR 0103 §7): the
 /// default folders that exist, and each Workspace's env login. Blocking.
 pub fn found_logins(config: &FileConfig, home: Option<&Path>) -> Vec<FoundLogin> {
     let taken = |raw: &str| {

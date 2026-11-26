@@ -39,11 +39,11 @@ pub struct Settings {
     /// The Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant: Option<SettingsAssistant>,
-    /// `[[subscription]]`: named agent logins (ADR 0091).
+    /// `[[subscription]]`: named agent logins (ADR 0103).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subscriptions: Vec<SubscriptionSpec>,
     /// Logins on the host that are no subscription yet, for onboarding
-    /// (ADR 0091 §7).
+    /// (ADR 0103 §7).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub found_logins: Vec<FoundLogin>,
 }
@@ -63,7 +63,7 @@ pub struct FoundLogin {
     pub workspace: Option<String>,
 }
 
-/// `[[subscription]]` (ADR 0091): an agent login muxa names. The login
+/// `[[subscription]]` (ADR 0103): an agent login muxa names. The login
 /// itself stays with the agent; muxa keeps the name and the folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubscriptionSpec {
@@ -91,7 +91,7 @@ pub struct SettingsAssistant {
     /// `assistant/memory.md`, read only: the assistant writes it.
     #[serde(default)]
     pub memory_text: Option<String>,
-    /// The Claude subscriptions it runs on, in order (ADR 0091).
+    /// The Claude subscriptions it runs on, in order (ADR 0103).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subscriptions: Vec<String>,
 }
@@ -126,11 +126,11 @@ pub struct SettingsWorkspace {
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     #[serde(default, skip_serializing_if = "BotRules::is_empty")]
     pub bot_rules: BotRules,
-    /// The subscriptions its agents use, in order (ADR 0091).
+    /// The subscriptions its agents use, in order (ADR 0103).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subscriptions: Vec<String>,
     /// False: its agents keep the first login of their kind, also when it
-    /// is full; the user switches by the order (ADR 0091 §4).
+    /// is full; the user switches by the order (ADR 0103 §4).
     #[serde(default = "yes", skip_serializing_if = "is_yes")]
     pub switch_subscriptions: bool,
     #[serde(default)]
@@ -284,7 +284,7 @@ pub struct BotSpec {
     /// without the wrapper, e.g. `/path/collect.sh delivery:*` (ADR 0088).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,
-    /// Its own order of its Workspace's subscriptions (ADR 0091). Empty:
+    /// Its own order of its Workspace's subscriptions (ADR 0103). Empty:
     /// the Workspace's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subscriptions: Vec<String>,
@@ -524,7 +524,7 @@ pub enum SettingsOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         subscriptions: Option<Vec<String>>,
     },
-    /// A named agent login (ADR 0091).
+    /// A named agent login (ADR 0103).
     SubscriptionAdd {
         subscription: SubscriptionSpec,
     },

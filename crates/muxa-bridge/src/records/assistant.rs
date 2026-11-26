@@ -14,7 +14,7 @@ pub struct Assistant {
     pub enabled: bool,
     /// None: the default agent.
     pub worker: Option<String>,
-    /// The Claude logins it runs on, in order (ADR 0091). Empty: the
+    /// The Claude logins it runs on, in order (ADR 0103). Empty: the
     /// default login.
     pub subscriptions: Vec<String>,
 }
