@@ -108,6 +108,11 @@ pub struct Terminal {
     pub exit_code: Option<i64>,
     #[serde(default)]
     pub reason: Option<String>,
+    #[serde(default)]
+    pub pid: Option<u32>,
+    /// When the OSC 7501 state last changed, in ms since the Unix epoch.
+    #[serde(default)]
+    pub status_ms: Option<u64>,
 }
 
 impl Terminal {

@@ -479,6 +479,17 @@ pub enum ClientMsg {
     Disk {
         id: u64,
     },
+    /// The host's CPU, memory and disks, and what uses them (ADR 0103).
+    Host {
+        id: u64,
+    },
+    /// `host` notifications every 10 s until `host-unwatch`.
+    HostWatch {
+        id: u64,
+    },
+    HostUnwatch {
+        id: u64,
+    },
     /// Removes rows of `disk`. Empty `paths` means every row `disk` marks
     /// `cleanable`. `force` removes the named rows even when they hold work,
     /// and needs `paths`. A held place is never removed.
@@ -594,6 +605,106 @@ pub struct DiskRow {
     pub merged: Option<bool>,
     /// `disk-clean` without `force` removes it.
     pub cleanable: bool,
+}
+
+/// A sample of the host's resources (ADR 0103). Sizes are bytes; CPU is a
+/// percent of all cores together.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HostReport {
+    /// When it was sampled, in ms since the Unix epoch.
+    pub sampled_ms: u64,
+    pub cpu: HostCpu,
+    /// The 1, 5 and 15 minute load averages.
+    pub load: [f32; 3],
+    pub memory: HostMemory,
+    pub swap: HostSwap,
+    pub disks: Vec<HostDisk>,
+    /// Biggest first: Tasks and talks, then the rest.
+    pub groups: Vec<UsageGroup>,
+    /// Values past the host's limits: `cpu`, `memory`, `disk:<path>`.
+    pub alerts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HostCpu {
+    pub percent: f32,
+    pub cores: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostMemory {
+    pub total: u64,
+    pub used: u64,
+    /// None where the OS keeps no compressed memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compressed: Option<u64>,
+    pub pressure: Pressure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Pressure {
+    Normal,
+    Warn,
+    Critical,
+    /// A value a newer host added.
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostSwap {
+    pub used: u64,
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostDisk {
+    /// `system` or `build`.
+    pub name: String,
+    pub path: String,
+    pub free: u64,
+    pub total: u64,
+}
+
+/// What uses the host's CPU and memory, grouped by what the user can act on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsageGroup {
+    pub kind: UsageKind,
+    /// A Task's title, an app's bundle name, or a process name. Never a
+    /// command line.
+    pub name: String,
+    /// The agent terminal of a Task, talk, Routine run or team member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    pub cpu: f32,
+    /// Resident memory, in bytes.
+    pub rss: u64,
+    pub processes: u32,
+    /// When the agent last reported `done` or `idle`; None while it works.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_since_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UsageKind {
+    Task,
+    Routine,
+    Member,
+    /// Claude Code processes that no muxa terminal holds.
+    ClaudeOutside,
+    Simulator,
+    Docker,
+    /// Virtual machines, such as the one Docker runs.
+    Vm,
+    App,
+    Other,
+    /// A value a newer host added.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A row `disk-clean` did not remove, and why.
@@ -1179,7 +1290,7 @@ pub enum ErrorCode {
 }
 
 /// Server → client on channel 0.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ServerMsg {
     Welcome {
@@ -1230,6 +1341,10 @@ pub enum ServerMsg {
     Loops {
         loops: Vec<LoopInfo>,
     },
+    /// After `host-watch`: a new sample of the host (ADR 0103).
+    Host {
+        host: HostReport,
+    },
     /// A followed conversation changed.
     Chat {
         chat: u32,
@@ -1242,7 +1357,7 @@ pub enum ServerMsg {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Reply {
     Terminals {
@@ -1290,6 +1405,9 @@ pub enum Reply {
     },
     Disk {
         rows: Vec<DiskRow>,
+    },
+    Host {
+        host: HostReport,
     },
     DiskCleaned {
         dry_run: bool,

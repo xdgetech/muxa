@@ -58,6 +58,13 @@ pub struct TerminalInfo {
     pub labels: Labels,
     pub size: Size,
     pub exit: Option<Exit>,
+    /// The program's process id while it runs; None when the backend does
+    /// not know it.
+    pub pid: Option<u32>,
+    /// When the program last changed its reported state, in ms since the
+    /// Unix epoch. None when it never reported one or the backend does not
+    /// know.
+    pub status_since_ms: Option<u64>,
 }
 
 /// How to start a program.

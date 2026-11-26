@@ -136,9 +136,14 @@ def main():
 
         send_frame(ch, DATA, b"done\r")
         drain(0.5)
-        status = call("terminal.get", {"terminal": NAME}).get("status") or {}
+        got = call("terminal.get", {"terminal": NAME})
+        status = got.get("status") or {}
         check(status.get("state") == "done" and status.get("app") == "muxa-repro",
               "terminal.get reports the program's OSC 7501 state")
+        check(isinstance(got.get("pid"), int) and got["pid"] > 0,
+              "terminal.get reports the program's pid")
+        check(isinstance(got.get("status_ms"), int) and got["status_ms"] > 0,
+              "terminal.get reports when the OSC 7501 state changed (status_ms)")
 
         call("terminal.kill", {"terminal": NAME})
         drain(1.0)

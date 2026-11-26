@@ -18,6 +18,7 @@ mod place_records;
 mod places;
 pub mod reader;
 mod reader_folder;
+mod resources;
 pub mod review_runs;
 mod routines;
 pub mod runner;

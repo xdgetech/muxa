@@ -5,6 +5,7 @@
 mod chat;
 pub mod client;
 mod disk;
+mod host;
 mod inbox;
 mod reader;
 mod settings;
@@ -48,6 +49,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] workspaces [--json]
        muxa-cli v2 [--bridge CMD] disk [--json]
        muxa-cli v2 [--bridge CMD] disk clean [PATH]... [--force] [--yes] [--json]
+       muxa-cli v2 [--bridge CMD] host [--json]
+       muxa-cli v2 [--bridge CMD] host watch [--seconds N] [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
        muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
@@ -123,6 +126,11 @@ enum Cmd {
         json: bool,
     },
     Disk(disk::Disk),
+    Host {
+        watch: bool,
+        seconds: Option<u64>,
+        json: bool,
+    },
     Inbox {
         action: inbox::Action,
         json: bool,
@@ -304,6 +312,16 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
         ["terminals"] => Cmd::Terminals { json },
         ["workspaces"] => Cmd::Workspaces { json },
         ["disk"] => Cmd::Disk(disk::Disk::Report { json }),
+        ["host"] => Cmd::Host {
+            watch: false,
+            seconds,
+            json,
+        },
+        ["host", "watch"] => Cmd::Host {
+            watch: true,
+            seconds,
+            json,
+        },
         ["disk", "clean", paths @ ..] => Cmd::Disk(disk::Disk::Clean {
             paths: paths.iter().map(|p| (*p).to_owned()).collect(),
             yes,
@@ -602,6 +620,14 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             out,
         } => reader::folder(bridge, &terminal, &folder, &out).await,
         Cmd::Disk(d) => disk::run(bridge, &d).await,
+        Cmd::Host {
+            watch: false, json, ..
+        } => host::run(bridge, json).await,
+        Cmd::Host {
+            watch: true,
+            seconds,
+            json,
+        } => host::watch(bridge, seconds, json).await,
         Cmd::Workspaces { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "workspaces"})).await?;

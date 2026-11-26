@@ -35,6 +35,8 @@ pub struct BridgeHost {
     claude_dirs: Vec<PathBuf>,
     /// Finds an agent that already works in an adopted place.
     agents_in: Arc<AgentLookup>,
+    /// Samples the host for `host` (ADR 0103).
+    resources: Arc<super::resources::Resources>,
 }
 
 impl BridgeHost {
@@ -48,6 +50,7 @@ impl BridgeHost {
             settings: None,
             claude_dirs: Vec::new(),
             agents_in: adopt::host_lookup(),
+            resources: Arc::default(),
         }
     }
 
@@ -616,6 +619,13 @@ impl Host for BridgeHost {
         super::disk::report(&self.records, holds).await
     }
 
+    async fn host_report(
+        &self,
+        owners: &[muxa_server::owners::UsageOwner],
+    ) -> Result<muxa_protocol::v2::HostReport, TaskError> {
+        self.resources.report(&self.records, owners).await
+    }
+
     async fn disk_clean(
         &self,
         holds: &muxa_server::holds::Holds,
@@ -1042,6 +1052,8 @@ mod tests {
             status: None,
             size: muxa_backend::Size { cols: 80, rows: 24 },
             exit: None,
+            pid: None,
+            status_since_ms: None,
         };
         let p = host.restart(&ended).await.unwrap();
         assert_eq!(

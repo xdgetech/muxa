@@ -8,6 +8,7 @@ mod inbox;
 mod item_actions;
 pub mod memory_settings;
 mod migrate;
+pub mod owners;
 pub mod reader;
 mod ring;
 mod session;

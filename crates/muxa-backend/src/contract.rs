@@ -133,14 +133,17 @@ async fn scenario<B: SessionBackend>(
 
     stream.input(b"done\r").map_err(|e| format!("input: {e}"))?;
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let status = backend
-        .get(id)
-        .await
-        .map_err(|e| format!("get: {e}"))?
-        .status;
-    match status {
+    let done = backend.get(id).await.map_err(|e| format!("get: {e}"))?;
+    match &done.status {
         Some(s) if s.state == "done" && s.app.as_deref() == Some(APP) => {}
         other => return Err(format!("OSC 7501 state not reported: {other:?}")),
+    }
+    // The host's resource report groups processes by these (ADR 0103).
+    if !matches!(done.pid, Some(p) if p > 0) {
+        return Err(format!("a live terminal has no pid: {:?}", done.pid));
+    }
+    if done.status_since_ms.is_none() {
+        return Err("a reported state has no time".into());
     }
 
     backend.kill(id).await.map_err(|e| format!("kill: {e}"))?;

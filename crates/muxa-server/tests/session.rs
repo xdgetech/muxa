@@ -26,6 +26,23 @@ use tokio::task::JoinHandle;
 struct FakeTasks;
 
 impl Host for FakeTasks {
+    /// One group per owner, with a process per terminal pid.
+    async fn host_report(
+        &self,
+        owners: &[muxa_server::owners::UsageOwner],
+    ) -> Result<muxa_protocol::v2::HostReport, TaskError> {
+        let report = json!({
+            "sampled_ms": 1, "cpu": {"percent": 5.0, "cores": 4}, "load": [0.5, 0.4, 0.3],
+            "memory": {"total": 8, "used": 6, "pressure": "warn"},
+            "swap": {"used": 0, "total": 0}, "disks": [], "alerts": ["memory"],
+            "groups": owners.iter().map(|o| json!({
+                "kind": o.kind, "name": o.name, "terminal": o.terminal,
+                "cpu": 0.0, "rss": 0, "processes": o.pids.len(),
+            })).collect::<Vec<_>>(),
+        });
+        serde_json::from_value(report).map_err(|e| TaskError::Failed(e.to_string()))
+    }
+
     async fn upload(
         &self,
         dir: &std::path::Path,
@@ -1512,6 +1529,54 @@ async fn disk_asks_the_host_and_force_needs_named_paths() {
     );
     let refused = request(&mut client, json!({"type": "disk-clean", "id": 3})).await;
     assert_eq!(refused["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn host_groups_a_task_with_its_shell_and_watch_sends_samples() {
+    let backend = FakeBackend::new();
+    let labels = |role: &str| {
+        [
+            ("muxa.kind", "task"),
+            ("muxa.role", role),
+            ("muxa.dir", "/work/a"),
+            ("muxa.title", "Fix the bug"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect()
+    };
+    let agent = backend
+        .run(&Launch {
+            labels: labels("agent"),
+            ..Launch::default()
+        })
+        .await
+        .expect("agent");
+    backend
+        .run(&Launch {
+            labels: labels("shell"),
+            ..Launch::default()
+        })
+        .await
+        .expect("shell");
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+
+    let reply = request(&mut client, json!({"type": "host", "id": 1})).await;
+    assert_eq!(reply["host"]["alerts"], json!(["memory"]));
+    assert_eq!(
+        reply["host"]["groups"],
+        json!([{"kind": "task", "name": "Fix the bug", "terminal": agent.id.as_str(),
+                "cpu": 0.0, "rss": 0, "processes": 2}])
+    );
+
+    let watching = request(&mut client, json!({"type": "host-watch", "id": 2})).await;
+    assert_eq!(watching["type"], "reply");
+    let sample = client.read_control().await;
+    assert_eq!(sample["type"], "host");
+    assert_eq!(sample["host"]["cpu"]["cores"], 4);
+    let stopped = request(&mut client, json!({"type": "host-unwatch", "id": 3})).await;
+    assert_eq!(stopped["type"], "reply");
 }
 
 #[tokio::test]

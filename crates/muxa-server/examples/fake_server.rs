@@ -8,7 +8,8 @@
 //! `digest` uses and the live Tasks get by default. Approve closes a Task
 //! with no worktree check. `settings` starts as the fixed view of
 //! [`start_settings`], revision `1`, and `settings-update` applies ops in
-//! memory (`muxa_server::memory_settings`).
+//! memory (`muxa_server::memory_settings`). `host` is a fixed sample with
+//! memory pressure past its limit, the live Tasks first and a simulator.
 //!
 //! Usage: `fake_server SOCKET`. It runs until killed.
 
@@ -25,7 +26,8 @@ use muxa_protocol::settings::{
     SettingsWorkspace, WorkerSpec,
 };
 use muxa_protocol::v2::{
-    ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
+    ChatUpdate, HostCpu, HostDisk, HostMemory, HostReport, HostSwap, LoopChecks, LoopInfo,
+    LoopSpec, Pressure, ReaderContent, ReaderEntry, ReaderKind, ReaderList, UsageGroup, UsageKind,
     UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
 };
 use muxa_server::memory_settings::MemorySettings;
@@ -76,6 +78,62 @@ impl Host for FakeHost {
 
     async fn workspaces(&self) -> Vec<String> {
         vec!["Personal".into()]
+    }
+
+    async fn host_report(
+        &self,
+        owners: &[muxa_server::owners::UsageOwner],
+    ) -> Result<HostReport, TaskError> {
+        const GIB: u64 = 1 << 30;
+        let mut groups: Vec<UsageGroup> = owners
+            .iter()
+            .map(|o| UsageGroup {
+                kind: o.kind,
+                name: o.name.clone(),
+                terminal: Some(o.terminal.clone()),
+                workspace: o.workspace.clone(),
+                cpu: 1.5,
+                rss: GIB / 2,
+                processes: o.pids.len() as u32,
+                idle_since_ms: o.idle_since_ms,
+            })
+            .collect();
+        groups.push(UsageGroup {
+            kind: UsageKind::Simulator,
+            name: "Simulator".into(),
+            terminal: None,
+            workspace: None,
+            cpu: 1.0,
+            rss: 3 * GIB,
+            processes: 240,
+            idle_since_ms: None,
+        });
+        Ok(HostReport {
+            sampled_ms: 1_795_700_000_000,
+            cpu: HostCpu {
+                percent: 12.0,
+                cores: 10,
+            },
+            load: [2.1, 2.4, 2.6],
+            memory: HostMemory {
+                total: 24 * GIB,
+                used: 23 * GIB,
+                compressed: Some(7 * GIB),
+                pressure: Pressure::Warn,
+            },
+            swap: HostSwap {
+                used: 4 * GIB,
+                total: 5 * GIB,
+            },
+            disks: vec![HostDisk {
+                name: "system".into(),
+                path: "/".into(),
+                free: 41 * GIB,
+                total: 460 * GIB,
+            }],
+            groups,
+            alerts: vec!["memory".into()],
+        })
     }
 
     async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {

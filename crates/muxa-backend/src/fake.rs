@@ -11,6 +11,16 @@ use crate::{
     SessionBackend, Size, StreamEvent, TerminalId, TerminalInfo, TerminalStream,
 };
 
+/// A fake terminal's pid is this plus its number. Tests that walk a process
+/// table use it to place the terminal's program.
+pub const FAKE_PID_BASE: u32 = 50_000;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
 struct Term {
     info: TerminalInfo,
     screen: Vec<u8>,
@@ -95,6 +105,7 @@ impl FakeBackend {
         });
         let Some(t) = s.terms.get_mut(id) else { return };
         t.info.status = status.clone();
+        t.info.status_since_ms = Some(now_ms());
         let labels = t.info.labels.clone();
         s.notify(
             &labels,
@@ -120,6 +131,7 @@ impl FakeBackend {
         let t = s.terms.get_mut(id).ok_or_else(|| not_found("end", id))?;
         t.info.live = false;
         t.info.exit = Some(exit.clone());
+        t.info.pid = None;
         for tx in t.streams.drain(..) {
             let _ = tx.send(StreamEvent::Closed(exit.clone()));
         }
@@ -187,6 +199,8 @@ impl SessionBackend for FakeBackend {
             labels: launch.labels.clone(),
             size: Size { cols: 80, rows: 24 },
             exit: None,
+            pid: Some(FAKE_PID_BASE + s.next as u32),
+            status_since_ms: None,
         };
         s.terms.insert(
             id,

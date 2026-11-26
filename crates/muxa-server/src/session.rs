@@ -32,6 +32,8 @@ const MAX_HISTORY: u32 = 10_000;
 
 /// How often followed conversations are read again.
 const CHAT_TICK: Duration = Duration::from_millis(700);
+/// How often a `host-watch` gets a new sample (ADR 0103).
+const HOST_TICK: Duration = Duration::from_secs(10);
 
 /// How long a client's attachments wait for its resume.
 pub const PARK: Duration = Duration::from_secs(10 * 60);
@@ -84,6 +86,8 @@ struct Session<'a, B: SessionBackend, H: Host> {
     /// Followed conversations: chat number to the host's handle.
     chats: HashMap<u32, u64>,
     next_chat: u32,
+    /// `host` notifications are on, after `host-watch`.
+    host_watch: bool,
 }
 
 /// What to start on a resumed channel once `welcome` is out.
@@ -141,11 +145,14 @@ where
         readers: Readers::default(),
         chats: HashMap::new(),
         next_chat: 1,
+        host_watch: false,
     };
     let mut chat_tick = tokio::time::interval(CHAT_TICK);
     chat_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut reader_tick = tokio::time::interval(reader::TICK);
     reader_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut host_tick = tokio::time::interval(HOST_TICK);
+    host_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let (token, resumed, starts) = match resume {
         Some(r) => session.resume(sessions, r).await?,
         None => (token().map_err(ServeError::Token)?, Vec::new(), Vec::new()),
@@ -179,6 +186,9 @@ where
             }
             _ = reader_tick.tick(), if !session.readers.open.is_empty() => {
                 session.refresh_readers().await;
+            }
+            _ = host_tick.tick(), if session.host_watch => {
+                session.send_host().await;
             }
             () = next_revision(&mut session.loop_watch) => {
                 let loops = session.host.loops().await;
@@ -527,6 +537,19 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
             },
             ClientMsg::Workspaces { id } => self.workspaces(id).await,
             ClientMsg::Disk { id } => self.disk(id).await,
+            ClientMsg::Host { id } => match self.host_report().await {
+                Ok(host) => self.reply(id, Reply::Host { host }),
+                Err((code, message)) => self.error(Some(id), code, message),
+            },
+            ClientMsg::HostWatch { id } => {
+                self.host_watch = true;
+                self.reply(id, Reply::Empty {});
+                self.send_host().await;
+            }
+            ClientMsg::HostUnwatch { id } => {
+                self.host_watch = false;
+                self.reply(id, Reply::Empty {});
+            }
             ClientMsg::DiskClean {
                 id,
                 paths,
@@ -730,6 +753,27 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.reply(id, Reply::Workspaces { workspaces });
             }
             Err(e) => self.error(Some(id), code_of(&e), e.to_string()),
+        }
+    }
+
+    /// A sample of the host, with the live terminals to group its processes.
+    async fn host_report(&self) -> Result<v2::HostReport, (ErrorCode, String)> {
+        let terminals = self
+            .backend
+            .list()
+            .await
+            .map_err(|e| (code_of(&e), e.to_string()))?;
+        self.host
+            .host_report(&crate::owners::owners(&terminals))
+            .await
+            .map_err(|e| (task_code(&e), e.to_string()))
+    }
+
+    /// A failed sample skips one notification; the next tick tries again.
+    async fn send_host(&self) {
+        match self.host_report().await {
+            Ok(host) => send(&self.out, &ServerMsg::Host { host }),
+            Err((_, e)) => tracing::warn!(error = %e, "host sample failed"),
         }
     }
 

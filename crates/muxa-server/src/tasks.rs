@@ -191,6 +191,15 @@ pub trait Host: Send + Sync {
         async { Ok(Vec::new()) }
     }
 
+    /// A sample of the host's CPU, memory and disks, with the processes of
+    /// `owners`' terminals grouped under them (ADR 0103).
+    fn host_report(
+        &self,
+        _owners: &[crate::owners::UsageOwner],
+    ) -> impl Future<Output = Result<muxa_protocol::v2::HostReport, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host reports no resources".into())) }
+    }
+
     /// Removes rows of [`Host::disk`]; see `disk-clean`.
     fn disk_clean(
         &self,

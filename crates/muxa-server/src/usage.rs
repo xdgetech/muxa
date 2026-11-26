@@ -66,6 +66,8 @@ mod tests {
             labels,
             size: Size { cols: 80, rows: 24 },
             exit: None,
+            pid: None,
+            status_since_ms: None,
         }
     }
 

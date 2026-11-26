@@ -65,6 +65,8 @@ fn info(t: Terminal) -> TerminalInfo {
             rows: t.rows,
         },
         exit,
+        pid: t.pid.filter(|_| live),
+        status_since_ms: t.status_ms,
     }
 }
 

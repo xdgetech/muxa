@@ -108,6 +108,8 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"workspaces"}` | `{"workspaces":[Workspace...]}`: what a Task may use. See Task actions |
 | `{"type":"disk"}` | `{"rows":[DiskRow...]}`: the disk use of Task places and leftovers. See Disk |
 | `{"type":"disk-clean","paths"?,"force"?,"dry_run"?}` | `{"dry_run","removed":[path...],"kept":[{"path","why"}...]}`. See Disk |
+| `{"type":"host"}` | `{"host":HostReport}`: the host's CPU, memory, disks and what uses them. See Host |
+| `{"type":"host-watch"}`, `host-unwatch` | `{}`. `host` notifications start or stop. See Host |
 | `{"type":"inbox-approve","item","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of a Review item; `worktree` is `remove` (the default) or `force`. See Task actions |
 | `{"type":"inbox-request-changes","item","comment"}` | `{"inbox":Inbox}`. Types the comment into the Task's agent and resolves the Review item |
 | `{"type":"inbox-retry","item"}` | `{"inbox":Inbox}`. Runs again what made a Failed item and resolves it |
@@ -185,6 +187,7 @@ ADR 0081. A client copies an image or a log from its device into a Task's workin
 | `{"type":"chat-ended","chat","reason"}` | A followed conversation ended, e.g. the agent exited. The chat is closed |
 | `{"type":"reader","reader","content":ReaderContent}` | An open Reader file changed. It carries the whole file as it is now |
 | `{"type":"reader-ended","reader","reason"}` | An open Reader file is gone, no longer listed, or cannot be read. The reader is closed |
+| `{"type":"host","host":HostReport}` | After `host-watch`: a new sample, every 10 s |
 
 A watch ends with the connection, and so do open Reader files. After a resume the client sends `watch` and `inbox` again, and opens its Reader files again.
 
@@ -359,6 +362,36 @@ ADR 0102. `disk` lists, with sizes in bytes (`du -sk`, links not followed):
 2. No `paths` means every cleanable row. A path that is not a row of the scan is `bad-request`, and nothing changes.
 3. Without `force`, a named row that is not cleanable is kept, with why. `force` needs `paths`, and removes them with `git worktree remove --force` and `git branch -D`.
 4. A held row is always kept.
+
+### Host
+
+ADR 0103. `HostReport`:
+
+```json
+{"sampled_ms":1795700000000,
+ "cpu":{"percent":12.5,"cores":10},
+ "load":[2.1,2.4,2.6],
+ "memory":{"total":25769803776,"used":24696061952,"compressed":8160437862,"pressure":"warn"},
+ "swap":{"used":4402341478,"total":5368709120},
+ "disks":[{"name":"system","path":"/","free":44023414784,"total":494384795648},
+          {"name":"build","path":"/Volumes/Atlas/muxa/build","free":1319413953331,"total":2000398934016}],
+ "groups":[{"kind":"task","name":"Host resources","terminal":"t7","workspace":"xdge","cpu":0.3,"rss":429496729,"processes":6,"idle_since_ms":1795690000000},
+           {"kind":"simulator","name":"Simulator","cpu":0.1,"rss":3328599654,"processes":240}],
+ "alerts":["memory"]}
+```
+
+- Sizes are bytes. `cpu` is a percent of all cores together, for the host and for each group. `pressure` is `normal`, `warn`, `critical` or `unknown`. `compressed` is absent where the OS keeps no compressed memory.
+- `disks` lists the system disk (`system`), and the build disk (`build`, `[build] dir`) when that folder is on another disk.
+- `groups`: the Tasks, talks, Routine runs and team members first, biggest first; then the rest, biggest first. Kinds:
+  - `task`: a Task or talk. `terminal` is its agent. The group holds the process trees of the agent and its shells. `idle_since_ms` is when the agent last reported `done` or `idle`; it is absent while the agent works.
+  - `routine`, `member`: a Routine run or a team member, with `terminal`.
+  - `claude-outside`: Claude Code processes that no muxa terminal holds, with their children.
+  - `simulator`, `docker`, `vm` (virtual machines).
+  - `app`: one installed app, named by its bundle. Past 8 apps, the smaller ones count as `other`.
+  - `other`: the rest.
+- A group carries a name only, never a command line.
+- `alerts` lists `cpu`, `memory` and `disk:<path>` for values past the host's limits. Apps color those values and keep no limits of their own.
+- `host-watch` sends a `host` notification at once and then every 10 s. The watch ends with `host-unwatch` or the connection. The host takes a new sample at most every 5 s.
 
 ### Settings
 
