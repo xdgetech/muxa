@@ -76,7 +76,7 @@ fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
 
 /**
  * The host, then its settings (ADR 0074): the Workspaces list or one Workspace, the workers and the
- * Capture assistant. A talk with a Bot opens its Task with [open].
+ * Capture assistant and the build disk (ADR 0102); last, this device's Appearance (ADR 0091). A talk with a Bot opens its Task with [open].
  */
 @Composable
 private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
@@ -85,11 +85,25 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
     val live = model.terminals.filter { it.live }.map { it.id }
     var usage by remember { mutableStateOf<List<Workspace>>(emptyList()) }
     var openWorkspace by remember { mutableStateOf<String?>(null) }
+    var appearance by remember { mutableStateOf(false) }
+    var buildPage by remember { mutableStateOf(false) }
     LaunchedEffect(editor) { editor.load() }
     // A save can add a subscription, and a running agent reports new limits: read them with each revision.
     LaunchedEffect(editor.settings?.revision, live) { model.loadPlanUsage() }
     LaunchedEffect(live) { model.workspaces()?.let { usage = it } }
 
+    if (appearance) {
+        Column(Modifier.padding(bottom = 16.dp)) { AppearanceSettings { appearance = false } }
+        return
+    }
+    val build = editor.settings?.build
+    if (buildPage && build != null) {
+        Column(Modifier.padding(bottom = 16.dp)) {
+            Notices(editor)
+            BuildSettings(editor, build) { buildPage = false }
+        }
+        return
+    }
     Column(Modifier.padding(bottom = 16.dp)) {
         val settings = editor.settings
         val ws = settings?.workspaces?.firstOrNull { it.name == openWorkspace }
@@ -108,8 +122,11 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
                 UsageSection(editor, model.planUsage, model.tokenUsage, model.terminals, open)
                 WorkersSection(editor, settings.workspaces.map { it.name })
                 AssistantSection(editor, model.planUsage)
+                BuildRow(editor) { buildPage = true }
             }
         }
+        // The theme is the device's, so it shows even when the host's settings do not load.
+        if (ws == null) AppearanceRow { appearance = true }
     }
 }
 

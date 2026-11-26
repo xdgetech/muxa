@@ -9,6 +9,10 @@ struct BotPage: View {
     @Environment(NextNavigation.self) private var nav
     let entry: BotEntry
     @State private var tab = BotTab.home
+    /// It landed already: coming back from a pushed chat keeps the tab.
+    @State private var landed = false
+    /// The tab it landed on before the terminals came; nil once they have.
+    @State private var landedEarly: BotTab?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,26 +28,40 @@ struct BotPage: View {
         .background(Palette.ground)
         .navigationTitle(entry.name)
         .inlineTitle()
-        .onAppear(perform: land)
+        .onAppear {
+            guard !landed else { return }
+            landed = true
+            land()
+            if model.terminalsPending { landedEarly = tab }
+        }
+        .onChange(of: model.liveTalk(of: entry)?.id) { _, talk in
+            // The terminals came after the page opened: land again, unless the user moved.
+            guard talk != nil, let early = landedEarly else { return }
+            landedEarly = nil
+            if tab == early { land() }
+        }
+        .onChange(of: nav.botRoutedTo) { _, routed in if routed == key, landed { nav.botRoutedTo = nil } }
         .onChange(of: tab) { _, picked in nav.botTabs[key] = picked }
         .onChange(of: nav.botTabs[key]) { _, saved in if let saved, saved != tab { tab = saved } }
     }
 
     private var key: String { "\(entry.workspace.name)/\(entry.name)" }
 
-    /// The tab it was left on in this run; the first time, its live talk
-    /// on Chats if it has one, else Home (ADR 0086).
+    /// Its live talk on Chats if it has one; else the tab it was left on in
+    /// this run, else Home (ADR 0086). A page `showOnBotPage` opened keeps
+    /// its terminal.
     private func land() {
-        if let left = nav.botTabs[key] {
-            tab = left
+        if nav.botRoutedTo == key {
+            nav.botRoutedTo = nil
+            tab = nav.botTabs[key] ?? .chats
         } else if let talk = model.liveTalk(of: entry) {
             nav.botTabs[key] = .chats
             tab = .chats
             nav.taskView = .chat
             nav.botRoute = BotRoute(workspace: entry.workspace.name, bot: entry.name, terminal: talk.id)
         } else {
-            nav.botTabs[key] = .home
-            tab = .home
+            tab = nav.botTabs[key] ?? .home
+            nav.botTabs[key] = tab
         }
     }
 
@@ -65,7 +83,7 @@ struct BotPage: View {
                         .padding(.vertical, 2)
                         .background(status.badgeBackground, in: RoundedRectangle(cornerRadius: 6))
                         .accessibilityIdentifier("bot.status")
-                    Text("\(entry.workspace.name) · \(entry.bot.spec.dailyItems ?? 3) items a day")
+                    Text(entry.workspace.name)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.textSecondary)
                         .lineLimit(1)

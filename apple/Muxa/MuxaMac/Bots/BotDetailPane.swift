@@ -10,6 +10,8 @@ struct BotDetailPane: View {
     @Environment(MacChrome.self) private var chrome
     let entry: BotEntry
     @State private var choosingChat = false
+    /// The tab it landed on before the terminals came; nil once they have.
+    @State private var landedEarly: BotTab?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,17 +46,21 @@ struct BotDetailPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Palette.pane)
-        .onAppear { chrome.land(on: entry.id, liveTalk: model.liveTalk(of: entry)) }
-        .onChange(of: chrome.botTab) { _, tab in chrome.botTabs[entry.id] = tab }
-        .confirmationDialog("Continue a chat with \(entry.name)?", isPresented: $choosingChat, titleVisibility: .visible) {
-            ForEach(model.talks(of: entry)) { t in
-                Button("Continue \(t.title)") { nav.open(t) }
-            }
-            Button("Start a New Chat") { Task { await startChat() } }
-                .accessibilityIdentifier("bot.chat.new")
-        } message: {
-            Text("A chat keeps its Task until you close it.")
+        .onAppear {
+            land()
+            if model.terminalsPending { landedEarly = chrome.botTab }
         }
+        .onChange(of: model.liveTalk(of: entry)?.id) { _, talk in
+            // The terminals came after the page opened: land again, unless the user moved.
+            guard talk != nil, let early = landedEarly else { return }
+            landedEarly = nil
+            if chrome.botTab == early { land() }
+        }
+        // A terminal of this Bot opened while its page shows: nothing lands, so the mark goes.
+        .onChange(of: chrome.botRoutedTo) { _, routed in if routed == entry.id { chrome.botRoutedTo = nil } }
+        .onChange(of: chrome.botTab) { _, tab in chrome.botTabs[entry.id] = tab }
+        .dialog("New chat with \(entry.name)", isPresented: $choosingChat,
+                message: "A chat keeps its Task until you close it.", choices: chatChoices)
     }
 
     private var heading: some View {
@@ -87,10 +93,10 @@ struct BotDetailPane: View {
         .padding(.top, 18)
     }
 
-    /// `app · 3 items a day · reviewer · leads research, writer`.
+    /// `app · leads research, writer`.
     private var meta: String {
         let spec = entry.bot.spec
-        var parts = [entry.workspace.name, "\(spec.dailyItems ?? 3) items a day"]
+        var parts = [entry.workspace.name]
         if !spec.members.isEmpty { parts.append("leads \(spec.members.joined(separator: ", "))") }
         if let lead = entry.workspace.bots.first(where: { $0.spec.members.contains(entry.name) }) {
             parts.append("member of \(lead.name)")
@@ -144,6 +150,22 @@ struct BotDetailPane: View {
         } else {
             choosingChat = true
         }
+    }
+
+    /// ⌘T with live talks: a new chat first, then each talk to continue.
+    private var chatChoices: [DialogChoice] {
+        let start = DialogChoice(id: "bot.chat.new", title: "Start a new chat", verb: "Start") {
+            Task { await startChat() }
+        }
+        let talks = model.talks(of: entry).enumerated().map { i, t in
+            DialogChoice(id: "bot.chat.continue.\(t.id)", title: t.title, detail: t.botRole(of: entry.name),
+                         section: i == 0 ? "Continue" : nil, verb: "Continue") { nav.open(t) }
+        }
+        return [start] + talks
+    }
+
+    private func land() {
+        chrome.land(on: entry.id, talks: model.talks(of: entry))
     }
 
     private func startChat() async {

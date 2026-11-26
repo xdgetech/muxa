@@ -35,7 +35,7 @@ class BotsNavTest {
         fun r(name: String, bot: String? = null) = Routine("app", name, enabled = true, nextDue = 10, bot = bot)
         val routines = listOf(r("digest"), r("scan", "pr-watch"), r("triage", "issues"), r("backup", "pr-watch"))
         val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("issues"), SettingsBot("pr-watch")))
-        val entries = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, emptyList(), routines, 0)
+        val entries = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, emptyList(), routines)
         assertEquals(
             mapOf("issues" to listOf("triage"), "pr-watch" to listOf("scan", "backup")),
             entries.associate { e -> e.name to e.work.planned.map { it.name } },
@@ -61,7 +61,7 @@ class BotsNavTest {
         val talk = t("t7", "muxa.kind" to "task", "muxa.role" to "agent", "muxa.bot" to "pr-watch")
         val run = t("t8", "muxa.kind" to "routine", "muxa.role" to "agent", "muxa.bot" to "pr-watch", "muxa.routine" to "scan")
         val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("pr-watch")))
-        val e = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, listOf(talk, run), emptyList(), 0).single()
+        val e = botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, listOf(talk, run), emptyList()).single()
         assertEquals(listOf("t7") to listOf("t8"), e.talks.map { it.id } to e.runs.map { it.id })
         assertEquals("chat" to "run of scan", talk.botRole("pr-watch") to run.botRole("pr-watch"))
     }
@@ -84,31 +84,30 @@ class BotsNavTest {
     )
 
     @Test
-    fun aBotLandsOnItsNewestLiveTalkThatIsNotDone() {
+    fun aBotLandsOnItsNewestLiveTalkEvenWhenItsTurnIsDone() {
         assertEquals("t3", liveTalk(listOf(talk("t1", "working"), talk("t2", "done"), talk("t3", "waiting"))).let { it?.id })
-        assertEquals("t1", liveTalk(listOf(talk("t1", null), talk("t2", "done"))).let { it?.id })
-        assertNull(liveTalk(listOf(talk("t1", "done"), talk("t2", "working", live = false))))
+        assertEquals("t2", liveTalk(listOf(talk("t1", null), talk("t2", "done"))).let { it?.id })
+        assertNull(liveTalk(listOf(talk("t2", "working", live = false))))
         assertNull(liveTalk(emptyList()))
     }
 
     private fun entry(vararg terminals: Terminal): BotEntry {
         val ws = SettingsWorkspace("app", "/w", bots = listOf(SettingsBot("pr-watch")))
-        return botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, terminals.toList(), emptyList(), 0).single()
+        return botEntries(Settings("1", workspaces = listOf(ws)), Inbox.EMPTY, terminals.toList(), emptyList()).single()
     }
 
     @Test
-    fun theFirstPickLandsOnTheLiveTalkOrHomeAndLaterPicksKeepTheLastTab() {
+    fun aPickLandsOnTheLiveTalkElseOnTheLastTabElseHome() {
         val nav = BotNav()
-        nav.pickBot(entry(talk("t2", "done")))
+        nav.pickBot(entry())
         assertEquals(BotTab.HOME to null, nav.tab to nav.terminal)
         nav.selectTab(BotTab.FILES)
         nav.back()
-        nav.pickBot(entry(talk("t2", "done"), talk("t9", "working")))
-        assertEquals("a Bot picked before keeps its last tab", BotTab.FILES to null, nav.tab to nav.terminal)
-
-        val fresh = BotNav()
-        fresh.pickBot(entry(talk("t9", "working")))
-        assertEquals(BotTab.CHATS to "t9", fresh.tab to fresh.terminal)
+        nav.pickBot(entry())
+        assertEquals("a Bot with no talk keeps its last tab", BotTab.FILES to null, nav.tab to nav.terminal)
+        nav.back()
+        nav.pickBot(entry(talk("t2", "done")))
+        assertEquals("a talk waiting for the user wins over the last tab", BotTab.CHATS to "t2", nav.tab to nav.terminal)
     }
 
     @Test

@@ -158,8 +158,11 @@ public final class KeyInputView: UIView, UITextInput {
     public var smartDashesType: UITextSmartDashesType { get { .no } set {} }
     public var spellCheckingType: UITextSpellCheckingType { get { .no } set {} }
     public var inlinePredictionType: UITextInlinePredictionType { get { .no } set {} }
-    /// The app is dark only, as the terminal is.
-    public var keyboardAppearance: UIKeyboardAppearance { get { .dark } set {} }
+    /// The theme's appearance, which the app sets on the window (ADR 0091).
+    public var keyboardAppearance: UIKeyboardAppearance {
+        get { traitCollection.userInterfaceStyle == .light ? .light : .dark }
+        set {}
+    }
     @available(iOS 18.0, *)
     public var writingToolsBehavior: UIWritingToolsBehavior { get { .none } set {} }
 

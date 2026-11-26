@@ -6,11 +6,10 @@ struct InboxPanel: View {
     @Environment(NextModel.self) private var model
 
     var body: some View {
-        let now = Int64(Date().timeIntervalSince1970)
         List {
             CaptureField().cardRow()
-            ForEach(model.inbox.items.filter { !$0.isLater(now: now) }) { item in
-                ItemCard(item: item, now: now)
+            ForEach(model.inbox.items) { item in
+                ItemCard(item: item)
                     .cardRow()
                     .swipeActions { ItemSwipeActions(item: item) }
             }

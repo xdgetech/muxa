@@ -41,6 +41,22 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testLaterMovesAnItemToTheBottom() throws {
+        let app = launch()
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'item.'"))
+        XCTAssertEqual(rows.firstMatch.identifier, "item.d1")
+        app.descendants(matching: .any)["item.d1"].click()
+        app.buttons["detail.later"].click()
+        let moved = NSPredicate(format: "identifier != 'item.d1'")
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: moved, evaluatedWith: rows.firstMatch)], timeout: 10),
+                       .completed)
+        // Nothing is hidden: the item is the last row.
+        app.scrollViews["inbox.list"].scroll(byDeltaX: 0, deltaY: -5000)
+        XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
+        XCTAssertEqual(rows.allElementsBoundByIndex.last?.identifier, "item.d1")
+    }
+
+    @MainActor
     func testApproveClosesTheReviewsTask() throws {
         let app = launch()
         app.descendants(matching: .any)["item.d1"].click()
@@ -89,29 +105,36 @@ final class MacNextTests: XCTestCase {
         let any = app.descendants(matching: .any)
         XCTAssertTrue(any["pane.1"].waitForExistence(timeout: 5))
         XCTAssertFalse(any["terminal.t6"].exists, "a shell is not a Task of its own")
+        // t1 already has its shell t6 as pane 2, so ⌘D's shell is pane 3.
+        XCTAssertTrue(any["pane.2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(any["pane.3"].exists)
         app.typeKey("d", modifierFlags: .command)
-        XCTAssertTrue(any["pane.2"].waitForExistence(timeout: 5), "⌘D starts a shell beside the agent")
-        app.typeKey("[", modifierFlags: .command)
+        XCTAssertTrue(any["pane.3"].waitForExistence(timeout: 5), "⌘D starts a shell beside the agent")
+        app.typeKey("1", modifierFlags: .command)
         app.typeKey("w", modifierFlags: .command)
-        XCTAssertTrue(any["pane.2"].exists, "⌘W on the agent closes nothing")
+        XCTAssertTrue(any["pane.3"].exists, "⌘W on the agent closes nothing")
         XCTAssertTrue(any["pane.1"].exists, "the window stays")
-        app.typeKey("]", modifierFlags: .command)
+        app.typeKey("3", modifierFlags: .command)
         app.typeKey("w", modifierFlags: .command)
-        XCTAssertTrue(waitForGone(any["pane.2"]), "⌘W closes the shell")
+        XCTAssertTrue(waitForGone(any["pane.3"]), "⌘W closes the shell")
     }
 
+    /// A tab's close button only hides the tab (ADR 0097): nothing asks, the
+    /// Task stays in the sidebar, and opening it there brings the tab back.
     @MainActor
-    func testATabClosesItsTaskAfterAsking() throws {
+    func testClosingATabKeepsItsTask() throws {
         let app = launch()
         app.typeKey("f", modifierFlags: [.command, .shift])
         let any = app.descendants(matching: .any)
         let close = any["tab.close.t1"]
         XCTAssertTrue(close.waitForExistence(timeout: 5))
         close.click()
-        let confirm = app.buttons["closetask.confirm"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        confirm.click()
         XCTAssertTrue(waitForGone(any["tab.t1"]))
+        XCTAssertFalse(app.buttons["closetask.confirm"].exists, "closing a tab asks nothing")
+        let row = any["terminal.t1"]
+        XCTAssertTrue(row.exists, "the Task is still in the sidebar")
+        row.click()
+        XCTAssertTrue(any["tab.t1"].waitForExistence(timeout: 5), "opening the Task shows its tab again")
     }
 
     @MainActor
@@ -286,6 +309,19 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheReaderListsAnIgnoredReport() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let report = app.descendants(matching: .any)["reader.file.output/qa/report.md"]
+        XCTAssertTrue(report.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["reader.ignored.output/qa/report.md"].exists)
+        report.click()
+        XCTAssertTrue(app.webViews["reader"].staticTexts["QA report"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testTheArrowKeysMoveThroughTheReadersImages() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()
@@ -294,6 +330,9 @@ final class MacNextTests: XCTestCase {
         let kind = app.radioGroups["reader.kind"]
         XCTAssertTrue(kind.waitForExistence(timeout: 10))
         kind.radioButtons["Images"].click()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        folder.disclosureTriangles.firstMatch.click()
         let first = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
         XCTAssertTrue(first.waitForExistence(timeout: 10))
         first.click()
@@ -319,6 +358,20 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testEscClosesTheReaderAfterAClickInIt() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let kind = app.radioGroups["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        // A click on the panel's title leaves the keyboard with the window, not a view.
+        app.staticTexts["Reader"].firstMatch.click()
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(waitForGone(kind))
+    }
+
+    @MainActor
     func testTheReaderGroupsFilesUnderTheirFolder() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()
@@ -330,10 +383,32 @@ final class MacNextTests: XCTestCase {
         let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
         XCTAssertTrue(folder.waitForExistence(timeout: 10))
         let file = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        folder.disclosureTriangles.firstMatch.click()
         XCTAssertTrue(file.waitForExistence(timeout: 5))
         folder.disclosureTriangles.firstMatch.click()
         XCTAssertTrue(waitForGone(file))
+    }
+
+    @MainActor
+    func testTheReaderFoldersStartClosed() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let kind = app.radioGroups["reader.kind"]
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
+        // A folder with one file is no folder row: its file shows.
+        XCTAssertTrue(app.descendants(matching: .any)["reader.file..muxa/TASK.md"].waitForExistence(timeout: 10))
+        kind.radioButtons["Images"].click()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
+        let file = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        XCTAssertFalse(file.exists)
+        // The shown file's folder stays open after Back.
         folder.disclosureTriangles.firstMatch.click()
+        XCTAssertTrue(file.waitForExistence(timeout: 5))
+        file.click()
+        app.buttons["reader.back"].click()
         XCTAssertTrue(file.waitForExistence(timeout: 5))
     }
 

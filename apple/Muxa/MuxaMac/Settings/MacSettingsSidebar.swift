@@ -34,11 +34,14 @@ struct MacSettingsSidebar: View {
                     row("Subscriptions", meta: SettingsIndex.subscriptionsSummary(model.settings.settings),
                         place: .subscriptions, id: "settings.subscriptions")
                     row("Usage", meta: PlanWindow.line(model.settings.planUsage.first), place: .usage, id: "settings.usage")
+                    if let build = model.settings.settings?.build {
+                        row("Build disk", meta: SettingsIndex.summary(build), place: .build, id: "settings.build")
+                    }
                 }
                 row(model.connectionTitle, meta: status, place: .connection, id: "settings.connection")
                 label("This Mac", top: 16)
                 row("Keyboard", meta: Shortcut.shortcuts.display, place: .keyboard, id: "settings.keyboard")
-                row("Terminal", meta: TerminalSettings.shared.theme.name, place: .terminal, id: "settings.terminal")
+                row("Appearance", meta: ThemeStore.shared.theme.name, place: .terminal, id: "settings.terminal")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 14)

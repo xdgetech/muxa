@@ -8,6 +8,11 @@ use crate::tasks::Host;
 
 pub(crate) type Answer = (u64, Result<Reply, (ErrorCode, String)>);
 
+/// `inbox-delete-older` takes 1 to 3650 days (ADR 0095), as ADR 0046 did.
+const MAX_DAYS: u32 = 3650;
+/// Seconds.
+const DAY: i64 = 24 * 60 * 60;
+
 /// Answers an Inbox request; `None` for any other message.
 pub(crate) async fn handle<H: Host>(msg: ClientMsg, inbox: &Inbox, host: &H) -> Option<Answer> {
     let (id, result) = match msg {
@@ -46,12 +51,21 @@ pub(crate) async fn handle<H: Host>(msg: ClientMsg, inbox: &Inbox, host: &H) -> 
         ClientMsg::InboxMove { id, item, index } => {
             (id, inbox.change(|b, _| b.move_to(&item, index)))
         }
-        ClientMsg::InboxLater { id, item, until } => {
-            (id, inbox.change(|b, now| b.later(&item, until, now)))
-        }
+        ClientMsg::InboxLater { id, item, .. } => (id, inbox.change(|b, _| b.later(&item))),
         ClientMsg::InboxDone { id, item } => (id, inbox.change(|b, _| b.done(&item))),
         ClientMsg::InboxReopen { id, item } => (id, inbox.change(|b, _| b.reopen(&item))),
         ClientMsg::InboxDelete { id, item } => (id, inbox.change(|b, _| b.delete(&item))),
+        ClientMsg::InboxDeleteOlder { id, days } => {
+            let result = if (1..=MAX_DAYS).contains(&days) {
+                inbox.change(|b, now| {
+                    b.delete_older(now - i64::from(days) * DAY);
+                    Ok(())
+                })
+            } else {
+                Err(InboxError::Invalid(format!("days must be 1 to {MAX_DAYS}")))
+            };
+            (id, result)
+        }
         _ => return None,
     };
     let reply = result

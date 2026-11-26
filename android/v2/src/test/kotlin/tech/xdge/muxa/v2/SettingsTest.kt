@@ -60,6 +60,13 @@ class SettingsTest {
                 """{"op":"workspace-update","workspace":"w","subscriptions":["spare","work"],"switch_subscriptions":false}""",
             SettingsOp.BotUpdate("w", BotSpec("b", subscriptions = listOf("spare"))) to
                 """{"op":"bot-update","workspace":"w","bot":{"name":"b","enabled":true,"subscriptions":["spare"]}}""",
+            SettingsOp.BuildUpdate() to """{"op":"build-update"}""",
+            SettingsOp.BuildUpdate(dir = Patch.Set("~/build"), dropAfter = Patch.Clear) to
+                """{"op":"build-update","dir":"~/build","drop_after":null}""",
+            SettingsOp.BuildUpdate(dir = Patch.Clear) to """{"op":"build-update","dir":null}""",
+            SettingsOp.BuildUpdate(dropAfter = Patch.Set("12h")) to """{"op":"build-update","drop_after":"12h"}""",
+            SettingsOp.BuildUpdate(extraPaths = listOf("out", "web/dist")) to """{"op":"build-update","extra_paths":["out","web/dist"]}""",
+            SettingsOp.BuildUpdate(extraPaths = emptyList()) to """{"op":"build-update","extra_paths":[]}""",
         )
         for ((op, expected) in ops) {
             assertEquals(json.parseToJsonElement(expected), op.json())
@@ -114,6 +121,19 @@ class SettingsTest {
             val text = v.toString()
             assertFalse(text, "s3cret" in text || "bar-value" in text)
         }
+    }
+
+    @Test
+    fun theBuildDiskDecodesAndIsAbsentFromAnOlderServer() {
+        val old = json.decodeFromString<Settings>("""{"revision":"r","workspaces":[{"name":"w","root":"~/w"}]}""")
+        assertEquals(null, old.build)
+        val s = json.decodeFromString<Settings>(
+            """{"revision":"r","build":{"dir":"~/build","drop_after":null,"dir_found":false,"extra_paths":["out"]}}""",
+        )
+        assertEquals(SettingsBuild(dir = "~/build", dropAfter = null, dirFound = false, extraPaths = listOf("out")), s.build)
+        val off = json.decodeFromString<Settings>("""{"revision":"r","build":{"dir":null,"drop_after":"2d","dir_found":false}}""")
+        assertEquals(SettingsBuild(dropAfter = "2d"), off.build)
+        assertEquals(emptyList<String>(), off.build?.extraPaths)
     }
 
     @Test

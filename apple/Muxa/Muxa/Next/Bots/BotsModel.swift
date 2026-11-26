@@ -42,12 +42,12 @@ struct BotEntry: Identifiable {
 extension NextModel {
     /// Every Bot of the host's settings, Workspace by Workspace, with its work
     /// grouped as PROTOCOL-v2.md, "A Bot's work", says.
-    func botEntries(now: Int64 = Int64(Date().timeIntervalSince1970)) -> [BotEntry] {
+    func botEntries() -> [BotEntry] {
         (settings.settings?.workspaces ?? []).flatMap { w in
             w.bots.map { b in
                 BotEntry(workspace: w, bot: b, work: BotWork(
                     bot: b.name, workspace: w.name, enabled: b.spec.enabled, inbox: inbox, terminals: terminals,
-                    routines: routines, now: now))
+                    routines: routines))
             }
         }
     }
@@ -77,11 +77,16 @@ extension NextModel {
         return await startTalk(workspace: e.workspace.name, bot: e.name, title: "Talk to \(e.name) · \(stamp)", goal: goal)
     }
 
-    /// Its most recent live talk, one whose agent is not done: a Bot's page
-    /// first opens on it (ADR 0086).
+    /// Its most recent live talk: a Bot's page opens on it (ADR 0086). Its
+    /// state does not count: Claude Code reports `done` after every turn, and
+    /// the talk then waits for the user's next message.
     func liveTalk(of e: BotEntry) -> Terminal? {
-        talks(of: e).last { $0.status?.state != "done" }
+        talks(of: e).last
     }
+
+    /// The terminals have not come yet: a Bot page that opens now lands
+    /// again once its live talk shows.
+    var terminalsPending: Bool { terminals.isEmpty }
 
     /// New Bot (ADR 0086 decision 3): `bot-add`, then its first talk. A talk
     /// that did not start leaves the Bot added and says so.

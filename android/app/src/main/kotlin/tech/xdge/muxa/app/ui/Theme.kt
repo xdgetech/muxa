@@ -1,69 +1,82 @@
 package tech.xdge.muxa.app.ui
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import tech.xdge.muxa.session.ThemeToken
 
-/** The design's dark palette: every surface, line and text color the app draws. */
+private fun token(t: ThemeToken): Color = ThemeStore.current[t]
+
+/**
+ * Every surface, line and text color the app draws, from the app's theme (ADR 0091).
+ * Each is a getter, so composition that reads one recomposes on a new pick.
+ */
 object Palette {
-    val ground = Color(0xFF0E1014)
-    val surface = Color(0xFF14171C)
-    val raised = Color(0xFF161A20)
+    val ground: Color get() = token(ThemeToken.ground)
+    val surface: Color get() = token(ThemeToken.surface)
+    val raised: Color get() = token(ThemeToken.card)
     /** Buttons and fields that sit on a surface. */
-    val control = Color(0xFF1E232B)
+    val control: Color get() = token(ThemeToken.raised)
+    /** The terminal's key bar: between [raised] and [control]. */
+    val cardRaised: Color get() = token(ThemeToken.cardRaised)
     /** The picked segment or row. */
-    val picked = Color(0xFF2A2F38)
-    val border = Color(0xFF262B33)
-    val borderStrong = Color(0xFF2C323C)
+    val picked: Color get() = token(ThemeToken.selected)
+    val border: Color get() = token(ThemeToken.border)
+    val borderStrong: Color get() = token(ThemeToken.borderStrong)
     /** The line between rows inside a card. */
-    val divider = Color(0xFF20252D)
-    val text = Color(0xFFE7E9EC)
-    val textSecondary = Color(0xFFA3ABB6)
-    val textTertiary = Color(0xFF8B94A0)
-    val accent = Color(0xFF6AA6FF)
-    val terminal = Color(0xFF0A0C0F)
+    val divider: Color get() = token(ThemeToken.divider)
+    val text: Color get() = token(ThemeToken.text)
+    val textSecondary: Color get() = token(ThemeToken.textSecondary)
+    val textTertiary: Color get() = token(ThemeToken.textTertiary)
+    val accent: Color get() = token(ThemeToken.accent)
+    val terminal: Color get() = token(ThemeToken.terminalBackground)
 
     /** A note that explains, such as Settings' line about secrets. */
-    val infoBackground = Color(0xFF16202E)
-    val infoBorder = Color(0xFF24344A)
-    val infoText = Color(0xFFC9D8EE)
+    val infoBackground: Color get() = token(ThemeToken.infoBack)
+    val infoBorder: Color get() = token(ThemeToken.infoBorder)
+    val infoText: Color get() = token(ThemeToken.infoText)
 
     /** A secondary button's fill and border. */
-    val secondaryFill = Color(0xFF232831)
-    val secondaryBorder = Color(0xFF323843)
+    val secondaryFill: Color get() = token(ThemeToken.rowSelected)
+    val secondaryBorder: Color get() = token(ThemeToken.buttonBorder)
 
     /** Delete and Remove: a muted red on a dark red fill, as the design's failed chip. */
-    val destructive = Color(0xFFFF9B9B)
-    val destructiveFill = Color(0xFF3A1717)
-    val destructiveBorder = Color(0xFF5A2626)
+    val destructive: Color get() = token(ThemeToken.failure)
+    val destructiveFill: Color get() = token(ThemeToken.destructiveBack)
+    val destructiveBorder: Color get() = token(ThemeToken.destructiveBorder)
 }
 
 /** A Task's state as its program reports it (OSC 7501), by color. */
 object StateColors {
-    val needsYou = Color(0xFFF5A524)
-    val done = Color(0xFF6AA6FF)
-    val working = Color(0xFF3FC79A)
-    val idle = Color(0xFF8B94A0)
+    val needsYou: Color get() = token(ThemeToken.needsYou)
+    val done: Color get() = token(ThemeToken.done)
+    val working: Color get() = token(ThemeToken.working)
+    val idle: Color get() = token(ThemeToken.idle)
 
     /** The amber banner behind Needs you. */
-    val needsYouBackground = Color(0xFF2A2110)
-    val needsYouBorder = Color(0xFF5A4416)
+    val needsYouBackground: Color get() = token(ThemeToken.promptBack)
+    val needsYouBorder: Color get() = token(ThemeToken.promptBorder)
     /** Text on the amber button. */
-    val onNeedsYou = Color(0xFF1A1203)
+    val onNeedsYou: Color get() = token(ThemeToken.onNeedsYou)
 }
 
 /** The colors of an Inbox kind's chip: its background and its text. */
 data class KindColors(val background: Color, val content: Color)
 
 object KindPalette {
-    val review = KindColors(Color(0xFF123326), Color(0xFF7FE0B8))
-    val failed = KindColors(Color(0xFF3A1717), Color(0xFFFF9B9B))
-    val reply = KindColors(Color(0xFF2A2110), Color(0xFFF5C26B))
-    val decide = KindColors(Color(0xFF251D38), Color(0xFFCDB6FF))
-    val read = KindColors(Color(0xFF14263F), Color(0xFF9CC4FF))
-    val todo = KindColors(Color(0xFF232831), Color(0xFFC9CED6))
+    val review: KindColors get() = kind(ThemeToken.okBack, ThemeToken.okText)
+    val failed: KindColors get() = kind(ThemeToken.destructiveBack, ThemeToken.failedText)
+    val reply: KindColors get() = kind(ThemeToken.writeBack, ThemeToken.writeText)
+    val decide: KindColors get() = kind(ThemeToken.decideBack, ThemeToken.decide)
+    val read: KindColors get() = kind(ThemeToken.readBack, ThemeToken.readText)
+    val todo: KindColors get() = kind(ThemeToken.todoBack, ThemeToken.todoText)
+
+    private fun kind(background: ThemeToken, content: ThemeToken) = KindColors(token(background), token(content))
 }
 
 /**
@@ -71,70 +84,79 @@ object KindPalette {
  * or the palettes above. Besides the accent, only states and kinds have a color.
  */
 object Theme {
-    val accent = Palette.accent
+    val accent: Color get() = Palette.accent
 
     /** Behind the pane: the terminal's own background. */
-    val terminal = Palette.terminal
-    val connected = StateColors.working
-    val attention = StateColors.needsYou
-    val failure = Color(0xFFFF9B9B)
+    val terminal: Color get() = Palette.terminal
+    val connected: Color get() = StateColors.working
+    val attention: Color get() = StateColors.needsYou
+    val failure: Color get() = token(ThemeToken.failure)
 
     /** ✓ closes an item (ADR 0040). */
-    val done = Color(0xFF2E8B6A)
+    val done: Color get() = token(ThemeToken.swipeDone)
 
     /** Later moves an item to the end of the queue. */
-    val later = Color(0xFF5B4BB8)
+    val later: Color get() = token(ThemeToken.swipeLater)
 
     /** Lines a change adds and removes. */
-    val added = StateColors.working
-    val removed = Color(0xFFFF6B6B)
+    val added: Color get() = token(ThemeToken.diffAdded)
+    val removed: Color get() = token(ThemeToken.diffRemoved)
 
-    val chatBackground = Palette.ground
-    val userBubble = Palette.picked
-    val toolCard = Palette.raised
-    val composer = Palette.surface
+    val chatBackground: Color get() = Palette.ground
+    val userBubble: Color get() = token(ThemeToken.userBubble)
+    val toolCard: Color get() = Palette.raised
+    val composer: Color get() = Palette.surface
 }
 
-private val scheme = darkColorScheme(
-    primary = Palette.accent,
-    onPrimary = Palette.ground,
-    primaryContainer = Color(0xFF14263F),
-    onPrimaryContainer = Color(0xFF9CC4FF),
-    secondary = Palette.textSecondary,
-    onSecondary = Palette.ground,
-    secondaryContainer = Palette.picked,
-    onSecondaryContainer = Palette.text,
-    tertiary = StateColors.needsYou,
-    onTertiary = StateColors.onNeedsYou,
-    background = Palette.ground,
-    onBackground = Palette.text,
-    surface = Palette.ground,
-    onSurface = Palette.text,
-    surfaceVariant = Palette.raised,
-    onSurfaceVariant = Palette.textSecondary,
-    surfaceContainerLowest = Palette.ground,
-    surfaceContainerLow = Palette.surface,
-    surfaceContainer = Palette.surface,
-    surfaceContainerHigh = Palette.raised,
-    surfaceContainerHighest = Palette.control,
-    surfaceBright = Palette.control,
-    surfaceDim = Palette.ground,
-    inverseSurface = Palette.text,
-    inverseOnSurface = Palette.ground,
-    outline = Palette.borderStrong,
-    outlineVariant = Palette.border,
-    error = Theme.failure,
-    onError = Palette.ground,
-    errorContainer = KindPalette.failed.background,
-    onErrorContainer = KindPalette.failed.content,
-    scrim = Color.Black,
-)
+/** Material's roles from the tokens, so its own components wear the theme too. */
+private fun colorScheme(t: AppTheme): ColorScheme {
+    fun c(token: ThemeToken) = t[token]
+    val ground = c(ThemeToken.ground)
+    val text = c(ThemeToken.text)
+    val scheme = if (t.isDark) darkColorScheme() else lightColorScheme()
+    return scheme.copy(
+        primary = c(ThemeToken.accent),
+        onPrimary = c(ThemeToken.onAccent),
+        primaryContainer = c(ThemeToken.readBack),
+        onPrimaryContainer = c(ThemeToken.readText),
+        secondary = c(ThemeToken.textSecondary),
+        onSecondary = ground,
+        secondaryContainer = c(ThemeToken.selected),
+        onSecondaryContainer = text,
+        tertiary = c(ThemeToken.needsYou),
+        onTertiary = c(ThemeToken.onNeedsYou),
+        background = ground,
+        onBackground = text,
+        surface = ground,
+        onSurface = text,
+        surfaceVariant = c(ThemeToken.card),
+        onSurfaceVariant = c(ThemeToken.textSecondary),
+        surfaceContainerLowest = ground,
+        surfaceContainerLow = c(ThemeToken.surface),
+        surfaceContainer = c(ThemeToken.surface),
+        surfaceContainerHigh = c(ThemeToken.card),
+        surfaceContainerHighest = c(ThemeToken.raised),
+        surfaceBright = c(ThemeToken.raised),
+        surfaceDim = ground,
+        inverseSurface = text,
+        inverseOnSurface = ground,
+        outline = c(ThemeToken.borderStrong),
+        outlineVariant = c(ThemeToken.border),
+        error = c(ThemeToken.failure),
+        onError = ground,
+        errorContainer = c(ThemeToken.destructiveBack),
+        onErrorContainer = c(ThemeToken.failedText),
+        scrim = Color.Black,
+    )
+}
 
 /** Dialogs and menus as the design's 16 dp cards, not Material's 28 dp. */
 private val shapes = Shapes(extraLarge = Corners.dialog)
 
-/** The design is dark only: the app wears it whatever the system's setting. */
+/** The device's theme (ADR 0091), whatever the system's setting. */
 @Composable
 fun MuxaTheme(content: @Composable () -> Unit) {
+    val theme = ThemeStore.current
+    val scheme = remember(theme) { colorScheme(theme) }
     MaterialTheme(colorScheme = scheme, shapes = shapes, content = content)
 }

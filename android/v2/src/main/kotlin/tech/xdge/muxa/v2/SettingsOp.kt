@@ -139,13 +139,20 @@ sealed class SettingsOp(val op: String) {
     /** Makes the login [workspace]'s env names a subscription called [name], takes the variable out of the env, and puts it first in the Workspace's list. */
     data class SubscriptionAdopt(val workspace: String, val agent: String, val name: String, val plan: String? = null) :
         SettingsOp("subscription-adopt")
+
+    /** `[build]` (ADR 0102). Cleared [dir]: the build disk is off. Cleared [dropAfter]: three days. Null [extraPaths] keeps them. */
+    data class BuildUpdate(
+        val dir: Patch<String> = Patch.Keep,
+        val dropAfter: Patch<String> = Patch.Keep,
+        val extraPaths: List<String>? = null,
+    ) : SettingsOp("build-update")
     data class WorkerAdd(val worker: WorkerSpec) : SettingsOp("worker-add")
 
     /** Replaces the worker named `worker.name`. */
     data class WorkerUpdate(val worker: WorkerSpec) : SettingsOp("worker-update")
     data class WorkerRemove(val name: String) : SettingsOp("worker-remove")
 
-    /** The Workspace this op changes; null for a worker or assistant op. */
+    /** The Workspace this op changes; null for a worker, assistant or build op. */
     val workspaceName: String?
         get() = when (this) {
             is WorkspaceAdd -> name
@@ -171,7 +178,7 @@ sealed class SettingsOp(val op: String) {
             is BotRename -> workspace
             is BotMemoryRestore -> workspace
             is SubscriptionAdopt -> workspace
-            is AssistantUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove,
+            is AssistantUpdate, is BuildUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove,
             is SubscriptionAdd, is SubscriptionUpdate, is SubscriptionRemove -> null
         }
 
@@ -226,6 +233,10 @@ sealed class SettingsOp(val op: String) {
             is SubscriptionAdopt -> {
                 put("workspace", o.workspace); put("agent", o.agent); put("name", o.name)
                 o.plan?.let { put("plan", it) }
+            }
+            is BuildUpdate -> {
+                patch("dir", o.dir); patch("drop_after", o.dropAfter)
+                o.extraPaths?.let { put("extra_paths", enc(it)) }
             }
             is WorkerAdd -> put("worker", enc(o.worker))
             is WorkerUpdate -> put("worker", enc(o.worker))
@@ -286,6 +297,7 @@ sealed class SettingsOp(val op: String) {
                 "subscription-update" -> SubscriptionUpdate(obj("subscription") { opsJson.decodeFromJsonElement(it) })
                 "subscription-remove" -> SubscriptionRemove(req("name"))
                 "subscription-adopt" -> SubscriptionAdopt(ws(), req("agent"), req("name"), s("plan"))
+                "build-update" -> BuildUpdate(patch("dir"), patch("drop_after"), strings("extra_paths"))
                 "worker-add" -> WorkerAdd(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-update" -> WorkerUpdate(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-remove" -> WorkerRemove(req("name"))

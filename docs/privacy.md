@@ -27,6 +27,8 @@ Secrets that agents on your host use, such as service tokens, stay in your host'
 
 The Reader shows your documents, changes and images without loading anything from the internet. Scripts in an HTML document run on your device with no network access. Links that you tap, such as the setup guide, open in your browser.
 
+You can save, share or drag a file or a folder from the Reader. It goes only where you send it. On iPhone and iPad, Save Image adds the image to your photos; Muxa asks first and never reads your photos.
+
 ## Children
 
 Muxa is a tool for software developers. It is not directed at children.

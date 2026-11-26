@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-11-24). Amends ADR 0083 decision 3. Wire: `docs/agents.md`, `.muxa/bot.json`; `protocol/PROTOCOL-v2.md`, "Talking to a Bot".
+Proposed (2026-11-24). Amends ADR 0083 decision 3. Decision 4 is moot since ADR 0094 removed `daily_items`. Wire: `docs/agents.md`, `.muxa/bot.json`; `protocol/PROTOCOL-v2.md`, "Talking to a Bot".
 
 ## Context
 

@@ -4,6 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
 use muxa_inbox::NewItem;
@@ -286,6 +288,11 @@ impl Host for FakeTasks {
             text: Some(text),
             ..ReaderContent::default()
         })
+    }
+
+    /// Not a zip: the folder and the terminal's folder it was asked of.
+    async fn reader_folder(&self, dir: &Path, folder: &str) -> Result<Vec<u8>, TaskError> {
+        Ok(format!("{folder} of {}", dir.display()).into_bytes())
     }
 }
 
@@ -1101,7 +1108,7 @@ async fn a_capture_line_becomes_fields_then_an_item() {
 }
 
 #[tokio::test]
-async fn the_user_orders_hides_and_finishes_items() {
+async fn the_user_orders_moves_down_and_finishes_items() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;
     client.welcome().await;
@@ -1115,6 +1122,7 @@ async fn the_user_orders_hides_and_finishes_items() {
     let inbox = request(&mut client, json!({"type": "inbox", "id": 4})).await["inbox"].clone();
     assert_eq!(titles(&inbox), ["c", "b", "a"]);
     let a = inbox["items"][2]["id"].as_str().unwrap().to_owned();
+    let b = inbox["items"][1]["id"].as_str().unwrap().to_owned();
     let moved = request(
         &mut client,
         json!({"type": "inbox-move", "id": 5, "item": a, "index": 0}),
@@ -1123,10 +1131,18 @@ async fn the_user_orders_hides_and_finishes_items() {
     assert_eq!(titles(&moved["inbox"]), ["a", "c", "b"]);
     let later = request(
         &mut client,
-        json!({"type": "inbox-later", "id": 6, "item": a, "until": 4_000_000_000_i64}),
+        json!({"type": "inbox-later", "id": 6, "item": a}),
     )
     .await;
-    assert_eq!(later["inbox"]["items"][0]["later_until"], 4_000_000_000_i64);
+    assert_eq!(titles(&later["inbox"]), ["c", "b", "a"]);
+    // An older app still sends a time; Later ignores it and hides nothing.
+    let older = request(
+        &mut client,
+        json!({"type": "inbox-later", "id": 61, "item": b, "until": 4_000_000_000_i64}),
+    )
+    .await;
+    assert_eq!(titles(&older["inbox"]), ["c", "a", "b"]);
+    assert!(older["inbox"]["items"][2].get("later_until").is_none());
     let done = request(
         &mut client,
         json!({"type": "inbox-done", "id": 7, "item": a}),
@@ -1162,6 +1178,21 @@ async fn the_user_orders_hides_and_finishes_items() {
     )
     .await;
     assert_eq!(bad["code"], "bad-request");
+    // Items made just now are not a day old; the book's tests cover removal.
+    let kept = request(
+        &mut client,
+        json!({"type": "inbox-delete-older", "id": 12, "days": 1}),
+    )
+    .await;
+    assert_eq!(titles(&kept["inbox"]), ["c", "b"]);
+    for days in [0, 3651] {
+        let bad = request(
+            &mut client,
+            json!({"type": "inbox-delete-older", "id": 13, "days": days}),
+        )
+        .await;
+        assert_eq!(bad["code"], "bad-request", "{days} days");
+    }
 }
 
 #[tokio::test]
@@ -1347,12 +1378,28 @@ async fn the_reader_follows_a_file_of_the_terminals_folder() {
     )
     .await;
     assert_eq!(closed["code"], "not-found", "an ended reader is closed");
+    let zipped = request(
+        &mut client,
+        json!({"type": "reader-folder", "id": 5, "terminal": agent.as_str(), "folder": "out"}),
+    )
+    .await;
+    let zip = zipped["zip"].as_str().unwrap();
+    assert_eq!(
+        STANDARD.decode(zip).unwrap(),
+        format!("out of {}", dir.display()).into_bytes()
+    );
 
     // A terminal muxa did not start has no folder.
     let shell = terminal(&backend).await;
     let refused = request(
         &mut client,
         json!({"type": "reader-list", "id": 4, "terminal": shell.as_str(), "kind": "docs"}),
+    )
+    .await;
+    assert_eq!(refused["code"], "bad-request");
+    let refused = request(
+        &mut client,
+        json!({"type": "reader-folder", "id": 6, "terminal": shell.as_str(), "folder": ""}),
     )
     .await;
     assert_eq!(refused["code"], "bad-request");
@@ -1467,6 +1514,26 @@ async fn a_chat_opens_with_the_conversation_and_ends_with_the_agent() {
         json!({"type": "chat-open", "id": 6, "terminal": shell.as_str()}),
     )
     .await;
+    assert_eq!(refused["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn disk_asks_the_host_and_force_needs_named_paths() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let reply = request(&mut client, json!({"type": "disk", "id": 1})).await;
+    assert_eq!(reply["rows"], json!([]));
+    let forced = request(
+        &mut client,
+        json!({"type": "disk-clean", "id": 2, "force": true}),
+    )
+    .await;
+    assert_eq!(
+        (forced["type"].as_str(), forced["code"].as_str()),
+        (Some("error"), Some("bad-request"))
+    );
+    let refused = request(&mut client, json!({"type": "disk-clean", "id": 3})).await;
     assert_eq!(refused["code"], "bad-request");
 }
 
@@ -1675,8 +1742,14 @@ async fn request_changes_types_the_comment_into_the_agent() {
     )
     .await;
     assert_eq!(sent["inbox"]["done"][0]["id"], item.as_str(), "{sent}");
-    let typed: Vec<u8> = backend.inputs(&agent).concat();
-    assert_eq!(typed, b"\x1b[200~Rename it.\nAnd add a test.\x1b[201~\r");
+    assert_eq!(
+        backend.inputs(&agent),
+        vec![
+            b"\x1b[200~Rename it.\nAnd add a test.\x1b[201~".to_vec(),
+            b"\r".to_vec()
+        ],
+        "Return is a write of its own"
+    );
 
     let item = review_item(&mut client, &agent).await;
     request(
@@ -1684,7 +1757,11 @@ async fn request_changes_types_the_comment_into_the_agent() {
         json!({"type": "inbox-request-changes", "id": 3, "item": item, "comment": "One more"}),
     )
     .await;
-    assert!(backend.inputs(&agent).concat().ends_with(b"One more\r"));
+    let writes = backend.inputs(&agent);
+    assert_eq!(
+        writes[writes.len() - 2..],
+        [b"One more".to_vec(), b"\r".to_vec()]
+    );
 }
 
 #[tokio::test]
@@ -1869,13 +1946,15 @@ async fn a_tasks_shells_start_in_its_place_and_only_they_close() {
     )
     .await;
     assert_eq!(wrong["code"], "bad-request");
-    for id in [3, 4] {
+    // A taken name gets a number from the backend, as herdr-core needs.
+    for (id, name) in [(3, "fix-sh-2"), (4, "fix-sh-3")] {
         let more = request(
             &mut client,
             json!({"type": "task-shell", "id": id, "terminal": agent.as_str()}),
         )
         .await;
         assert_eq!(more["type"], "reply", "{more}");
+        assert_eq!(more["terminal"]["name"], name);
     }
     let fourth = request(
         &mut client,

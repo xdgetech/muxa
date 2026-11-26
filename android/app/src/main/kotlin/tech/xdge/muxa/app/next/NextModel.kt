@@ -20,6 +20,7 @@ import tech.xdge.muxa.transport.TransportError
 import tech.xdge.muxa.v2.MAX_UPLOAD
 import tech.xdge.muxa.v2.Capture
 import tech.xdge.muxa.v2.ChatEntry
+import tech.xdge.muxa.v2.KeyBytes
 import tech.xdge.muxa.v2.ChatPrompt
 import tech.xdge.muxa.v2.DemoChannel
 import tech.xdge.muxa.v2.DiffScope
@@ -584,6 +585,24 @@ class NextModel(
         }
         requestError = null
         input(ch, text.toByteArray())
+    }
+
+    /** Types a message and sends it: the text, then Return on its own after a pause. */
+    fun sendMessage(text: String, terminal: String) {
+        val ch = channelOf[terminal]
+        if (ch == null) {
+            requestError = "Show the Task's terminal to answer it."
+            return
+        }
+        requestError = null
+        val (body, submit) = KeyBytes.message(text)
+        scope.launch {
+            runCatching {
+                client?.input(ch, body.toByteArray())
+                delay(KeyBytes.SUBMIT_PAUSE_MS)
+                client?.input(ch, submit.toByteArray())
+            }
+        }
     }
 
     // Task Loop

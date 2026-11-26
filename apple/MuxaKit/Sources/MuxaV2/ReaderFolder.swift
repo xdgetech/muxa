@@ -36,7 +36,26 @@ public struct ReaderFolder: Equatable, Sendable, Identifiable {
         path.split(separator: "/").last.map(String.init) ?? path
     }
 
-    static func parent(of path: String) -> String {
+    /// The folders above `path`, nearest first; never the listed folder itself.
+    public static func ancestors(of path: String) -> [String] {
+        var folders: [String] = []
+        var at = parent(of: path)
+        while !at.isEmpty {
+            folders.append(at)
+            at = parent(of: at)
+        }
+        return folders
+    }
+
+    /// The name a folder's zip is saved as: the folder's own name, or the
+    /// list's root for the listed folder.
+    public static func zipName(_ folder: String, root: String?) -> String {
+        let base = folder.isEmpty ? root ?? "Folder" : name(of: folder)
+        return base + ".zip"
+    }
+
+    /// The file's folder, as `ReaderFolder.path` names it.
+    public static func parent(of path: String) -> String {
         guard let slash = path.lastIndex(of: "/") else { return "" }
         return String(path[..<slash])
     }

@@ -21,6 +21,20 @@ struct DemoTests {
         #expect(await events.next() == .output(channel: ch, bytes: Array("ls\r\n".utf8)))
     }
 
+    /// fix-login runs Codex, which takes the mouse: a click reaches the program and is not echoed.
+    @Test(.timeLimit(.minutes(1)))
+    func aMouseReportIsNotEchoed() async throws {
+        let c = try await open()
+        var events = c.events.makeAsyncIterator()
+        let ch = try await c.attach("t1", cols: 80, rows: 24)
+        #expect(await events.next() == .paint(channel: ch))
+        guard case .output(_, let screen)? = await events.next() else { return #expect(Bool(false)) }
+        #expect(String(decoding: screen, as: UTF8.self).contains("\u{1b}[?1003h"))
+        try await c.input(ch, Array("\u{1b}[<0;5;3M\u{1b}[<0;5;3m".utf8))
+        try await c.input(ch, Array("y".utf8))
+        #expect(await events.next() == .output(channel: ch, bytes: Array("y".utf8)))
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func aCaptureGoesOnTopAndWatchersSeeIt() async throws {
         let c = try await open()
@@ -33,6 +47,25 @@ struct DemoTests {
         #expect(await events.next() == .inbox(inbox))
         let done = try await c.inbox(.inboxDone(item: inbox.items[0].id))
         #expect(done.done.first?.title == "Sam")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func deleteOlderKeepsOnlyNewerItems() async throws {
+        let c = try await open()
+        // The demo's own items are from 2025; a capture made now is not a day old.
+        _ = try await c.inbox(.inboxAdd(Capture(kind: .todo, title: "fresh")))
+        let inbox = try await c.inbox(.inboxDeleteOlder(days: 1))
+        #expect(inbox.items.map(\.title) == ["fresh"])
+        #expect(inbox.done.isEmpty)
+        await #expect(throws: (any Error).self) { try await c.inbox(.inboxDeleteOlder(days: 0)) }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func laterMovesAnItemToTheBottom() async throws {
+        let c = try await open()
+        let before = try await c.inbox().items.map(\.id)
+        let after = try await c.inbox(.inboxLater(item: before[0])).items.map(\.id)
+        #expect(after == Array(before.dropFirst()) + [before[0]])
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -142,7 +175,8 @@ struct DemoTests {
         let terminals = try await c.terminals()
         let agent = try #require(terminals.first { $0.isTaskAgent })
         let docs = try await c.readerList(agent.id, kind: .docs)
-        #expect(docs.entries.map(\.path) == ["PLAN.md", ".muxa/TASK.md"])
+        #expect(docs.entries.map(\.path) == ["PLAN.md", ".muxa/TASK.md", "output/qa/report.md"])
+        #expect(docs.entries.map { $0.ignored == true } == [false, false, true])
         let (reader, plan) = try await c.readerOpen(agent.id, kind: .docs, path: "PLAN.md")
         #expect(plan.text?.hasPrefix("# Plan") == true)
         try await c.readerClose(reader)
@@ -152,6 +186,37 @@ struct DemoTests {
         #expect(image.bytes?.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]))
         let shell = try #require(terminals.first { $0.name == "shell" })
         await #expect(throws: V2Error.self) { try await c.readerList(shell.id, kind: .docs) }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aReaderFolderComesAsAZipOfItsListedFiles() async throws {
+        let c = try await open()
+        let agent = try #require(try await c.terminals().first { $0.isTaskAgent })
+        let zip = try await c.readerFolder(agent.id, folder: "screenshots")
+        let files = Self.storedFiles(zip)
+        #expect(files.map(\.name) == ["screenshots/login.png", "screenshots/session.png"])
+        #expect(files.first?.data.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]))
+        #expect(DemoZip.crc32(Data("123456789".utf8)) == 0xCBF4_3926)
+        let all = Self.storedFiles(try await c.readerFolder(agent.id, folder: ""))
+        #expect(all.map(\.name).contains("app/output/qa/report.md"))
+        #expect(!all.map(\.name).contains("app/src/auth/session.ts"), "a diff is not a file of the folder")
+        await #expect(throws: V2Error.self) { try await c.readerFolder(agent.id, folder: "screen") }
+    }
+
+    /// The names and bytes of a stored zip's local entries.
+    private static func storedFiles(_ zip: Data) -> [(name: String, data: Data)] {
+        let bytes = [UInt8](zip)
+        func le(_ at: Int, _ n: Int) -> Int { (0..<n).reduce(0) { $0 | Int(bytes[at + $1]) << (8 * $1) } }
+        var files: [(name: String, data: Data)] = []
+        var at = 0
+        while at + 30 <= bytes.count, le(at, 4) == 0x0403_4B50 {
+            let size = le(at + 18, 4), nameLength = le(at + 26, 2), extra = le(at + 28, 2)
+            let name = String(decoding: bytes[(at + 30)..<(at + 30 + nameLength)], as: UTF8.self)
+            let start = at + 30 + nameLength + extra
+            files.append((name, Data(bytes[start..<(start + size)])))
+            at = start + size
+        }
+        return files
     }
 
     @Test(.timeLimit(.minutes(1)))

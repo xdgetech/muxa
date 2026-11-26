@@ -77,6 +77,14 @@ class ServerTest {
             } catch (e: V2Error.Refused) {
                 assertEquals("bad-request", e.code)
             }
+            val zip = c.readerFolder(demo.id, "")
+            assertEquals(listOf<Byte>(0x50, 0x4B, 0x05, 0x06), zip.take(4))
+            try {
+                c.readerFolder(demo.id, "docs")
+                fail("a folder with no listed files has no zip")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
             c.close()
         }
     }
@@ -144,6 +152,9 @@ class ServerTest {
             assertEquals(listOf("to the bank"), inbox.items.map { it.title })
             val pushed = phone.next { it !is V2Event.InboxChanged }
             assertEquals(V2Event.InboxChanged(inbox), pushed)
+            val second = mac.inbox(V2Request.InboxAdd(Capture(ItemKind.TODO, "milk")))
+            val later = mac.inbox(V2Request.InboxLater(second.items[0].id))
+            assertEquals(listOf("to the bank", "milk"), later.items.map { it.title })
             try {
                 mac.inbox(V2Request.InboxDone("nope"))
                 fail("done on a missing item")
@@ -153,6 +164,39 @@ class ServerTest {
             assertTrue(phone.resumed.isEmpty())
             phone.close()
             mac.close()
+        }
+    }
+
+    @Test
+    fun deleteOlderKeepsANewItemAndRefusesDaysOutOfRange() = runBlocking {
+        withTimeout(10_000) {
+            val mac = connect()
+            mac.inbox(V2Request.InboxAdd(Capture(ItemKind.TODO, "fresh")))
+            assertTrue(mac.inbox(V2Request.InboxDeleteOlder(1)).items.any { it.title == "fresh" })
+            for (days in listOf(0, 3651)) {
+                try {
+                    mac.inbox(V2Request.InboxDeleteOlder(days))
+                    fail("$days days")
+                } catch (e: V2Error.Refused) {
+                    assertEquals("bad-request", e.code)
+                }
+            }
+            mac.close()
+        }
+    }
+
+    @Test
+    fun diskAsksTheHostAndForceNeedsPaths() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(emptyList<DiskRow>(), c.disk())
+            try {
+                c.diskClean(force = true)
+                fail("force without paths was accepted")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
         }
     }
 
@@ -281,6 +325,7 @@ class ServerTest {
                 workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
                 subscriptions = listOf(SubscriptionSpec("claude-work", "claude-code", "~/.claude-work", plan = "Max 20x")),
                 foundLogins = listOf(FoundLogin("claude-code", workspace = "Personal")),
+                build = SettingsBuild(dir = "/ssd/build", dropAfter = null, dirFound = true),
             )
             assertEquals(expected, c.settings())
             val ops = listOf(
@@ -292,6 +337,14 @@ class ServerTest {
             val ws = after.workspaces.single()
             assertEquals(listOf("CLAUDE_CONFIG_DIR", "FOO"), ws.agent.env.map { it.key })
             assertEquals(SecretState.SET, ws.connections.single { it.name == "linear" }.secret)
+            val build = c.settingsUpdate(
+                after.revision,
+                listOf(
+                    SettingsOp.BuildUpdate(dir = Patch.Clear, dropAfter = Patch.Set("12h")),
+                    SettingsOp.BuildUpdate(extraPaths = listOf("out")),
+                ),
+            )
+            assertEquals(SettingsBuild(dir = null, dropAfter = "12h", dirFound = false, extraPaths = listOf("out")), build.build)
             val text = json.encodeToString(Settings.serializer(), after)
             assertTrue(text, "s3cret" !in text && "bar" !in text)
             try {

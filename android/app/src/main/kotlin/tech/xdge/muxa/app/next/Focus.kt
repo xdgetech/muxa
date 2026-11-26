@@ -209,7 +209,7 @@ private fun UploadButton(model: NextModel, terminal: Terminal) {
 }
 
 /** Covers the terminal, and keeps touches from reaching it. */
-private val Cover = Modifier.fillMaxSize().background(Palette.ground).pointerInput(Unit) {}
+private val Cover: Modifier get() = Modifier.fillMaxSize().background(Palette.ground).pointerInput(Unit) {}
 
 @Composable
 private fun Header(
@@ -253,13 +253,12 @@ private fun Header(
 /** The Inbox beside a terminal: Capture and the open items; Done by its button. */
 @Composable
 private fun InboxPanel(model: NextModel, modifier: Modifier) {
-    val now = System.currentTimeMillis() / 1000
     Column(modifier.testTag("focus.inboxpanel")) {
         Column(Modifier.padding(12.dp)) { CaptureField(model) }
         LazyColumn(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(model.inbox.items.filter { !it.isLater(now) }, key = { it.id }) { item ->
+            items(model.inbox.items, key = { it.id }) { item ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    ItemRow(item, now, Modifier.weight(1f))
+                    ItemRow(item, Modifier.weight(1f))
                     IconButton({ model.inbox(V2Request.InboxDone(item.id)) }) { Icon(Icons.check, "Done", tint = Palette.textSecondary) }
                 }
             }

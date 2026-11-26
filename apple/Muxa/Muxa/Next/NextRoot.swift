@@ -32,7 +32,7 @@ struct NextRoot: View {
             }
         }
         .background(Palette.ground)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeStore.shared.colorScheme)
     }
 
     /// `⌘⇧H` and `⌘⇧F`, as on the desktop (ADR 0070). The Mac has them in its Go menu.

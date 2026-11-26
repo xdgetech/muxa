@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
     BotRules, BotSpec, ConnectionSpec, EnvKey, FoundLogin, McpSpec, MemoryVersion, RoutineSpec,
-    SettingsAgent, SettingsAssistant, SettingsBot, SettingsConnection, SettingsLoop,
+    SettingsAgent, SettingsAssistant, SettingsBot, SettingsBuild, SettingsConnection, SettingsLoop,
     SettingsRoutine, SettingsWorkspace, SubscriptionSpec, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
@@ -28,6 +28,16 @@ pub struct FileConfig {
     pub assistant: Option<toml::Value>,
     #[serde(default)]
     pub subscription: Vec<SubscriptionSpec>,
+    pub build: Option<FileBuild>,
+}
+
+/// `[build]` as written (ADR 0102).
+#[derive(Deserialize, Default)]
+pub struct FileBuild {
+    dir: Option<String>,
+    drop_after: Option<String>,
+    #[serde(default)]
+    extra_paths: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -415,6 +425,22 @@ pub fn workspace(
         routines: list,
         bots: bot_list,
         routines_problem: problem,
+    }
+}
+
+/// `[build]` as written, and whether its folder is there now. Blocking.
+pub fn build(raw: Option<FileBuild>, home: Option<&Path>) -> SettingsBuild {
+    let raw = raw.unwrap_or_default();
+    let dir_found = raw
+        .dir
+        .as_deref()
+        .and_then(|d| expand(d, home).ok())
+        .is_some_and(|d| d.is_dir());
+    SettingsBuild {
+        dir: raw.dir,
+        drop_after: raw.drop_after,
+        dir_found,
+        extra_paths: raw.extra_paths,
     }
 }
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import tech.xdge.muxa.app.next.NextModel
+import tech.xdge.muxa.app.ui.ThemeStore
 import tech.xdge.muxa.session.HostStore
 import java.io.File
 import java.security.Security
@@ -33,6 +34,7 @@ class MuxaApplication : Application() {
         // stripped copy without it, and sshj keeps whatever is registered under that name.
         Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
         Security.insertProviderAt(BouncyCastleProvider(), 1)
+        ThemeStore.start(this)
         // Every window shares the saved hosts and the device key, never a connection.
         val hosts = HostStore(File(filesDir, "hosts.json"))
         val keys = ClientKeyStore(this)

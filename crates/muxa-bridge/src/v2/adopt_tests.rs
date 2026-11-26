@@ -61,6 +61,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         bot_rules: Default::default(),
         subscriptions: Vec::new(),
         switch_subscriptions: true,
+        build: Default::default(),
     }
 }
 

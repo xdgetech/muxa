@@ -18,9 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,7 +40,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.Palette
@@ -61,21 +58,12 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
     var selectedItem by rememberSaveable { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf(InboxFilter()) }
     var reordering by remember { mutableStateOf(false) }
-    var now by remember { mutableLongStateOf(nowSeconds()) }
     val capture = remember { FocusRequester() }
     val phone = LocalPhoneLayout.current
     val scope = rememberCoroutineScope()
     val actions = remember(model) { ItemActionState(model, scope) }
 
-    // Later items come back on their own; the clock decides what shows.
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = nowSeconds()
-            delay(CLOCK_MS)
-        }
-    }
-
-    val visible = model.inbox.items.filter { filter.shows(it, now) }
+    val visible = model.inbox.items.filter(filter::shows)
     fun nextVisible(after: String): String? {
         val at = visible.indexOfFirst { it.id == after }
         if (at < 0) return null
@@ -113,7 +101,7 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
                 actions.retry(item.id) { selectedItem = nextVisible(item.id) }
             }
             e.isCtrlPressed && e.key == Key.Backspace && item != null -> act(V2Request.InboxDone(item.id)).let { true }
-            e.isCtrlPressed && e.key == Key.L && item != null -> act(V2Request.InboxLater(item.id, LaterChoice.TOMORROW.until())).let { true }
+            e.isCtrlPressed && e.key == Key.L && item != null -> act(V2Request.InboxLater(item.id)).let { true }
             else -> false
         }
     }
@@ -126,7 +114,7 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
             NeedsYouBanner(model, openTerminal) { nav.go(Section.TASKS) }
             CaptureField(model, capture)
         }
-        Box(Modifier.weight(1f)) { InboxList(model, visible, filter, now, selectedItem, reordering) { selectedItem = it } }
+        Box(Modifier.weight(1f)) { InboxList(model, visible, filter, selectedItem, reordering) { selectedItem = it } }
         LinkBanner(model)
     }
     val detail: @Composable (Modifier) -> Unit = { modifier ->
@@ -196,7 +184,3 @@ fun Modifier.selectable(selected: Boolean, onClick: () -> Unit): Modifier =
         .background(if (selected) Palette.picked else Color.Transparent)
         .semantics { this.selected = selected }
         .clickable(onClick = onClick)
-
-private fun nowSeconds() = System.currentTimeMillis() / 1000
-
-private const val CLOCK_MS = 30_000L

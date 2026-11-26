@@ -193,6 +193,15 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** The tokens agents used on [day] (`YYYY-MM-DD`; null for today on the host's clock). An older server refuses it. */
     suspend fun tokenUsage(day: String? = null): TokenUsage = field("token_usage", request(V2Request.TokenUsage(day)))
 
+    /** The host's Task places, other worktrees and build folders (ADR 0102). */
+    suspend fun disk(): List<DiskRow> = field("rows", request(V2Request.Disk))
+
+    /** Removes rows of [disk]; a dry run unless [dryRun] is false. */
+    suspend fun diskClean(paths: List<String> = emptyList(), force: Boolean = false, dryRun: Boolean = true): DiskCleaned {
+        val reply = request(V2Request.DiskClean(paths, force, dryRun))
+        return DiskCleaned(field("dry_run", reply), field("removed", reply), field("kept", reply))
+    }
+
     /** The Routines, the Workspaces whose Routines could not be read, and those that turn them off. */
     suspend fun routines(): Triple<List<Routine>, List<RoutineProblem>, List<RoutinesOff>> {
         val reply = request(V2Request.Routines)
@@ -236,6 +245,13 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
 
     suspend fun readerClose(reader: Int) {
         request(V2Request.ReaderClose(reader))
+    }
+
+    /** The documents and images the Reader lists under [folder], subfolders too, as a zip (ADR 0101). Empty: all. */
+    suspend fun readerFolder(terminal: String, folder: String): ByteArray {
+        val zip = field<String>("zip", request(V2Request.ReaderFolder(terminal, folder)))
+        return runCatching { java.util.Base64.getDecoder().decode(zip) }
+            .getOrElse { throw V2Error.BadMessage("zip: not base64") }
     }
 
     // Chat

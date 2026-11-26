@@ -46,6 +46,10 @@ pub struct Settings {
     /// (ADR 0103 §7).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub found_logins: Vec<FoundLogin>,
+    /// The build disk (ADR 0102): `[build]` in `workspaces.toml`. Absent
+    /// from an older server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<SettingsBuild>,
 }
 
 /// A login muxa found without opening a file: a default folder that exists,
@@ -75,6 +79,24 @@ pub struct SubscriptionSpec {
     /// A label only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
+}
+
+/// `[build]`: where Task worktrees put their build output (ADR 0102).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsBuild {
+    /// As written, `~/` included; None turns the build disk off.
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// As written (`3d`); None means three days.
+    #[serde(default)]
+    pub drop_after: Option<String>,
+    /// `dir` is a folder on the host now. A disk that is not mounted is not.
+    #[serde(default)]
+    pub dir_found: bool,
+    /// Paths every worktree links too, beside the ones found from each
+    /// repo's build files, when the repo ignores them.
+    #[serde(default)]
+    pub extra_paths: Vec<String>,
 }
 
 /// The Capture assistant: no Workspace, no connections (ADR 0084).
@@ -269,9 +291,6 @@ pub struct BotSpec {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker: Option<String>,
-    /// None: 3.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub daily_items: Option<u32>,
     pub enabled: bool,
     /// A team lead's members (ADR 0085): Bots of the same Workspace that
     /// lead no team themselves.
@@ -546,6 +565,23 @@ pub enum SettingsOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plan: Option<String>,
     },
+    /// `[build]` (ADR 0102); `null` removes a field.
+    BuildUpdate {
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        dir: Option<Option<String>>,
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        drop_after: Option<Option<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extra_paths: Option<Vec<String>>,
+    },
     WorkerAdd {
         worker: WorkerSpec,
     },
@@ -588,6 +624,7 @@ impl SettingsOp {
             Self::SubscriptionUpdate { .. } => "subscription-update",
             Self::SubscriptionRemove { .. } => "subscription-remove",
             Self::SubscriptionAdopt { .. } => "subscription-adopt",
+            Self::BuildUpdate { .. } => "build-update",
             Self::WorkerAdd { .. } => "worker-add",
             Self::WorkerUpdate { .. } => "worker-update",
             Self::WorkerRemove { .. } => "worker-remove",
@@ -624,6 +661,7 @@ impl SettingsOp {
             | Self::SubscriptionAdd { .. }
             | Self::SubscriptionUpdate { .. }
             | Self::SubscriptionRemove { .. }
+            | Self::BuildUpdate { .. }
             | Self::WorkerAdd { .. }
             | Self::WorkerUpdate { .. }
             | Self::WorkerRemove { .. } => None,
@@ -710,5 +748,29 @@ mod tests {
             json!({"name": "gh", "env": "GH_TOKEN", "account": null, "access": "read",
                 "secret": "missing"})
         );
+    }
+
+    #[test]
+    fn build_update_keeps_absent_fields_and_null_clears() {
+        let op: SettingsOp =
+            serde_json::from_value(json!({"op": "build-update", "dir": null})).unwrap();
+        assert_eq!(
+            op,
+            SettingsOp::BuildUpdate {
+                dir: Some(None),
+                drop_after: None,
+                extra_paths: None,
+            }
+        );
+        let set = SettingsOp::BuildUpdate {
+            dir: Some(Some("/ssd/build".into())),
+            drop_after: None,
+            extra_paths: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&set).unwrap(),
+            json!({"op": "build-update", "dir": "/ssd/build"})
+        );
+        assert_eq!(set.workspace(), None);
     }
 }

@@ -18,12 +18,6 @@ pub(crate) type Refusal = (ErrorCode, String);
 
 /// The longest comment Request changes types, in bytes.
 pub const MAX_COMMENT: usize = 8 * 1024;
-/// Bracketed paste: a multi-line comment arrives as one paste, so its
-/// newlines do not send it line by line.
-const PASTE_START: &[u8] = b"\x1b[200~";
-const PASTE_END: &[u8] = b"\x1b[201~";
-/// Time for typed bytes to leave before the next write or the detach.
-const SETTLE: Duration = Duration::from_millis(200);
 /// A killed terminal is removed once its program has ended.
 const REMOVE_TRIES: u32 = 20;
 const REMOVE_WAIT: Duration = Duration::from_millis(100);
@@ -266,31 +260,16 @@ fn checked_comment(comment: &str) -> Result<String, Refusal> {
     Ok(text.trim_end().to_owned())
 }
 
-/// Types the comment and Enter. One line goes as typed, as the Task Loop
-/// types its prompt; several lines go as one bracketed paste.
+/// Types the comment, then Return on its own (`typing::type_message`).
+/// Several lines go as one bracketed paste.
 async fn type_comment<B: SessionBackend>(
     backend: &B,
     agent: &TerminalInfo,
     comment: &str,
 ) -> Result<(), BackendError> {
-    use muxa_backend::TerminalStream;
     // The agent's own size: attaching does not resize it.
     let stream = backend.attach(&agent.id, agent.size, 0).await?;
-    let typed = if comment.contains('\n') {
-        let mut paste = PASTE_START.to_vec();
-        paste.extend_from_slice(comment.as_bytes());
-        paste.extend_from_slice(PASTE_END);
-        let pasted = stream.input(&paste);
-        tokio::time::sleep(SETTLE).await;
-        pasted.and_then(|()| stream.input(b"\r"))
-    } else {
-        let mut line = comment.as_bytes().to_vec();
-        line.push(b'\r');
-        stream.input(&line)
-    };
-    tokio::time::sleep(SETTLE).await;
-    let _ = stream.detach();
-    typed
+    crate::typing::type_message(stream, comment).await
 }
 
 /// Starts the live agent's loop again with the same check, its count at 0.

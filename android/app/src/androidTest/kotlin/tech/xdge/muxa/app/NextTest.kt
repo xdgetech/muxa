@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
@@ -101,6 +102,47 @@ class NextTest {
         compose.waitUntilDoesNotExist(hasTestTag("detail.loss"), TIMEOUT)
         compose.backToList()
         compose.waitUntilDoesNotExist(hasTestTag("item.d8"), TIMEOUT)
+    }
+
+    // ADR 0091: the theme is the device's, picked in Settings › Appearance.
+    @Test
+    fun theThemeIsPickedOnThisDeviceAndMarked() {
+        launch()
+        compose.openSettings()
+        compose.onNodeWithTag("settings.terminal").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.theme.dracula"), TIMEOUT)
+        compose.onNodeWithTag("terminal.theme.dracula").performScrollTo().performClick()
+        compose.onNodeWithTag("terminal.theme.dracula").assertIsSelected()
+        compose.onNodeWithTag("terminal.theme.muxa-dark").assertIsNotSelected()
+        // Back to the default, so the other tests see the usual colors.
+        compose.onNodeWithTag("terminal.theme.muxa-dark").performScrollTo().performClick()
+        compose.onNodeWithTag("terminal.theme.muxa-dark").assertIsSelected()
+    }
+
+    // ADR 0091 Amendment 1: Automatic is a pick of its own, and an edit becomes `<id>-custom`.
+    @Test
+    fun automaticAndAnEditedThemeAreMarked() {
+        launch()
+        compose.openSettings()
+        compose.onNodeWithTag("settings.terminal").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.theme.automatic"), TIMEOUT)
+        compose.onNodeWithTag("terminal.theme.automatic").performScrollTo().performClick()
+        compose.onNodeWithTag("terminal.theme.automatic").assertIsSelected()
+        compose.onNodeWithTag("terminal.theme.muxa-dark").assertIsNotSelected()
+
+        compose.onNodeWithTag("terminal.theme.dracula").performScrollTo().performClick()
+        compose.onNodeWithTag("appearance.edit").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("edit.token.accent"), TIMEOUT)
+        compose.onNodeWithTag("edit.token.accent").performScrollTo().performTextReplacement("#ff79c6")
+        compose.onNodeWithTag("edit.save").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.theme.dracula-custom"), TIMEOUT)
+        compose.onNodeWithTag("terminal.theme.dracula-custom").performScrollTo().assertIsSelected()
+        compose.onNodeWithTag("terminal.theme.dracula").assertIsNotSelected()
+
+        // Remove the edit: the pick goes back to the default, so other tests and the next run start clean.
+        compose.onNodeWithTag("terminal.theme.dracula-custom.remove").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("terminal.theme.dracula-custom"), TIMEOUT)
+        compose.onNodeWithTag("terminal.theme.muxa-dark").performScrollTo().assertIsSelected()
     }
 
     // Settings reads the host's settings since ADR 0074, and ADR 0075 gives every agent all its
@@ -690,6 +732,11 @@ class NextTest {
         compose.onNodeWithTag("focus.reader").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("reader.file.PLAN.md"), TIMEOUT)
         compose.onNodeWithTag("reader.file.PLAN.md").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader"), TIMEOUT)
+        compose.onNodeWithTag("reader.back").performClick()
+        // A file git ignores is listed, marked as not in git.
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader.ignored.output/qa/report.md"), TIMEOUT)
+        compose.onNodeWithTag("reader.file.output/qa/report.md").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("reader"), TIMEOUT)
         compose.onNodeWithTag("reader.back").performClick()
         compose.onNodeWithTag("reader.kind.changes").performClick()

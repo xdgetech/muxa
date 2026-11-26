@@ -5,6 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::time::Duration;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use muxa_backend::{
     BackendError, Change, ChangeStream, Labels, SessionBackend, Size, TerminalId, TerminalInfo,
 };
@@ -508,6 +510,29 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 };
                 self.open_reader(id, &terminal, open).await;
             }
+            ClientMsg::ReaderFolder {
+                id,
+                terminal,
+                folder,
+            } => {
+                let zipped = match reader::folder(self.backend, &terminal).await {
+                    Ok(dir) => self
+                        .host
+                        .reader_folder(&dir, &folder)
+                        .await
+                        .map_err(|e| (task_code(&e), e.to_string())),
+                    Err(e) => Err(e),
+                };
+                match zipped {
+                    Ok(bytes) => self.reply(
+                        id,
+                        Reply::Zipped {
+                            zip: STANDARD.encode(bytes),
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
             ClientMsg::ReaderClose { id, reader } => match self.readers.open.remove(&reader) {
                 Some(_) => self.reply(id, Reply::Empty {}),
                 None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
@@ -521,6 +546,20 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Ok(token_usage) => self.reply(id, Reply::TokenUsage { token_usage }),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
+            ClientMsg::Disk { id } => self.disk(id).await,
+            ClientMsg::DiskClean {
+                id,
+                paths,
+                force,
+                dry_run,
+            } => {
+                let clean = crate::tasks::DiskClean {
+                    paths,
+                    force,
+                    dry_run,
+                };
+                self.disk_clean(id, clean).await
+            }
             ClientMsg::InboxApprove { id, item, worktree } => {
                 let mode = worktree.unwrap_or_default();
                 let done =
@@ -544,7 +583,12 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.inbox_reply(id, done);
             }
             ClientMsg::Settings { id } => match self.host.settings().await {
-                Ok(settings) => self.reply(id, Reply::Settings { settings }),
+                Ok(settings) => self.reply(
+                    id,
+                    Reply::Settings {
+                        settings: Box::new(settings),
+                    },
+                ),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
             ClientMsg::SettingsUpdate { id, revision, ops } => {
@@ -573,7 +617,12 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                                 tracing::warn!(error = %e, "a renamed Bot's items keep the old name");
                             }
                         }
-                        self.reply(id, Reply::Settings { settings })
+                        self.reply(
+                            id,
+                            Reply::Settings {
+                                settings: Box::new(settings),
+                            },
+                        )
                     }
                     Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
                 }
@@ -711,6 +760,44 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.reply(id, Reply::Workspaces { workspaces });
             }
             Err(e) => self.error(Some(id), code_of(&e), e.to_string()),
+        }
+    }
+
+    async fn disk(&mut self, id: u64) {
+        let holds = match crate::holds::holds(self.backend, self.inbox).await {
+            Ok(h) => h,
+            Err(e) => return self.error(Some(id), ErrorCode::Backend, e),
+        };
+        match self.host.disk(&holds).await {
+            Ok(rows) => self.reply(id, Reply::Disk { rows }),
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+        }
+    }
+
+    /// Never without the terminals: a place that cannot be shown free stays.
+    async fn disk_clean(&mut self, id: u64, clean: crate::tasks::DiskClean) {
+        if clean.force && clean.paths.is_empty() {
+            return self.error(
+                Some(id),
+                ErrorCode::BadRequest,
+                "force needs the paths to remove".into(),
+            );
+        }
+        let holds = match crate::holds::holds(self.backend, self.inbox).await {
+            Ok(h) => h,
+            Err(e) => return self.error(Some(id), ErrorCode::Backend, e),
+        };
+        let dry_run = clean.dry_run;
+        match self.host.disk_clean(&holds, clean).await {
+            Ok(done) => self.reply(
+                id,
+                Reply::DiskCleaned {
+                    dry_run,
+                    removed: done.removed,
+                    kept: done.kept,
+                },
+            ),
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
         }
     }
 

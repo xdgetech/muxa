@@ -20,6 +20,24 @@ If your `shellcheck` lives elsewhere: `make check SHELLCHECK="<command>"`.
 - Tests run on the fake backend (`muxa-backend` with `fake`). Never point a test at your own herdr-core; `make test-herdr` is for humans, and it adds and removes only its own labelled terminals.
 - If you rely on a herdr-core or agent behavior, write it down in `docs/findings/` and check it in `scripts/repro/` where you can.
 
+## Disk space
+
+A Task worktree builds its own `target/` (several GB each). muxa can put that output on another disk (ADR 0102):
+
+```toml
+# workspaces.toml
+[build]
+dir = "/Volumes/External/muxa/build"
+```
+
+muxa finds each repo's build folders from its build files (`target`, `.build`, Gradle's `build` and `.gradle`, `.next`) and moves only the ones the repo's git ignores. `extra_paths` under `[build]` adds others. Settings in the apps edits `[build]`, and says when the host cannot find the folder, for example while the disk is not mounted.
+
+`muxa-cli disk` shows what the Task places, other worktrees and build folders use; `muxa-cli disk clean` says what it would remove, and `--yes` removes it. `cargo clean` in a worktree replaces the `target` link with a real folder; start the Task again, or remove the folder, to get the link back.
+
+muxa does not manage tool caches. They can be large on a machine that runs the app tests:
+- iOS simulators (`~/Library/Developer/CoreSimulator`): `xcrun simctl delete unavailable`, and `xcrun simctl erase all` while no simulator runs.
+- Xcode's DerivedData, `~/.gradle`, Android emulators and package caches: move them to the other disk with each tool's own setting.
+
 ## Changes
 
 - Small pull requests, one concern each.

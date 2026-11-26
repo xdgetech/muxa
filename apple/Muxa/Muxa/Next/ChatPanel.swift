@@ -75,8 +75,16 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 List {
-                    ForEach(entries) {
-                        ChatRow(entry: $0).listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    ForEach(entries) { entry in
+                        ChatRow(entry: entry)
+                            .contextMenu {
+                                Button("Copy Message") { Clipboard.copy(entry.copyText) }
+                                    .accessibilityIdentifier("chat.copy.message")
+                                Button("Copy Chat") { Clipboard.copy(ChatEntry.transcript(entries)) }
+                                    .accessibilityIdentifier("chat.copy.chat")
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     }
                     Color.clear.frame(height: 1).id("end").listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
@@ -97,17 +105,19 @@ struct ChatView: View {
 
     private var composer: some View {
         HStack(spacing: 8) {
-            TextField("Message the agent", text: $draft)
+            TextField("Message the agent", text: $draft, axis: .vertical)
+                .lineLimit(1...8)
+                .textFieldStyle(.plain)
                 .focused($fieldFocused)
-                .onSubmit(sendDraft)
+                .returnSends($draft, send: sendDraft)
                 .onChange(of: draft) { _, typed in
                     guard let sent else { return }
-                    if typed.trimmingCharacters(in: .whitespaces) == sent { draft = "" } else if !typed.isEmpty { self.sent = nil }
+                    if typed.trimmingCharacters(in: .whitespacesAndNewlines) == sent { draft = "" } else if !typed.isEmpty { self.sent = nil }
                 }
                 .padding(.horizontal, 4)
                 .fieldWell(radius: minTouch / 2)
                 .accessibilityIdentifier("chat.field")
-            SendButton(disabled: draft.trimmingCharacters(in: .whitespaces).isEmpty, action: sendDraft)
+            SendButton(disabled: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, action: sendDraft)
                 .accessibilityIdentifier("chat.send")
         }
         .padding(.horizontal, 10)
@@ -115,7 +125,7 @@ struct ChatView: View {
     }
 
     private func sendDraft() {
-        let text = draft.trimmingCharacters(in: .whitespaces)
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         // A field still composing (Japanese input) writes its marked text back
         // after a clear. Leaving the field makes it commit now; the clear then
@@ -123,7 +133,7 @@ struct ChatView: View {
         fieldFocused = false
         sent = text
         draft = ""
-        send(text + "\r")
+        Task { await model.sendMessage(text, to: terminal.id) }
         Task { @MainActor in
             draft = ""
             fieldFocused = true
@@ -148,6 +158,7 @@ private struct ChatRow: View {
         case "user":
             Text(entry.text ?? "")
                 .foregroundStyle(Palette.text)
+                .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Palette.raised, in: RoundedRectangle(cornerRadius: 12))
@@ -159,10 +170,12 @@ private struct ChatRow: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(2)
+                    .textSelection(.enabled)
                 if let result = entry.tool?.result {
                     Text(result).font(.caption2.monospaced())
                         .foregroundStyle(entry.tool?.error == true ? Palette.late : Palette.textTertiary)
                         .lineLimit(4)
+                        .textSelection(.enabled)
                 }
             }
             .padding(10)
@@ -171,7 +184,7 @@ private struct ChatRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("chat.tool")
         case "notice":
-            Text(entry.text ?? "").font(.caption).foregroundStyle(Palette.textTertiary)
+            Text(entry.text ?? "").font(.caption).foregroundStyle(Palette.textTertiary).textSelection(.enabled)
         default:
             MarkdownText(text: entry.text ?? "")
                 .accessibilityIdentifier("chat.assistant")
@@ -228,4 +241,21 @@ extension ChatPrompt {
 
     /// The option a single Approve button sends: the first that goes on.
     var approve: ChatOption? { options.first { $0.cancel != true } }
+}
+
+extension ChatEntry {
+    /// The entry as plain text: a message's own Markdown, a tool's line and result.
+    var copyText: String {
+        guard kind == "tool" else { return text ?? "" }
+        let line = [tool?.name ?? "Tool", tool?.summary].compactMap { $0 }.joined(separator: " ")
+        return [line, tool?.result].compactMap { $0 }.joined(separator: "\n")
+    }
+
+    /// The whole conversation, one entry per paragraph. The user's lines start
+    /// with `You:`, since a pasted chat has no bubbles to tell them apart.
+    static func transcript(_ entries: [ChatEntry]) -> String {
+        entries.map { $0.kind == "user" ? "You: \($0.copyText)" : $0.copyText }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+    }
 }

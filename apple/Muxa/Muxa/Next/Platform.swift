@@ -35,6 +35,31 @@ extension View {
         #endif
     }
 
+    /// A vertical chat field: Return sends, Shift+Return puts a new line in it.
+    /// The Mac's field editor treats both keys as submit, so Shift+Return
+    /// inserts the line itself. iOS takes Return in a vertical field as a new
+    /// line and never submits, so one typed new line sends there; a pasted
+    /// text keeps its lines.
+    func returnSends(_ text: Binding<String>, send: @escaping () -> Void) -> some View {
+        #if os(macOS)
+        onSubmit(send).onKeyPress(.return, phases: .down) { press in
+            guard press.modifiers.contains(.shift) else { return .ignored }
+            // The field editor of the field with the keyboard; the key window first.
+            let windows = [NSApp.keyWindow].compactMap { $0 } + NSApp.windows
+            guard let editor = windows.lazy.compactMap({ $0.firstResponder as? NSTextView }).first else { return .ignored }
+            editor.insertText("\n", replacementRange: editor.selectedRange())
+            return .handled
+        }
+        #else
+        onSubmit(send).onChange(of: text.wrappedValue) { old, new in
+            guard let typed = withoutTypedReturn(old: old, new: new) else { return }
+            // `send` trims and clears; one write fewer leaves UIKit no older text to apply.
+            send()
+            if text.wrappedValue == new { text.wrappedValue = typed }
+        }
+        #endif
+    }
+
     func numberEntry() -> some View {
         #if os(iOS)
         keyboardType(.numberPad)
@@ -77,4 +102,15 @@ extension Image {
         self.init(nsImage: image)
         #endif
     }
+}
+
+/// `new` without the one new line typed into `old`; nil for any other edit.
+func withoutTypedReturn(old: String, new: String) -> String? {
+    guard new.count == old.count + 1 else { return nil }
+    let at = zip(old, new).prefix { $0 == $1 }.count
+    let i = new.index(new.startIndex, offsetBy: at)
+    guard new[i] == "\n" else { return nil }
+    var rest = new
+    rest.remove(at: i)
+    return rest == old ? rest : nil
 }

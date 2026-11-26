@@ -9,6 +9,7 @@ enum MacSettingsPlace: Hashable {
     case assistant
     case subscriptions
     case usage
+    case build
     case connection
     case keyboard
     case terminal
@@ -52,6 +53,7 @@ struct MacSettingsView: View {
         case .assistant where model.settings.settings != nil: return .assistant
         case .subscriptions where model.settings.settings != nil: return .subscriptions
         case .usage where model.settings.settings != nil: return .usage
+        case .build where model.settings.settings?.build != nil: return .build
         case .connection: return .connection
         case .keyboard: return .keyboard
         case .terminal: return .terminal
@@ -102,11 +104,16 @@ struct MacSettingsView: View {
                 MacPaneTitle(title: "Usage", subtitle: "How much of each plan's limits its agents last reported.")
                 PlanUsageView().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
             }
+        case .build:
+            VStack(alignment: .leading, spacing: 0) {
+                MacPaneTitle(title: "Build disk", subtitle: "Where Task worktrees put their build output, on this host.")
+                BuildSettings().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
+            }
         case .connection: MacConnectionPane()
         case .keyboard: MacKeyboardPane()
         case .terminal:
             VStack(alignment: .leading, spacing: 0) {
-                MacPaneTitle(title: "Terminal", subtitle: "How terminals look on this Mac.")
+                MacPaneTitle(title: "Appearance", subtitle: "The theme and terminal font on this Mac.")
                 TerminalSettingsForm().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
             }
         }

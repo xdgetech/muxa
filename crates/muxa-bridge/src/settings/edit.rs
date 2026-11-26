@@ -453,6 +453,29 @@ pub fn apply(
             set_list(find_ws(workspaces, &workspace)?, "subscriptions", &list);
             Ok(())
         }
+        SettingsOp::BuildUpdate {
+            dir,
+            drop_after,
+            extra_paths,
+        } => {
+            let t = workspaces
+                .as_table_mut()
+                .entry("build")
+                .or_insert_with(|| Item::Table(Table::new()))
+                .as_table_like_mut()
+                .ok_or("build is not a table; edit it by hand")?;
+            if let Some(dir) = dir {
+                set_str(t, "dir", dir.as_deref());
+            }
+            if let Some(after) = drop_after {
+                set_str(t, "drop_after", after.as_deref());
+            }
+            if let Some(paths) = extra_paths {
+                set_list(t, "extra_paths", &paths);
+            }
+            drop_empty(workspaces.as_table_mut(), "build");
+            Ok(())
+        }
         SettingsOp::WorkerAdd { worker } => {
             let root = workspaces.as_table_mut();
             if find_named(root, "worker", &worker.name)?.is_some() {
@@ -803,15 +826,8 @@ fn rename_refs(root: &mut Table, from: &str, to: &str) -> Result<(), String> {
 fn write_bot(t: &mut Table, b: &BotSpec) {
     set_str(t, "description", b.description.as_deref());
     set_str(t, "worker", b.worker.as_deref());
-    match b.daily_items {
-        Some(n) if t.get("daily_items").and_then(Item::as_integer) != Some(i64::from(n)) => {
-            t.insert("daily_items", value(i64::from(n)));
-        }
-        Some(_) => {}
-        None => {
-            t.remove("daily_items");
-        }
-    }
+    // ADR 0094: no daily limit. An older file's key goes on the next edit.
+    t.remove("daily_items");
     set_bool(t, "enabled", b.enabled, true);
     set_list(t, "members", &b.members);
     match b.handoffs_per_day {

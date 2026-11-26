@@ -30,6 +30,17 @@ struct FocusView: View {
                         ContentUnavailableView("Select a Task", systemImage: "terminal")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                    if let error = model.requestError {
+                        // A split or close the host refused says why, instead of doing nothing.
+                        Text(error)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.late)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Palette.surface)
+                            .accessibilityIdentifier("focus.error")
+                    }
                     KeyLegend(items: Self.legend)
                 }
                 .frame(maxWidth: .infinity)

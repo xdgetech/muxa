@@ -72,7 +72,7 @@ struct KeyRow: View {
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundStyle(Palette.text)
                     .frame(maxWidth: .infinity, minHeight: minTouch)
-                    .background(Color(hex: 0x1A1E25), in: RoundedRectangle(cornerRadius: 8))
+                    .background(Palette.cardRaised, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.borderStrong))
                     .buttonStyle(.plain)
                     .accessibilityLabel(key.label)

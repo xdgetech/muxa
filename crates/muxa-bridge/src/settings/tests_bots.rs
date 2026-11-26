@@ -181,9 +181,30 @@ fn a_talks_proposal_becomes_one_decide_item_that_applies() {
 }
 
 #[test]
-fn a_talk_adds_the_items_the_user_asked_for_once_and_outside_the_daily_limit() {
+fn an_old_daily_items_loads_is_ignored_and_goes_on_the_next_update() {
+    let h = host("dailyitems");
+    let file = h.dir.join("work/.muxa/routines.toml");
+    let old = fs::read_to_string(&file).unwrap()
+        + "\n[[bot]]\nname = \"old\"\nenabled = true\ndaily_items = 0\n";
+    fs::write(&file, old).unwrap();
+    let s = h.store.view().unwrap();
+    assert!(s.workspaces[0].bots.iter().any(|b| b.spec.name == "old"));
+    // An app from before ADR 0094 still sends the field; it is accepted.
+    h.store
+        .update(
+            &s.revision,
+            vec![op(json!({"op": "bot-update", "workspace": "Work",
+                "bot": {"name": "old", "enabled": true, "daily_items": 5}}))],
+        )
+        .unwrap();
+    let written = fs::read_to_string(&file).unwrap();
+    assert!(!written.contains("daily_items"), "{written}");
+}
+
+#[test]
+fn a_talk_adds_the_items_the_user_asked_for_once() {
     let h = host("talkitems");
-    add_bot(&h, "b", json!({"daily_items": 1}));
+    add_bot(&h, "b", json!({}));
     let t = talk(&h, "b");
     let inbox = Inbox::memory();
     let item = |key: &str, title: &str| {
@@ -197,11 +218,7 @@ fn a_talk_adds_the_items_the_user_asked_for_once_and_outside_the_daily_limit() {
     t.handle(&records(&h), &h.store, &inbox);
 
     let items = inbox.view().items;
-    assert_eq!(
-        items.len(),
-        2,
-        "both, though the daily limit is 1; handled once"
-    );
+    assert_eq!(items.len(), 2, "both, handled once");
     let first = items
         .iter()
         .find(|i| i.title == "Start the 0.8 code-freeze thread")

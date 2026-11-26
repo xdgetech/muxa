@@ -54,7 +54,7 @@ fn paths(listing: &Listing) -> Vec<&str> {
 }
 
 #[test]
-fn lists_tracked_and_untracked_markdown_but_not_ignored_files() {
+fn lists_tracked_and_untracked_markdown() {
     let root = repo("list");
     let listing = for_folder(&root, false);
     assert_eq!(listing.root.as_deref(), Some("app"));
@@ -67,8 +67,73 @@ fn lists_tracked_and_untracked_markdown_but_not_ignored_files() {
         listing
             .docs
             .iter()
-            .all(|d| d.info.kind == DocKind::Repo && d.info.mtime.is_some())
+            .all(|d| d.info.kind == DocKind::Repo && d.info.mtime.is_some() && !d.ignored)
     );
+}
+
+#[test]
+fn ignored_documents_are_listed_except_vendored_dot_and_secret_ones() {
+    let root = repo("ignored");
+    write(
+        &root.join(".gitignore"),
+        "secret.md\noutput/\nnode_modules/\ntarget/\n.cache/\nlocal/\n",
+    );
+    let report = "output/qa/WBB-2317/20261124-142321/report.md";
+    write(&root.join(report), "# QA report\n");
+    write(&root.join("output/qa/index.html"), "<title>QA</title>");
+    for skipped in [
+        "node_modules/pkg/README.md",
+        "target/doc/notes.md",
+        "output/node_modules/pkg/README.md",
+        ".cache/notes.md",
+        "output/.hidden/notes.md",
+        "output/.env.md",
+        "local/API_TOKENS.md",
+        "local/credentials.md",
+    ] {
+        write(&root.join(skipped), "token\n");
+    }
+
+    let listing = for_folder(&root, false);
+    assert_eq!(
+        paths(&listing),
+        ["README.md", "docs/escape.md", "docs/plan.md", report]
+    );
+    let doc = listing.find(report).unwrap();
+    assert!(doc.ignored);
+    assert_eq!(read(doc).unwrap().0, "# QA report\n");
+    assert!(!listing.find("README.md").unwrap().ignored);
+
+    let asked = for_folder(&root, true);
+    assert!(asked.find("output/qa/index.html").unwrap().ignored);
+}
+
+#[test]
+fn tracked_documents_come_before_ignored_ones_at_the_limit() {
+    let root = repo("limit");
+    write(&root.join(".gitignore"), "secret.md\nout/\n");
+    write(&root.join("out/a.md"), "a\n");
+    write(&root.join("out/b.md"), "b\n");
+    let (files, truncated) = repo_files(&root, false, 4);
+    assert_eq!(
+        files,
+        [
+            ("README.md".to_owned(), false),
+            ("docs/escape.md".to_owned(), false),
+            ("docs/plan.md".to_owned(), false),
+            ("out/a.md".to_owned(), true),
+        ]
+    );
+    assert!(truncated);
+    let (files, truncated) = repo_files(&root, false, 2);
+    assert_eq!(
+        files,
+        [
+            ("README.md".to_owned(), false),
+            ("docs/escape.md".to_owned(), false)
+        ]
+    );
+    assert!(truncated);
 }
 
 #[test]

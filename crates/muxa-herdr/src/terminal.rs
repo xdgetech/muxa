@@ -44,6 +44,25 @@ impl Name {
         Name::new(out).ok()
     }
 
+    /// This name, else the first `<name>-2`, `-3`… that `taken` refuses,
+    /// cut so the number stays within 32: herdr-core refuses a name a live
+    /// terminal has, and a long Task title and its shell's `-sh` both cut to
+    /// the same 32.
+    pub fn free(&self, taken: impl Fn(&str) -> bool) -> Self {
+        if !taken(&self.0) {
+            return self.clone();
+        }
+        (2u32..)
+            .map(|n| {
+                let suffix = format!("-{n}");
+                let mut base = self.0.clone();
+                base.truncate(32 - suffix.len());
+                Name(format!("{}{suffix}", base.trim_end_matches('-')))
+            })
+            .find(|name| !taken(&name.0))
+            .unwrap_or_else(|| self.clone())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -144,6 +163,22 @@ impl RunSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_taken_name_gets_a_number_within_32() {
+        let long = Name::from_title("Mac: ⌘D Split Pane still does nothing-sh").unwrap();
+        assert_eq!(long.as_str(), "mac-d-split-pane-still-does-noth");
+        let taken = [
+            "mac-d-split-pane-still-does-noth",
+            "mac-d-split-pane-still-does-no-2",
+        ];
+        let free = long.free(|n| taken.contains(&n));
+        assert_eq!(free.as_str(), "mac-d-split-pane-still-does-no-3");
+        assert!(Name::new(free.as_str()).is_ok());
+        let short = Name::new("fix-sh").unwrap();
+        assert_eq!(short.free(|n| n == "fix-sh").as_str(), "fix-sh-2");
+        assert_eq!(short.free(|_| false).as_str(), "fix-sh");
+    }
 
     #[test]
     fn names_follow_herdr_core_rules() {

@@ -13,8 +13,6 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var workspace: String?
     /// `YYYY-MM-DD`.
     public var due: String?
-    /// Hidden until then (Unix seconds).
-    public var laterUntil: Int64?
     public var created: Int64
     /// `capture`, `task` or `routine`.
     public var source: String
@@ -37,12 +35,9 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var suggestion: ItemSuggestion? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, note, workspace, due, laterUntil, created, source, terminal, routine, place, links
+        case id, kind, title, note, workspace, due, created, source, terminal, routine, place, links
         case proposal, bot, suggestion
     }
-
-    /// Hidden by Later at `now` (Unix seconds).
-    public func isLater(now: Int64) -> Bool { (laterUntil ?? 0) > now }
 }
 
 /// Settings changes a Bot proposed, against the settings at `revision`.
@@ -142,8 +137,8 @@ public struct BotCount: Codable, Equatable, Sendable {
         self.added = added
     }
 
-    /// Items counted against the daily limit today, by the host's count; nil
-    /// when the server does not say or the count is for another day.
+    /// Items the Bot's runs added today, by the host's count (ADR 0094): 0
+    /// when the count is for another day, nil when the server does not say.
     public func addedToday(_ today: String) -> UInt32? {
         guard let day, day == today else { return day == nil ? nil : 0 }
         return added
@@ -549,11 +544,13 @@ public struct ReaderEntry: Codable, Equatable, Sendable, Identifiable {
     public var oldPath: String?
     public var added: UInt32?
     public var removed: UInt32?
+    /// Documents: git ignores the file, so it is not in the repo (ADR 0099).
+    public var ignored: Bool?
 
     public var id: String { path }
 
     public init(path: String, title: String? = nil, mtime: Int64? = nil, size: Int64? = nil, status: String? = nil,
-                oldPath: String? = nil, added: UInt32? = nil, removed: UInt32? = nil) {
+                oldPath: String? = nil, added: UInt32? = nil, removed: UInt32? = nil, ignored: Bool? = nil) {
         self.path = path
         self.title = title
         self.mtime = mtime
@@ -562,6 +559,7 @@ public struct ReaderEntry: Codable, Equatable, Sendable, Identifiable {
         self.oldPath = oldPath
         self.added = added
         self.removed = removed
+        self.ignored = ignored
     }
 }
 

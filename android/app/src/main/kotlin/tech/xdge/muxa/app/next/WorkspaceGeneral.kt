@@ -110,7 +110,7 @@ private fun WorkspaceLogins(editor: SettingsEditor, ws: SettingsWorkspace, plans
 
 /** A text the host keeps, with Save once it differs. */
 @Composable
-private fun SavedField(value: String, label: String, tag: String, enabled: Boolean, placeholder: String? = null, save: (String) -> Unit) {
+fun SavedField(value: String, label: String, tag: String, enabled: Boolean, placeholder: String? = null, save: (String) -> Unit) {
     var text by remember(value) { mutableStateOf(value) }
     Field(text, { text = it }, label, tag, enabled = enabled, mono = true, placeholder = placeholder)
     if (text != value) {

@@ -53,7 +53,6 @@ struct BotDraft: Identifiable {
     var description = ""
     /// Kept as the file says it; the host ignores a Bot's worker (ADR 0087).
     var worker = ""
-    var dailyItems = ""
     var enabled = true
     /// The Bots it leads (ADR 0085), in the Workspace's order.
     var members: [String] = []
@@ -74,7 +73,6 @@ struct BotDraft: Identifiable {
         name = b.name
         description = b.spec.description ?? ""
         worker = b.spec.worker ?? ""
-        dailyItems = b.spec.dailyItems.map(String.init) ?? ""
         enabled = b.spec.enabled
         members = b.spec.members
         handoffs = b.spec.handoffsPerDay.map(String.init) ?? ""
@@ -88,7 +86,7 @@ struct BotDraft: Identifiable {
         guard let name = Lines.optional(name) else { return nil }
         guard commands.allSatisfy({ Self.commandProblem($0.text) == nil }) else { return nil }
         return BotSpec(name: name, description: Lines.optional(description), worker: Lines.optional(worker),
-                       dailyItems: UInt32(Lines.trimmed(dailyItems)), enabled: enabled, members: members,
+                       enabled: enabled, members: members,
                        handoffsPerDay: members.isEmpty ? nil : UInt32(Lines.trimmed(handoffs)),
                        commands: commands.map { Lines.trimmed($0.text) }, subscriptions: subscriptions)
     }
@@ -208,15 +206,12 @@ struct BotEditor: View {
         } footer: {
             Text("The Bot writes this after each run. The five before it are kept.")
         }
-        .confirmationDialog("Restore the earlier memory?", isPresented: $confirmRestore, titleVisibility: .visible) {
-            Button("Restore") {
-                let op = SettingsOp.botMemoryRestore(workspace: workspace.name, name: bot.name, version: 1)
-                Task { restoreError = await model.settings.save([op]) }
-            }
-            .accessibilityIdentifier("bot.confirmrestore")
-        } message: {
-            Text("The memory now is kept in its place, so this can be undone.")
-        }
+        .dialog("Restore the earlier memory?", isPresented: $confirmRestore,
+                message: "The memory now is kept in its place, so this can be undone.",
+                actionSheet: true, actions: [DialogAction("Restore", id: "bot.confirmrestore") {
+                    let op = SettingsOp.botMemoryRestore(workspace: workspace.name, name: bot.name, version: 1)
+                    Task { restoreError = await model.settings.save([op]) }
+                }])
     }
 
     private func ops() -> [SettingsOp]? {
@@ -248,14 +243,8 @@ struct BotSettingsSections: View {
             Toggle("Enabled", isOn: $draft.enabled)
                 .accessibilityIdentifier("bot.enabled")
         } footer: {
-            if draft.existing == nil { Text("Lowercase letters, digits, - and _.") }
-        }
-        Section {
-            TextField("Items a day, 1 to 50 (default 3)", text: $draft.dailyItems)
-                .numberEntry()
-                .accessibilityIdentifier("bot.daily")
-        } footer: {
-            Text("Past its daily items, the rest go into one \"N more\" item. It runs with \(workspace.name)'s access: its connections and MCP servers.")
+            let access = "It runs with \(workspace.name)'s access: its connections and MCP servers."
+            Text(draft.existing == nil ? "Lowercase letters, digits, - and _. \(access)" : access)
         }
         team
         commands
@@ -408,19 +397,16 @@ struct BotRemovalSection: View {
         } footer: {
             Text(Self.keepsFiles(bot.name))
         }
-        .confirmationDialog("Remove \(bot.name)?", isPresented: $confirm, titleVisibility: .visible) {
-            Button("Remove \(bot.name)", role: .destructive) {
-                let ops = current.botRemoval(bot.name, movingRoutinesTo: moveTo.isEmpty ? nil : moveTo)
-                Task {
-                    error = await model.settings.save(ops)
-                    if error == nil { onRemoved() }
-                }
-            }
-            .accessibilityIdentifier("editor.confirmremove")
-        } message: {
-            Text(owned.isEmpty ? Self.keepsFiles(bot.name)
-                 : "Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(Self.keepsFiles(bot.name))")
-        }
+        .dialog("Remove \(bot.name)?", isPresented: $confirm,
+                message: owned.isEmpty ? Self.keepsFiles(bot.name)
+                    : "Its Routines move to \(moveTo.isEmpty ? "no Bot" : moveTo). \(Self.keepsFiles(bot.name))",
+                actionSheet: true, actions: [DialogAction("Remove \(bot.name)", role: .destructive, id: "editor.confirmremove") {
+                    let ops = current.botRemoval(bot.name, movingRoutinesTo: moveTo.isEmpty ? nil : moveTo)
+                    Task {
+                        error = await model.settings.save(ops)
+                        if error == nil { onRemoved() }
+                    }
+                }])
     }
 }
 

@@ -30,7 +30,9 @@ let package = Package(
         ),
         .target(
             name: "MuxaSession",
-            dependencies: ["MuxaTransport"]
+            dependencies: ["MuxaTransport"],
+            // The bundled theme files (ADR 0091); Android's :session reads the same folder.
+            resources: [.copy("Resources/themes")]
         ),
         // UIKit views for the app; empty on macOS.
         .target(
@@ -51,7 +53,9 @@ let package = Package(
         ),
         .testTarget(
             name: "MuxaSessionTests",
-            dependencies: ["MuxaSession", "MuxaTransport"]
+            dependencies: ["MuxaSession", "MuxaTransport"],
+            // The theme cases the Kotlin tests read too.
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

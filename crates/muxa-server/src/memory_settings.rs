@@ -436,6 +436,24 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             }
             remove(&mut s.subscriptions, &name, |x| &x.name)
         }
+        SettingsOp::BuildUpdate {
+            dir,
+            drop_after,
+            extra_paths,
+        } => {
+            let b = s.build.get_or_insert_with(Default::default);
+            if let Some(dir) = dir {
+                b.dir_found = dir.is_some();
+                b.dir = dir;
+            }
+            if let Some(after) = drop_after {
+                b.drop_after = after;
+            }
+            if let Some(paths) = extra_paths {
+                b.extra_paths = paths;
+            }
+            Ok(())
+        }
         SettingsOp::WorkerAdd { worker } => put(&mut s.workers, worker, true, |w| &w.name),
         SettingsOp::WorkerUpdate { worker } => put(&mut s.workers, worker, false, |w| &w.name),
         SettingsOp::WorkerRemove { name } => remove(&mut s.workers, &name, |w| &w.name),

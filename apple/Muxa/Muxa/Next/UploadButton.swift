@@ -32,11 +32,8 @@ struct UploadButton: View {
                 photo = nil
                 Task { await send(item) }
             }
-            .alert("Upload failed", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(failure ?? "")
-            }
+            .dialog("Upload failed", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } }),
+                    message: failure, cancel: "OK")
             .help("Upload a file to the Task's folder")
             .accessibilityLabel("Upload")
             .accessibilityValue(state == .sent ? "uploaded" : "")

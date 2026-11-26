@@ -78,6 +78,9 @@ struct Stored {
     item: InboxItem,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     key: Option<String>,
+    /// Read only: ADR 0066's Later hid an item until then (ADR 0096).
+    #[serde(default, skip_serializing)]
+    later_until: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -122,7 +125,7 @@ impl Book {
         self.version
     }
 
-    /// The wire view. Hidden items stay in the list with `later_until`.
+    /// The wire view.
     pub fn view(&self) -> v2::Inbox {
         v2::Inbox {
             revision: self.revision,
@@ -173,7 +176,6 @@ impl Book {
             note: new.note,
             workspace: new.workspace,
             due: new.due,
-            later_until: None,
             created: now,
             source: new.source,
             terminal: new.terminal,
@@ -185,76 +187,37 @@ impl Book {
             settings_proposal: new.extra.settings_proposal,
             suggestion: None,
         };
-        self.items.insert(0, Stored { item, key: new.key });
+        self.items.insert(
+            0,
+            Stored {
+                item,
+                key: new.key,
+                later_until: None,
+            },
+        );
         self.revision += 1;
         Ok(Some(id))
     }
 
-    /// Adds a Bot's item while the Bot has room on `day` (the host's local
-    /// date). Past `limit` the item goes into one Read item, "N more from
-    /// <bot>", that lists the titles.
+    /// Adds a Bot's item and counts it on `day` (the host's local date). A key
+    /// the Inbox already knows makes no item and is not counted.
     pub fn add_from_bot(
         &mut self,
         new: NewItem,
-        limit: u32,
         day: &str,
         now: i64,
     ) -> Result<Option<String>, InboxError> {
-        let (Some(workspace), Some(bot)) = (new.workspace.clone(), new.extra.bot.clone()) else {
-            return self.add(new, now);
-        };
-        if new.key.as_ref().is_some_and(|k| self.knows(k)) {
-            return self.add(new, now);
+        let known = new.key.as_ref().is_some_and(|k| self.knows(k));
+        let owner = new
+            .workspace
+            .as_deref()
+            .zip(new.extra.bot.as_deref())
+            .map(|(w, b)| bots::key(w, b));
+        let added = self.add(new, now)?;
+        if let Some(owner) = owner.filter(|_| !known && added.is_some()) {
+            self.bots.entry(owner).or_default().count(day);
         }
-        let ledger = self.bots.entry(bots::key(&workspace, &bot)).or_default();
-        if ledger.take(day, limit) {
-            return self.add(new, now);
-        }
-        if let Some(key) = new.key.as_ref().filter(|_| new.once) {
-            self.seen.push_back(key.clone());
-            while self.seen.len() > KEEP_SEEN {
-                self.seen.pop_front();
-            }
-        }
-        let more = bots::more_key(&workspace, &bot, day);
-        if let Some(open) = self
-            .items
-            .iter_mut()
-            .find(|s| s.key.as_ref() == Some(&more))
-        {
-            let count = open
-                .item
-                .title
-                .split_whitespace()
-                .next()
-                .and_then(|n| n.parse::<u32>().ok());
-            open.item.title = format!("{} more from {bot}", count.unwrap_or(1) + 1);
-            let note = open.item.note.get_or_insert_with(String::new);
-            let line = format!("- {}\n", new.title);
-            if note.len() + line.len() <= MAX_NOTE {
-                note.push_str(&line);
-            }
-            self.revision += 1;
-            return Ok(Some(open.item.id.clone()));
-        }
-        self.add(
-            NewItem {
-                kind: ItemKind::Read,
-                title: format!("1 more from {bot}"),
-                note: Some(format!("- {}\n", new.title)),
-                workspace: Some(workspace),
-                due: None,
-                source: new.source,
-                key: Some(more),
-                once: false,
-                terminal: None,
-                routine: new.routine,
-                place: None,
-                // No `bot`: how this item ends says nothing of one of its items.
-                extra: Extra::default(),
-            },
-            now,
-        )
+        Ok(added)
     }
 
     /// An item with `key` is open, or a `once` item had it.
@@ -290,23 +253,32 @@ impl Book {
         Ok(())
     }
 
-    /// Hides an open item until `until`.
-    pub fn later(&mut self, id: &str, until: i64, now: i64) -> Result<(), InboxError> {
-        if until <= now {
-            return Err(InboxError::Invalid(
-                "Later needs a time in the future".into(),
-            ));
+    /// Moves an open item to the bottom (ADR 0096). New items go on top, so
+    /// items moved down stay below them, in the order they were moved.
+    pub fn later(&mut self, id: &str) -> Result<(), InboxError> {
+        self.move_to(id, usize::MAX)
+    }
+
+    /// Moves the items an older server hid with Later to the bottom, in
+    /// their order, so nothing stays hidden (ADR 0096).
+    pub(crate) fn unhide(&mut self) {
+        if self.items.iter().all(|s| s.later_until.is_none()) {
+            return;
         }
-        let at = self.open(id)?;
-        self.items[at].item.later_until = Some(until);
+        let (hidden, shown): (Vec<Stored>, Vec<Stored>) = std::mem::take(&mut self.items)
+            .into_iter()
+            .partition(|s| s.later_until.is_some());
+        self.items = shown;
+        self.items.extend(hidden.into_iter().map(|s| Stored {
+            later_until: None,
+            ..s
+        }));
         self.revision += 1;
-        Ok(())
     }
 
     pub fn done(&mut self, id: &str) -> Result<(), InboxError> {
         let at = self.open(id)?;
-        let mut s = self.items.remove(at);
-        s.item.later_until = None;
+        let s = self.items.remove(at);
         if let Some(l) = self.ledger(&s.item) {
             l.done += 1;
         }
@@ -354,32 +326,28 @@ impl Book {
         Ok(())
     }
 
-    /// Brings back the items whose Later time came, on top. True when any did.
-    pub fn wake(&mut self, now: i64) -> bool {
-        let mut woken: Vec<Stored> = Vec::new();
-        self.items.retain(|s| match s.item.later_until {
-            Some(t) if t <= now => {
-                woken.push(s.clone());
-                false
+    /// Removes every open and done item created before `cutoff` (Unix
+    /// seconds), each as [`Book::delete`] would. Returns how many went.
+    pub fn delete_older(&mut self, cutoff: i64) -> usize {
+        let old: Vec<InboxItem> = self
+            .items
+            .iter()
+            .filter(|s| s.item.created < cutoff)
+            .map(|s| s.item.clone())
+            .collect();
+        for item in &old {
+            if let Some(l) = self.ledger(item) {
+                l.deleted += 1;
             }
-            _ => true,
-        });
-        if woken.is_empty() {
-            return false;
         }
-        // The last to wake ends on top.
-        woken.sort_by_key(|s| s.item.later_until);
-        for mut s in woken {
-            s.item.later_until = None;
-            self.items.insert(0, s);
+        let before = self.items.len() + self.done.len();
+        self.items.retain(|s| s.item.created >= cutoff);
+        self.done.retain(|s| s.item.created >= cutoff);
+        let gone = before - self.items.len() - self.done.len();
+        if gone > 0 {
+            self.revision += 1;
         }
-        self.revision += 1;
-        true
-    }
-
-    /// When the next hidden item comes back.
-    pub fn next_wake(&self) -> Option<i64> {
-        self.items.iter().filter_map(|s| s.item.later_until).min()
+        gone
     }
 
     /// The ledger of the Bot that made `item`, if one did.
@@ -510,23 +478,17 @@ mod tests {
     }
 
     #[test]
-    fn later_hides_an_item_and_it_returns_on_top() {
+    fn later_moves_an_item_to_the_bottom_in_the_order_moved() {
         let mut b = Book::default();
         let a = add(&mut b, todo("a"), 1);
-        b.add(todo("b"), 2).unwrap();
-        b.later(&a, 100, 10).unwrap();
-        assert_eq!(b.next_wake(), Some(100));
-        assert!(!b.wake(99));
-        b.add(todo("c"), 50).unwrap();
-        assert!(b.wake(100));
-        assert_eq!(titles(&b), ["a", "c", "b"]);
-        assert_eq!(b.view().items[0].later_until, None);
-        assert_eq!(
-            b.later(&a, 5, 10),
-            Err(InboxError::Invalid(
-                "Later needs a time in the future".into()
-            ))
-        );
+        let second = add(&mut b, todo("b"), 2);
+        b.add(todo("c"), 3).unwrap();
+        b.later(&second).unwrap();
+        b.later(&a).unwrap();
+        assert_eq!(titles(&b), ["c", "b", "a"]);
+        b.add(todo("d"), 4).unwrap();
+        assert_eq!(titles(&b), ["d", "c", "b", "a"]);
+        assert_eq!(b.later("i99"), Err(InboxError::NotFound("i99".into())));
     }
 
     #[test]
@@ -617,40 +579,60 @@ mod tests {
     fn a_bot_counts_its_items_per_day_and_how_they_end() {
         let mut b = Book::default();
         let first = b
-            .add_from_bot(from_bot("a", "k1"), 1, "2026-11-23", 1)
+            .add_from_bot(from_bot("a", "k1"), "2026-11-23", 1)
             .unwrap()
             .unwrap();
-        let more = b
-            .add_from_bot(from_bot("b", "k2"), 1, "2026-11-23", 2)
-            .unwrap()
+        let second = b
+            .add_from_bot(from_bot("b", "k2"), "2026-11-23", 2)
             .unwrap();
-        // A key it already sent takes no room and makes no item.
+        // A key it already sent makes no second item and is not counted.
         assert_eq!(
-            b.add_from_bot(from_bot("b", "k2"), 1, "2026-11-23", 3),
-            Ok(None)
+            b.add_from_bot(from_bot("b", "k2"), "2026-11-23", 3),
+            Ok(second)
         );
-        b.add_from_bot(from_bot("c", "k3"), 1, "2026-11-23", 4)
+        b.add_from_bot(from_bot("c", "k3"), "2026-11-23", 4)
             .unwrap();
-        assert_eq!(titles(&b), ["2 more from news", "a"]);
+        assert_eq!(titles(&b), ["c", "b", "a"], "no daily limit");
         assert_eq!(b.item(&first).unwrap().links.len(), 1);
         let today = &b.view().bots[0];
-        assert_eq!(
-            (today.day.as_str(), today.added),
-            ("2026-11-23", 1),
-            "the \"more\" item and its parts do not count"
-        );
-        b.add_from_bot(from_bot("d", "k4"), 1, "2026-11-24", 5)
+        assert_eq!((today.day.as_str(), today.added), ("2026-11-23", 3));
+        b.add_from_bot(from_bot("d", "k4"), "2026-11-24", 5)
             .unwrap();
-        assert_eq!(titles(&b)[0], "d");
+        assert_eq!(b.view().bots[0].added, 1, "a new day starts over");
         let d = b.view().items[0].id.clone();
         b.done(&first).unwrap();
         b.delete(&d).unwrap();
-        // Deleting the "more" item counts for none of its items.
-        b.delete(&more).unwrap();
         let counts = b.view().bots;
         assert_eq!((counts[0].done, counts[0].deleted), (1, 1));
         b.reopen(&first).unwrap();
         assert_eq!(b.view().bots[0].done, 0);
+    }
+
+    #[test]
+    fn delete_older_removes_open_and_done_items_before_the_cutoff() {
+        let mut b = Book::default();
+        let old_done = b
+            .add_from_bot(from_bot("old done", "k1"), "d", 10)
+            .unwrap()
+            .unwrap();
+        b.done(&old_done).unwrap();
+        b.add_from_bot(from_bot("old open", "k2"), "d", 20).unwrap();
+        add(&mut b, todo("new"), 30);
+        let before = b.revision();
+        assert_eq!(b.delete_older(30), 2);
+        assert_eq!(titles(&b), ["new"]);
+        assert!(b.view().done.is_empty());
+        assert_eq!(b.revision(), before + 1);
+        // The done item counted as done already; only the open one is deleted.
+        let counts = &b.view().bots[0];
+        assert_eq!((counts.done, counts.deleted), (1, 1));
+        // A once key stays known, so the Routine's item does not come back.
+        assert_eq!(
+            b.add_from_bot(from_bot("old open", "k2"), "d", 40),
+            Ok(None)
+        );
+        assert_eq!(b.delete_older(30), 0);
+        assert_eq!(b.revision(), before + 1, "nothing removed, same revision");
     }
 
     #[test]

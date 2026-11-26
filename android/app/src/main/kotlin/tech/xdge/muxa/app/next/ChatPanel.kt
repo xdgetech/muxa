@@ -191,7 +191,7 @@ fun Composer(model: NextModel, terminal: Terminal, round: Boolean, modifier: Mod
         val text = draft.trim()
         if (text.isEmpty()) return
         draft = ""
-        model.send("$text\r", terminal.id)
+        model.sendMessage(text, terminal.id)
     }
     val shape = RoundedCornerShape(if (round) 24.dp else 10.dp)
     Column(modifier) {

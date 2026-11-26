@@ -94,8 +94,15 @@ impl SessionBackend for HerdrBackend {
     }
 
     async fn run(&self, launch: &Launch) -> Result<TerminalInfo> {
-        // A Task's title is free text; herdr-core takes only a short slug.
-        let name = launch.name.as_deref().and_then(Name::from_title);
+        // A Task's title is free text; herdr-core takes only a short slug,
+        // unique among live terminals.
+        let name = match launch.name.as_deref().and_then(Name::from_title) {
+            Some(name) => {
+                let live = self.client.list(false).await.map_err(err("run"))?;
+                Some(name.free(|n| live.iter().any(|t| t.name.as_deref() == Some(n))))
+            }
+            None => None,
+        };
         let spec = RunSpec {
             argv: launch.argv.clone(),
             cwd: launch

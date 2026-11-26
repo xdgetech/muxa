@@ -42,6 +42,22 @@ fn not_found(_op: &'static str, id: &TerminalId) -> BackendError {
 }
 
 impl State {
+    /// `name`, else `name-2`, `-3`…: as herdr-core, a live terminal's name is taken.
+    fn free_name(&self, name: &str) -> String {
+        let taken = |n: &str| {
+            self.terms
+                .values()
+                .any(|t| t.info.live && t.info.name.as_deref() == Some(n))
+        };
+        if !taken(name) {
+            return name.to_owned();
+        }
+        (2..)
+            .map(|n| format!("{name}-{n}"))
+            .find(|n| !taken(n))
+            .unwrap_or_else(|| name.to_owned())
+    }
+
     fn notify(&mut self, labels: &Labels, change: &Change) {
         self.subscribers.retain(|(want, tx)| {
             if !want.iter().all(|(k, v)| labels.get(k) == Some(v)) {
@@ -165,7 +181,7 @@ impl SessionBackend for FakeBackend {
         let id = TerminalId::new(format!("f{}", s.next));
         let info = TerminalInfo {
             id: id.clone(),
-            name: launch.name.clone(),
+            name: launch.name.as_deref().map(|n| s.free_name(n)),
             live: true,
             status: None,
             labels: launch.labels.clone(),

@@ -52,6 +52,7 @@ struct FrameTests {
             == #"{"comment":"more","id":1,"item":"i3","type":"inbox-request-changes"}"#)
         #expect(try wire(.inboxRetry(item: "i3")) == #"{"id":1,"item":"i3","type":"inbox-retry"}"#)
         #expect(try wire(.workspaces) == #"{"id":1,"type":"workspaces"}"#)
+        #expect(try wire(.inboxDeleteOlder(days: 3)) == #"{"days":3,"id":1,"type":"inbox-delete-older"}"#)
     }
 
     @Test func anExistingPlaceMatchesTheSpec() throws {
@@ -89,6 +90,12 @@ struct FrameTests {
         #expect(throws: (any Error).self) { let _: [Workspace] = try field("workspaces", of: Data(bad.utf8)) }
     }
 
+    @Test func readerEntriesSayWhenGitIgnoresThem() throws {
+        let wire = #"{"entries":[{"path":"README.md"},{"path":"output/qa/report.md","ignored":true}]}"#
+        let entries: [ReaderEntry] = try field("entries", of: Data(wire.utf8))
+        #expect(entries == [ReaderEntry(path: "README.md"), ReaderEntry(path: "output/qa/report.md", ignored: true)])
+    }
+
     @Test func connectionsAndServersSayWhoUsesThem() throws {
         let wire = #"{"workspaces":[{"name":"a","root":"/a","repos":[],"loop":null,"connections":[{"name":"github","default":false,"used_by":{"routines":["digest"],"tasks":["t4"]},"last_used":1700000000}],"mcp":[{"name":"docs","default":true,"used_by":{"routines":[],"tasks":[]},"last_used":null}]}]}"#
         let ws: [Workspace] = try field("workspaces", of: Data(wire.utf8))
@@ -109,11 +116,18 @@ struct FrameTests {
     }
 
     @Test func itemsDecodeFromTheWire() throws {
+        // An older server may still send `later_until`; it is ignored (ADR 0096).
         let wire = #"{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"#
         let inbox: Inbox = try field("inbox", of: Data(wire.utf8))
-        #expect(inbox.items[0].laterUntil == 200)
-        #expect(inbox.items[0].isLater(now: 100))
+        #expect(inbox.items[0].title == "milk")
         #expect(inbox.items[0].links == nil && inbox.bots == nil)
+    }
+
+    @Test func laterSendsNoTime() throws {
+        let frame = try JSONSerialization.jsonObject(with: V2Request.inboxLater(item: "i1").json(id: 4))
+            as? [String: Any]
+        #expect(frame?["type"] as? String == "inbox-later")
+        #expect(frame?["until"] == nil)
     }
 
     @Test func aBotItemDecodesWithItsLinksAndProposal() throws {

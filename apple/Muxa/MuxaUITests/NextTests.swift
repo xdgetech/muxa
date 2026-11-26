@@ -270,6 +270,13 @@ final class NextTests: XCTestCase {
         XCTAssertTrue(app.webViews["reader"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.webViews["reader"].staticTexts["Plan"].waitForExistence(timeout: 10))
         app.buttons["reader.back"].tap()
+        // A file git ignores is listed, marked as not in git.
+        let report = app.descendants(matching: .any)["reader.file.output/qa/report.md"]
+        XCTAssertTrue(report.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["reader.ignored.output/qa/report.md"].exists)
+        report.tap()
+        XCTAssertTrue(app.webViews["reader"].staticTexts["QA report"].waitForExistence(timeout: 10))
+        app.buttons["reader.back"].tap()
         app.segmentedControls["reader.kind"].buttons["Changes"].tap()
         let change = app.descendants(matching: .any)["reader.file.src/auth/session.ts"]
         XCTAssertTrue(change.waitForExistence(timeout: 10))
@@ -286,7 +293,12 @@ final class NextTests: XCTestCase {
         let kind = app.segmentedControls["reader.kind"]
         XCTAssertTrue(kind.waitForExistence(timeout: 10))
         kind.buttons["Images"].tap()
+        let folder = app.descendants(matching: .any)["reader.folder.screenshots"]
+        XCTAssertTrue(folder.waitForExistence(timeout: 10))
         let first = app.descendants(matching: .any)["reader.file.screenshots/login.png"]
+        // Folders start closed.
+        XCTAssertFalse(first.exists)
+        folder.firstMatch.tap()
         XCTAssertTrue(first.waitForExistence(timeout: 10))
         first.tap()
         let title = app.staticTexts["reader.title"]

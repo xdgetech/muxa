@@ -9,7 +9,7 @@ struct PhoneInbox: View {
     @State private var path: [String] = []
     @State private var filter = InboxFilter()
     @State private var reordering = false
-    @State private var now = Int64(Date().timeIntervalSince1970)
+    @State private var deleteOlder: Int?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -24,20 +24,15 @@ struct PhoneInbox: View {
             .safeAreaInset(edge: .bottom) { LinkBanner() }
         }
         .tint(Palette.accent)
-        .task {
-            // Later items come back on their own; the clock decides what shows.
-            while !Task.isCancelled {
-                now = Int64(Date().timeIntervalSince1970)
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
+        .inboxDeleteOlder($deleteOlder)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScreenTitle(title: "Inbox") {
                 HostMenu()
-                InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering)
+                InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering,
+                                deleteOlder: $deleteOlder)
             }
             NeedsYouBanner(open: nav.open) { nav.tab = .tasks }
             CaptureField()
@@ -47,12 +42,12 @@ struct PhoneInbox: View {
         .padding(.bottom, 10)
     }
 
-    private var visible: [InboxItem] { filter.apply(model.inbox.items, now: now) }
+    private var visible: [InboxItem] { filter.apply(model.inbox.items) }
 
     private var list: some View {
         List {
             ForEach(visible) { item in
-                Button { path.append(item.id) } label: { ItemCard(item: item, now: now) }
+                Button { path.append(item.id) } label: { ItemCard(item: item) }
                     .buttonStyle(.plain)
                     .cardRow()
                     .swipeActions(edge: .trailing) { ItemSwipeActions(item: item) }
@@ -66,7 +61,7 @@ struct PhoneInbox: View {
             if filter.showDone, !model.inbox.done.isEmpty {
                 Section {
                     ForEach(model.inbox.done) { item in
-                        Button { path.append(item.id) } label: { ItemCard(item: item, now: now) }
+                        Button { path.append(item.id) } label: { ItemCard(item: item) }
                             .buttonStyle(.plain)
                             .cardRow()
                     }

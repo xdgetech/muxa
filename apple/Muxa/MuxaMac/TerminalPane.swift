@@ -21,10 +21,10 @@ struct TerminalPane: NSViewRepresentable {
 
     func makeNSView(context: Context) -> SwiftTerm.TerminalView {
         let settings = TerminalSettings.shared
-        let view = FocusReportingTerminalView(frame: .zero, font: MacTerminalLook.font(settings))
+        let view = MacPaneView(frame: .zero, font: MacTerminalLook.font(settings))
         view.onFocus = { context.coordinator.onActivate() }
         view.terminalDelegate = context.coordinator
-        MacTerminalLook.colors(settings.theme, on: view)
+        MacTerminalLook.colors(ThemeStore.shared.theme.terminal, on: view)
         context.coordinator.look = MacTerminalLook.key(settings)
         view.setAccessibilityIdentifier("focus.pane")
         context.coordinator.view = view
@@ -37,7 +37,7 @@ struct TerminalPane: NSViewRepresentable {
         if context.coordinator.look != MacTerminalLook.key(settings) {
             context.coordinator.look = MacTerminalLook.key(settings)
             view.font = MacTerminalLook.font(settings)
-            MacTerminalLook.colors(settings.theme, on: view)
+            MacTerminalLook.colors(ThemeStore.shared.theme.terminal, on: view)
         }
         guard active, context.coordinator.focusRequest != focusRequest else { return }
         context.coordinator.focusRequest = focusRequest
@@ -145,14 +145,21 @@ struct TerminalPane: NSViewRepresentable {
             NSPasteboard.general.setData(content, forType: .string)
         }
         func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) {}
+        func requestOpenLink(source: SwiftTerm.TerminalView, link: String, params: [String: String]) {
+            guard let url = TerminalLink.url(link) else { return NSSound.beep() }
+            NSWorkspace.shared.open(url)
+        }
     }
 }
 
 /// The device's terminal settings on SwiftTerm's AppKit view.
 @MainActor
 enum MacTerminalLook {
-    /// What the view shows; a change re-applies the font and colors.
-    static func key(_ s: TerminalSettings) -> String { "\(s.themeID)|\(s.fontName)|\(s.fontSize)" }
+    /// What the view shows; a change re-applies the font and colors. The whole
+    /// resolved theme counts, so an edited theme with the same id applies too.
+    static func key(_ s: TerminalSettings) -> String {
+        "\(ThemeStore.shared.theme.hashValue)|\(s.fontName)|\(s.fontSize)"
+    }
 
     static func font(_ s: TerminalSettings) -> NSFont {
         s.font(size: s.fontSize).map { $0 as NSFont } ?? .monospacedSystemFont(ofSize: CGFloat(s.fontSize), weight: .regular)
@@ -177,12 +184,45 @@ extension NSColor {
     }
 }
 
-/// Tells which pane the user clicked into, so the list's pick goes to that pane.
-final class FocusReportingTerminalView: SwiftTerm.TerminalView {
+/// SwiftTerm's view with the mouse of Terminal.app and iTerm2. A program that
+/// reports the mouse, as Codex does, gets plain clicks, drags and the wheel.
+/// With Option or Shift held a drag selects text, and with ⌘ held a click opens
+/// a link; neither reaches the program. A right-click on a selection offers Copy.
+final class MacPaneView: SwiftTerm.TerminalView {
+    /// The user clicked into this pane, so the list's pick goes to it.
     var onFocus: () -> Void = {}
+
+    static let localMouse: NSEvent.ModifierFlags = [.option, .shift, .command]
 
     override func mouseDown(with event: NSEvent) {
         onFocus()
+        // For the whole press: the drag and the release follow the press.
+        allowMouseReporting = event.modifierFlags.intersection(Self.localMouse).isEmpty
         super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        allowMouseReporting = true
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard selectionActive else { return super.rightMouseDown(with: event) }
+        NSMenu.popUpContextMenu(contextMenu(), with: event, for: self)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? { contextMenu() }
+
+    private func contextMenu() -> NSMenu {
+        let menu = NSMenu()
+        let copy = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "c")
+        copy.isEnabled = selectionActive
+        let paste = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "v")
+        menu.autoenablesItems = false
+        for item in [copy, paste] {
+            item.target = self
+            menu.addItem(item)
+        }
+        return menu
     }
 }

@@ -42,8 +42,8 @@ A session that waits on you is not an item. It is short-lived and shows as Needs
 
 - The list is in **your order**. You drag an item, or press `⌥↑` / `⌥↓`. New items go to the top.
 - A due date is optional. Only items with one show it. An overdue date shows in red.
-- Later hides an item until a time you pick. It then comes back on top.
-- Filters: kind, Workspace, due, hidden by Later.
+- Later moves an item to the bottom, below everything else (ADR 0096). Nothing is hidden.
+- Filters: kind, Workspace, due.
 
 ### Detail
 
@@ -124,7 +124,7 @@ Shortcuts follow VS Code, not tmux (ADR 0070), with iTerm2's pane keys (ADR 0078
 | Home, Focus | `⌘⇧H`, `⌘⇧F` |
 | Command palette, go to Task (its shells too) | `⌘⇧P`, `⌘P` |
 | Next Needs you, next Task (each press moves on) | `⌘J`, `⌃Tab`; back: `⌘⇧J`, `⌃⇧Tab` |
-| Focus pane, sidebar | `⌘1`…`⌘9`, `⌘B` |
+| Focus pane, sidebar, Bots | `⌘1`…`⌘9`, `⌃⌘S`, `⌘B` (ADR 0092) |
 | Split a shell of the Task, next and previous pane, close the shell (in Focus) | `⌘D`, `⌘]`, `⌘[`, `⌘W` (ADR 0079) |
 | Capture, settings | `⌘N`, `⌘,` |
 | Inbox: select, reorder, preview, open | `↑↓`, `⌥↑⌥↓` or drag, `Space`, `⏎` |

@@ -123,8 +123,10 @@ async fn a_failed_check_types_the_prompt_and_a_pass_makes_a_review() {
 
     h.backend.set_status(&t.id, "done");
     h.until("armed", 1).await;
-    let typed = String::from_utf8(h.backend.inputs(&t.id).concat()).unwrap();
-    assert_eq!(typed, format!("{}\r", fail_prompt(1)));
+    assert_eq!(
+        h.backend.inputs(&t.id),
+        vec![fail_prompt(1).into_bytes(), b"\r".to_vec()]
+    );
     assert!(h.task.join(".muxa/checks/1.log").is_file());
     assert!(h.items().is_empty());
 

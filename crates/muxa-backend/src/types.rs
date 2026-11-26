@@ -65,7 +65,8 @@ pub struct TerminalInfo {
 pub struct Launch {
     pub argv: Vec<String>,
     pub cwd: Option<PathBuf>,
-    /// A unique, human-readable name, if the backend supports one.
+    /// A human-readable name, if the backend supports one. The backend may
+    /// shorten it, and adds a number when a live terminal has it.
     pub name: Option<String>,
     pub labels: Labels,
     pub env: BTreeMap<String, String>,

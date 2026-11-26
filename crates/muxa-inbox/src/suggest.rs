@@ -265,7 +265,7 @@ mod tests {
             extra: Extra::default(),
         };
         new.extra.bot = Some("cheif".into());
-        book.add_from_bot(new, 3, "2026-11-24", 1).unwrap();
+        book.add_from_bot(new, "2026-11-24", 1).unwrap();
         book.rename_bot("Lisk", "cheif", "chief");
         let view = book.view();
         assert_eq!(view.items[0].bot.as_deref(), Some("chief"));

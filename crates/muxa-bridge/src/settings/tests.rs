@@ -747,6 +747,78 @@ fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
 #[path = "tests_bots.rs"]
 mod bots;
 
+#[test]
+fn the_build_disk_is_edited_and_checked() {
+    let h = host("build");
+    let s = h.store.view().unwrap();
+    let build = s.build.clone().unwrap();
+    assert_eq!((build.dir, build.dir_found), (None, false));
+    let ssd = h.dir.join("ssd");
+    fs::create_dir_all(&ssd).unwrap();
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "build-update", "dir": ssd, "drop_after": "12h", "extra_paths": ["out"]}),
+            )],
+        )
+        .unwrap();
+    let build = s.build.clone().unwrap();
+    assert!(build.dir_found);
+    assert_eq!(build.drop_after.as_deref(), Some("12h"));
+    assert_eq!(build.extra_paths, ["out"]);
+    let after = text(&h);
+    assert!(after.contains("[build]\n"), "{after}");
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert_eq!(loaded.host_build().drop_after, 12 * 3600);
+    assert_eq!(loaded.host_build().extra_paths, [PathBuf::from("out")]);
+    for bad in [
+        json!({"dir": "relative/dir"}),
+        json!({"extra_paths": ["../up"]}),
+    ] {
+        let mut o = bad.clone();
+        o["op"] = json!("build-update");
+        let refused = h.store.update(&s.revision, vec![op(o)]);
+        assert!(
+            matches!(refused, Err(SettingsError::Invalid(_))),
+            "{bad}: {refused:?}"
+        );
+    }
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "build-update", "dir": null, "drop_after": null, "extra_paths": []}),
+            )],
+        )
+        .unwrap();
+    assert_eq!(s.build.unwrap().dir, None);
+    assert!(!text(&h).contains("[build]\n"));
+}
+
+#[test]
+fn a_build_disk_muxa_may_not_write_to_is_not_saved() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = host("build-denied");
+    let s = h.store.view().unwrap();
+    let ssd = h.dir.join("ssd");
+    fs::create_dir_all(&ssd).unwrap();
+    fs::set_permissions(&ssd, fs::Permissions::from_mode(0o500)).unwrap();
+    let refused = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "build-update", "dir": ssd}))],
+    );
+    fs::set_permissions(&ssd, fs::Permissions::from_mode(0o700)).unwrap();
+    let Err(SettingsError::Invalid(why)) = refused else {
+        panic!("{refused:?}");
+    };
+    assert!(why.contains(&ssd.display().to_string()), "{why}");
+    assert!(why.contains("Privacy & Security"), "{why}");
+    assert!(!text(&h).contains("[build]\n"));
+}
+
 /// ADR 0103: the onboarding's "Add all" in one update. The Workspace's env
 /// login becomes a subscription it lists, and the loader still accepts it.
 #[test]

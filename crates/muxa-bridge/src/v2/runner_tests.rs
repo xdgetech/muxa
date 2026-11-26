@@ -144,9 +144,11 @@ async fn a_bad_output_types_the_fix_prompt_then_gives_up() {
     let t = h.started(&backend).await;
     write_output(&t, json!({"version": 1, "items": [{"kind": "nope"}]}));
     h.runner.turn_ended(&backend, &t).await;
-    let typed: Vec<u8> = backend.inputs(&t.id).concat();
-    let typed = String::from_utf8(typed).unwrap();
-    assert_eq!(typed, format!("{}\r", fail_prompt(1)));
+    // The prompt is long: its Return goes alone, or Claude Code reads it as pasted.
+    assert_eq!(
+        backend.inputs(&t.id),
+        vec![fail_prompt(1).into_bytes(), b"\r".to_vec()]
+    );
     assert!(h.state().running.is_some(), "still open");
     for _ in 1..MAX_ATTEMPTS {
         h.runner.turn_ended(&backend, &t).await;

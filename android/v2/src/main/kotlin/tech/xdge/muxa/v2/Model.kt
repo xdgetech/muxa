@@ -37,8 +37,6 @@ data class InboxItem(
     val workspace: String? = null,
     /** `YYYY-MM-DD`. */
     val due: String? = null,
-    /** Hidden until then (Unix seconds). */
-    @SerialName("later_until") val laterUntil: Long? = null,
     val created: Long,
     /** `capture`, `task`, `routine` or `v1`. */
     val source: String,
@@ -58,9 +56,7 @@ data class InboxItem(
     @SerialName("settings_proposal") val settingsProposal: SettingsProposal? = null,
     /** What the Capture assistant suggests (ADR 0084). */
     val suggestion: ItemSuggestion? = null,
-) {
-    fun isLater(now: Long) = (laterUntil ?: 0) > now
-}
+)
 
 /** Settings changes a Bot proposed, against the settings at [revision]. */
 @Serializable
@@ -103,7 +99,7 @@ data class BotCount(
     val deleted: Long,
     /** The host's local date of [added], `YYYY-MM-DD`; empty from older servers (ADR 0086). */
     val day: String = "",
-    /** Items that counted against the Bot's daily limit on [day]. */
+    /** Items the Bot's runs added on [day]. */
     val added: Long = 0,
 )
 
@@ -357,6 +353,8 @@ data class ReaderEntry(
     @SerialName("old_path") val oldPath: String? = null,
     val added: Int? = null,
     val removed: Int? = null,
+    /** Documents: git ignores the file, so it is not in the repo (ADR 0099). */
+    val ignored: Boolean = false,
 )
 
 @Serializable

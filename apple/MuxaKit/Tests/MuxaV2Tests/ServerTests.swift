@@ -73,6 +73,9 @@ struct ServerTests {
         await #expect(throws: V2Error.self) {
             try await c.readerOpen(demo.id, kind: .docs, path: "../secret.md")
         }
+        let zip = try await c.readerFolder(demo.id, folder: "")
+        #expect(zip.prefix(4) == Data([0x50, 0x4B, 0x05, 0x06]))
+        await #expect(throws: V2Error.self) { try await c.readerFolder(demo.id, folder: "docs") }
         await c.close()
     }
 
@@ -101,6 +104,15 @@ struct ServerTests {
         #expect(update.prompt?.options == [ChatOption(label: "Allow", input: "1"),
                                            ChatOption(label: "Deny", input: "\u{1b}", cancel: true)])
         try await c.chatClose(chat)
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func diskAsksTheHostAndForceNeedsPaths() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.disk() == [])
+        await #expect(throws: V2Error.self) { try await c.diskClean(force: true) }
         await c.close()
     }
 
@@ -186,7 +198,21 @@ struct ServerTests {
             workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
             subscriptions: [SubscriptionSpec(name: "claude-work", agent: "claude-code", home: "~/.claude-work",
                                              plan: "Max 20x")],
-            foundLogins: [FoundLogin(agent: "claude-code", workspace: "Personal")]))
+            foundLogins: [FoundLogin(agent: "claude-code", workspace: "Personal")],
+            build: SettingsBuild(dir: "/ssd/build", dirFound: true)))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func buildUpdateKeepsAbsentFieldsAndClearsNullOnes() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let after = try await c.settingsUpdate(revision: "1", ops: [
+            .buildUpdate(dropAfter: .set("12h"), extraPaths: ["out", "dist"]),
+        ])
+        #expect(after.build == SettingsBuild(dir: "/ssd/build", dropAfter: "12h", dirFound: true, extraPaths: ["out", "dist"]))
+        let off = try await c.settingsUpdate(revision: after.revision, ops: [.buildUpdate(dir: .clear, extraPaths: [])])
+        #expect(off.build == SettingsBuild(dir: nil, dropAfter: "12h", dirFound: false))
         await c.close()
     }
 
@@ -279,6 +305,9 @@ struct ServerTests {
         let seen = await Self.next(&events) { if case .inbox = $0 { false } else { true } }
         guard case .inbox(let pushed) = seen else { Issue.record("no inbox event"); return }
         #expect(pushed == inbox)
+        let second = try await mac.inbox(.inboxAdd(Capture(kind: .todo, title: "milk")))
+        let later = try await mac.inbox(.inboxLater(item: second.items[0].id))
+        #expect(later.items.map(\.title) == ["to the bank", "milk"])
         do {
             _ = try await mac.inbox(.inboxDone(item: "nope"))
             Issue.record("done on a missing item")

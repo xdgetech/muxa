@@ -1,92 +1,92 @@
+import MuxaSession
 import MuxaV2
 import SwiftUI
 
-/// The app's colors by meaning. The values are the design mocks' dark palette;
-/// the app forces dark appearance to match them.
+/// The app's colors by meaning, from the device's theme (ADR 0091).
 enum Theme {
-    static let accent = Palette.accent
-    static let chatBackground = Palette.ground
-    static let userBubble = Palette.raised
-    static let toolCard = Palette.card
-    static let composer = Palette.surface
+    static var accent: Color { Palette.accent }
+    static var chatBackground: Color { Palette.ground }
+    static var userBubble: Color { ThemeStore.shared.color(.userBubble) }
+    static var toolCard: Color { Palette.card }
+    static var composer: Color { Palette.surface }
     /// Behind the pane: the terminal's own background.
-    static let terminal = Palette.terminal
-    static let terminalText = Palette.terminalText
+    static var terminal: Color { Palette.terminal }
+    static var terminalText: Color { Palette.terminalText }
 
-    static let connected = TaskState.working.color
-    static let attention = TaskState.needsYou.color
-    static let failure = Palette.late
+    static var connected: Color { TaskState.working.color }
+    static var attention: Color { TaskState.needsYou.color }
+    static var failure: Color { Palette.late }
     /// ✓ closes an item (ADR 0040).
-    static let done = Palette.swipeDone
+    static var done: Color { Palette.swipeDone }
     /// Later lowers an item's priority.
-    static let later = Palette.swipeLater
+    static var later: Color { Palette.swipeLater }
     /// Lines a change adds and removes.
-    static let added = TaskState.working.color
-    static let removed = Palette.late
+    static var added: Color { ThemeStore.shared.color(.diffAdded) }
+    static var removed: Color { ThemeStore.shared.color(.diffRemoved) }
 }
 
-/// The design mocks' palette. Views reach it through `Theme`, the kind and
-/// state colors, and the shared chrome in `Next/Chrome.swift`.
+/// The device's theme by the mocks' names (ADR 0091, appendix). Each read goes
+/// through `ThemeStore`, so a view redraws when the theme changes.
 enum Palette {
-    static let ground = Color(hex: 0x0E1014)
-    static let surface = Color(hex: 0x14171C)
-    static let card = Color(hex: 0x161A20)
+    static var ground: Color { ThemeStore.shared.color(.ground) }
+    static var surface: Color { ThemeStore.shared.color(.surface) }
+    static var card: Color { ThemeStore.shared.color(.card) }
     /// Icon buttons and other raised controls.
-    static let raised = Color(hex: 0x1E232B)
+    static var raised: Color { ThemeStore.shared.color(.raised) }
     /// The picked segment.
-    static let selected = Color(hex: 0x2A2F38)
+    static var selected: Color { ThemeStore.shared.color(.selected) }
     /// The picked row of a list.
-    static let rowSelected = Color(hex: 0x232831)
-    static let border = Color(hex: 0x262B33)
-    static let borderStrong = Color(hex: 0x2C323C)
+    static var rowSelected: Color { ThemeStore.shared.color(.rowSelected) }
+    static var border: Color { ThemeStore.shared.color(.border) }
+    static var borderStrong: Color { ThemeStore.shared.color(.borderStrong) }
     /// A line between rows inside a card.
-    static let divider = Color(hex: 0x20252D)
-    static let text = Color(hex: 0xE7E9EC)
-    static let textSecondary = Color(hex: 0xA3ABB6)
-    static let textTertiary = Color(hex: 0x8B94A0)
-    static let accent = Color(hex: 0x6AA6FF)
-    static let terminal = Color(hex: 0x0A0C0F)
-    static let terminalText = Color(hex: 0xD5D9DF)
+    static var divider: Color { ThemeStore.shared.color(.divider) }
+    static var text: Color { ThemeStore.shared.color(.text) }
+    static var textSecondary: Color { ThemeStore.shared.color(.textSecondary) }
+    static var textTertiary: Color { ThemeStore.shared.color(.textTertiary) }
+    static var accent: Color { ThemeStore.shared.color(.accent) }
+    static var terminal: Color { ThemeStore.shared.color(.terminalBackground) }
+    static var terminalText: Color { ThemeStore.shared.color(.terminalForeground) }
     /// A due date that has passed, and errors.
-    static let late = Color(hex: 0xFF9B9B)
+    static var late: Color { ThemeStore.shared.color(.failure) }
     /// The Needs-you banner on Home.
-    static let bannerBack = Color(hex: 0x1E1A12)
-    static let bannerBorder = Color(hex: 0x4A3A18)
+    static var bannerBack: Color { ThemeStore.shared.color(.bannerBack) }
+    static var bannerBorder: Color { ThemeStore.shared.color(.bannerBorder) }
     /// The bar above a waiting Task.
-    static let promptBack = Color(hex: 0x2A2110)
-    static let promptBorder = Color(hex: 0x5A4416)
+    static var promptBack: Color { ThemeStore.shared.color(.promptBack) }
+    static var promptBorder: Color { ThemeStore.shared.color(.promptBorder) }
     /// Text on an amber button.
-    static let onAmber = Color(hex: 0x1A1203)
-    static let swipeLater = Color(hex: 0x5B4BB8)
-    static let swipeDone = Color(hex: 0x2E8B6A)
+    static var onAmber: Color { ThemeStore.shared.color(.onNeedsYou) }
+    static var swipeLater: Color { ThemeStore.shared.color(.swipeLater) }
+    static var swipeDone: Color { ThemeStore.shared.color(.swipeDone) }
 
     // The desktop mocks' extra tones (Mac only today; additive).
     /// Detail panes and legend strips beside the ground.
-    static let pane = Color(hex: 0x12151A)
+    static var pane: Color { ThemeStore.shared.color(.pane) }
     /// Cards, sheet rows and secondary buttons.
-    static let cardRaised = Color(hex: 0x1A1E25)
+    static var cardRaised: Color { ThemeStore.shared.color(.cardRaised) }
     /// Due, branch and filter pills.
-    static let pill = Color(hex: 0x1F242C)
+    static var pill: Color { ThemeStore.shared.color(.pill) }
     /// A selected row's border.
-    static let rowBorder = Color(hex: 0x3A414D)
-    static let buttonBorder = Color(hex: 0x323843)
-    static let rowDivider = Color(hex: 0x1C2027)
-    static let cardDivider = Color(hex: 0x22272F)
-    static let textMid = Color(hex: 0xC9CED6)
-    static let textDim = Color(hex: 0x5A626E)
-    static let destructive = Color(hex: 0xD14B4B)
-    static let warnBack = Color(hex: 0x2A1414)
-    static let warnBorder = Color(hex: 0x4A1F1F)
-    static let warnText = Color(hex: 0xFFB4B4)
-    static let infoBack = Color(hex: 0x16202E)
-    static let infoBorder = Color(hex: 0x24344A)
-    static let infoText = Color(hex: 0xC9D8EE)
-    static let readText = Color(hex: 0x9CC4FF)
-    static let readBack = Color(hex: 0x14263F)
-    static let writeText = Color(hex: 0xF5C26B)
-    static let writeBack = Color(hex: 0x2A2110)
-    static let okBack = Color(hex: 0x123326)
-    static let okText = Color(hex: 0x7FE0B8)
+    static var rowBorder: Color { ThemeStore.shared.color(.rowBorder) }
+    static var buttonBorder: Color { ThemeStore.shared.color(.buttonBorder) }
+    static var rowDivider: Color { ThemeStore.shared.color(.rowDivider) }
+    static var cardDivider: Color { ThemeStore.shared.color(.cardDivider) }
+    static var textMid: Color { ThemeStore.shared.color(.textMid) }
+    static var textDim: Color { ThemeStore.shared.color(.textDim) }
+    static var destructive: Color { ThemeStore.shared.color(.destructiveSolid) }
+    static var warnBack: Color { ThemeStore.shared.color(.warnBack) }
+    static var warnBorder: Color { ThemeStore.shared.color(.warnBorder) }
+    static var warnText: Color { ThemeStore.shared.color(.warnText) }
+    static var infoBack: Color { ThemeStore.shared.color(.infoBack) }
+    static var infoBorder: Color { ThemeStore.shared.color(.infoBorder) }
+    static var infoText: Color { ThemeStore.shared.color(.infoText) }
+    static var readText: Color { ThemeStore.shared.color(.readText) }
+    static var readBack: Color { ThemeStore.shared.color(.readBack) }
+    static var writeText: Color { ThemeStore.shared.color(.writeText) }
+    static var writeBack: Color { ThemeStore.shared.color(.writeBack) }
+    static var okBack: Color { ThemeStore.shared.color(.okBack) }
+    static var okText: Color { ThemeStore.shared.color(.okText) }
 }
 
 extension Color {
@@ -125,10 +125,10 @@ enum TaskState: CaseIterable {
 
     var color: Color {
         switch self {
-        case .needsYou: Color(hex: 0xF5A524)
-        case .done: Color(hex: 0x6AA6FF)
-        case .working: Color(hex: 0x3FC79A)
-        case .idle: Color(hex: 0x8B94A0)
+        case .needsYou: ThemeStore.shared.color(.needsYou)
+        case .done: ThemeStore.shared.color(.done)
+        case .working: ThemeStore.shared.color(.working)
+        case .idle: ThemeStore.shared.color(.idle)
         }
     }
 }
@@ -136,14 +136,15 @@ enum TaskState: CaseIterable {
 extension ItemKind {
     /// The chip's text and background, as PhoneInbox's `K`. To do is neutral.
     var chipColors: (text: Color, back: Color) {
-        switch self {
-        case .review: (Color(hex: 0x7FE0B8), Color(hex: 0x123326))
-        case .failed: (Color(hex: 0xFF9B9B), Color(hex: 0x3A1717))
-        case .reply: (Color(hex: 0xF5C26B), Color(hex: 0x2A2110))
-        case .decide: (Color(hex: 0xCDB6FF), Color(hex: 0x251D38))
-        case .read: (Color(hex: 0x9CC4FF), Color(hex: 0x14263F))
-        case .todo: (Color(hex: 0xC9CED6), Color(hex: 0x232831))
+        let (text, back): (ThemeToken, ThemeToken) = switch self {
+        case .review: (.okText, .okBack)
+        case .failed: (.failedText, .destructiveBack)
+        case .reply: (.writeText, .writeBack)
+        case .decide: (.decide, .decideBack)
+        case .read: (.readText, .readBack)
+        case .todo: (.todoText, .todoBack)
         }
+        return (ThemeStore.shared.color(text), ThemeStore.shared.color(back))
     }
 }
 

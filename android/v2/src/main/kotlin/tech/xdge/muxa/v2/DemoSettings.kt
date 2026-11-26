@@ -93,6 +93,17 @@ internal class DemoSettings(initial: Settings) {
             require(s.subscriptions.any { it.name == op.name }) { "no subscription ${op.name}" }
             s.copy(subscriptions = s.subscriptions.filter { it.name != op.name })
         }
+        is SettingsOp.BuildUpdate -> {
+            val old = s.build ?: SettingsBuild()
+            val dir = patched(old.dir, op.dir)
+            // The demo has no disks: a folder it was given is found.
+            s.copy(
+                build = old.copy(
+                    dir = dir, dropAfter = patched(old.dropAfter, op.dropAfter),
+                dirFound = dir != null, extraPaths = op.extraPaths ?: old.extraPaths,
+            ),
+        )
+        }
         else -> {
             if (op is SettingsOp.WorkspaceUpdate) {
                 op.subscriptions?.firstOrNull { n -> s.subscriptions.none { it.name == n } }?.let {

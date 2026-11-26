@@ -52,6 +52,7 @@ class FrameTest {
         assertEquals(null, plain["mcp"])
         val resume = V2Request.StartTask("app", "Tidy", places = listOf(PlaceSpec.Existing("/w/tasks/tidy"))).json(7)
         assertEquals("""[{"kind":"existing","path":"/w/tasks/tidy"}]""", resume["places"].toString())
+        assertEquals("""{"id":8,"type":"inbox-delete-older","days":3}""", V2Request.InboxDeleteOlder(3).json(8).toString())
     }
 
     @Test
@@ -65,11 +66,16 @@ class FrameTest {
 
     @Test
     fun itemsDecodeFromTheWire() {
+        // An older server may still send `later_until`; it is ignored (ADR 0096).
         val wire = """{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"""
         val inbox = field<Inbox>("inbox", json.parseToJsonElement(wire) as JsonObject)
-        assertEquals(200L, inbox.items[0].laterUntil)
-        assertTrue(inbox.items[0].isLater(100))
+        assertEquals("milk", inbox.items[0].title)
         assertTrue(inbox.items[0].links.isEmpty() && inbox.bots.isEmpty())
+    }
+
+    @Test
+    fun laterSendsNoTime() {
+        assertEquals("""{"id":4,"type":"inbox-later","item":"i1"}""", V2Request.InboxLater("i1").json(4).toString())
     }
 
     @Test
@@ -95,6 +101,15 @@ class FrameTest {
         assertEquals(null, inbox.items[1].place)
         // An item without a place sends none.
         assertEquals(null, (json.encodeToJsonElement(InboxItem.serializer(), inbox.items[1]) as JsonObject)["place"])
+    }
+
+    @Test
+    fun readerEntriesSayWhenGitIgnoresThem() {
+        val wire = """{"entries":[{"path":"README.md"},{"path":"output/qa/report.md","ignored":true}]}"""
+        val entries = field<List<ReaderEntry>>("entries", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals(listOf(ReaderEntry("README.md"), ReaderEntry("output/qa/report.md", ignored = true)), entries)
+        // A tracked file sends no `ignored`.
+        assertEquals(null, (json.encodeToJsonElement(ReaderEntry.serializer(), entries[0]) as JsonObject)["ignored"])
     }
 
     @Test

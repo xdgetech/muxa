@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-11-23). Amends ADR 0070 decision 1 (multi-pane Focus) and ADR 0078 decision 1 (`⌘W`). Wire: `protocol/PROTOCOL-v2.md`, `task-shell`, `close-terminal`, `close-task`.
+Proposed (2026-11-23). Decision 3's tab close button changed in ADR 0097: it hides the tab. Amends ADR 0070 decision 1 (multi-pane Focus) and ADR 0078 decision 1 (`⌘W`). Wire: `protocol/PROTOCOL-v2.md`, `task-shell`, `close-terminal`, `close-task`.
 
 ## Context
 

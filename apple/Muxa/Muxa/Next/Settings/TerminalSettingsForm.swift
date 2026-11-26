@@ -2,30 +2,35 @@ import MuxaSession
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Settings › Terminal on this device: the colors, imported from iTerm2 or
-/// Ghostty or built in, the font and, on the Mac, its size, with a preview.
+/// Settings › Appearance on this device: the theme, which colors the whole app
+/// (ADR 0091), then the terminal's font and, on the Mac, its size, with a preview.
 struct TerminalSettingsForm: View {
     @State private var importing = false
     @State private var importError: String?
+    @State private var editing: ThemeFile?
     private var settings: TerminalSettings { .shared }
+    private var themes: ThemeStore { .shared }
 
     var body: some View {
         Form {
             Section {
-                TerminalPreview(settings: settings)
+                TerminalPreview(settings: settings, theme: themes.theme)
                     .listRowInsets(EdgeInsets())
             }
             Section {
-                ForEach(settings.themes) { theme in themeRow(theme) }
+                automaticRow
+                ForEach(themes.files) { file in themeRow(themes.resolve(file.id)) }
+                Button("Edit Colors…", systemImage: "paintpalette") { editing = themes.editable(themes.theme.id) }
+                    .accessibilityIdentifier("appearance.edit")
                 Button("Import Theme…", systemImage: "square.and.arrow.down") { importing = true }
                     .accessibilityIdentifier("terminal.import")
                 if let importError {
                     Text(importError).font(.callout).foregroundStyle(Palette.late)
                 }
             } header: {
-                Text("Colors")
+                Text("Theme")
             } footer: {
-                Text("Import an iTerm2 color preset (.itermcolors) or a Ghostty theme file.")
+                Text("The theme colors the whole app and its terminals. Automatic follows the system's light or dark mode. Import a muxa theme (.json), an iTerm2 color preset (.itermcolors) or a Ghostty theme file.")
             }
             Section("Font") {
                 Picker("Font", selection: Binding(get: { settings.fontName }, set: { settings.setFont($0) })) {
@@ -42,23 +47,45 @@ struct TerminalSettingsForm: View {
             }
         }
         .formStyle(.grouped)
+        .groundList()
+        .sheet(item: $editing) { file in ThemeColorsEditor(file: file) { editing = nil } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             importError = nil
             do {
                 let url = try result.get()
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                try settings.importTheme(from: url)
+                try themes.importTheme(from: url)
             } catch {
                 importError = error.localizedDescription
             }
         }
     }
 
-    private func themeRow(_ theme: TerminalTheme) -> some View {
-        let picked = settings.themeID == theme.id
+    private var automaticRow: some View {
+        let picked = themes.pick == ThemeStore.automatic
+        return Button { themes.choose(ThemeStore.automatic) } label: {
+            HStack(spacing: 10) {
+                HStack(spacing: 2) {
+                    Swatch(theme: themes.resolve("muxa-light"), width: 37)
+                    Swatch(theme: themes.resolve(ThemeRegistry.defaultID), width: 37)
+                }
+                Text("Automatic").foregroundStyle(Palette.text)
+                Spacer()
+                if picked { Image(systemName: "checkmark").foregroundStyle(Palette.accent) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(picked ? .isSelected : [])
+        .accessibilityIdentifier("terminal.theme.automatic")
+    }
+
+    private func themeRow(_ theme: ResolvedTheme) -> some View {
+        // Under Automatic no single theme is the pick.
+        let picked = themes.pick != ThemeStore.automatic && themes.theme.id == theme.id
         return HStack(spacing: 10) {
-            Button { settings.pick(theme) } label: {
+            Button { themes.pick(theme.id) } label: {
                 HStack(spacing: 10) {
                     Swatch(theme: theme)
                     Text(theme.name).foregroundStyle(Palette.text)
@@ -70,8 +97,9 @@ struct TerminalSettingsForm: View {
             .buttonStyle(.plain)
             .accessibilityAddTraits(picked ? .isSelected : [])
             .accessibilityIdentifier("terminal.theme.\(theme.id)")
-            if !TerminalTheme.builtIn.contains(where: { $0.id == theme.id }) {
-                Button("Remove", systemImage: "trash", role: .destructive) { settings.remove(theme) }
+            if !themes.isBuiltIn(theme.id) {
+                Button("Remove", systemImage: "trash", role: .destructive) { themes.remove(theme.id) }
+                    .accessibilityIdentifier("terminal.remove.\(theme.id)")
                     .labelStyle(.iconOnly)
                     .buttonStyle(.plain)
                     .foregroundStyle(Palette.textSecondary)
@@ -98,20 +126,23 @@ struct TerminalSettingsForm: View {
     }
 }
 
-/// The background with the first eight ANSI colors on it.
+/// The theme's ground with its text, accent and state colors on it.
 private struct Swatch: View {
-    let theme: TerminalTheme
+    let theme: ResolvedTheme
+    var width: CGFloat = 76
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array((theme.ansi ?? []).prefix(8).enumerated()), id: \.offset) { _, c in
-                Circle().fill(Color(c)).frame(width: 6, height: 6)
+        HStack(spacing: 3) {
+            RoundedRectangle(cornerRadius: 1.5).fill(Color(theme[.text])).frame(width: 14, height: 3)
+            ForEach([ThemeToken.accent, .working, .needsYou, .failure, .decide], id: \.self) { token in
+                Circle().fill(Color(theme[token])).frame(width: 6, height: 6)
             }
         }
         .padding(.horizontal, 6)
-        .frame(width: 76, height: 22, alignment: .leading)
-        .background(Color(theme.background), in: RoundedRectangle(cornerRadius: 5))
-        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Palette.borderStrong))
+        .frame(width: width, height: 22, alignment: .leading)
+        .clipped()
+        .background(Color(theme[.ground]), in: RoundedRectangle(cornerRadius: 5))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color(theme[.border])))
         .accessibilityHidden(true)
     }
 }
@@ -119,9 +150,10 @@ private struct Swatch: View {
 /// A prompt as the terminal draws it: the picked font, its icons and colors.
 private struct TerminalPreview: View {
     let settings: TerminalSettings
+    let theme: ResolvedTheme
 
     var body: some View {
-        let theme = settings.theme
+        let theme = theme.terminal
         let ansi = theme.ansi ?? []
         func c(_ n: Int) -> Color { ansi.indices.contains(n) ? Color(ansi[n]) : Color(theme.foreground) }
         return VStack(alignment: .leading, spacing: 4) {
@@ -141,11 +173,5 @@ private struct TerminalPreview: View {
 
     private var previewFont: Font {
         settings.font(size: 13).map { Font($0) } ?? .system(size: 13, design: .monospaced)
-    }
-}
-
-private extension Color {
-    init(_ c: RGB) {
-        self.init(red: Double(c.r) / 255, green: Double(c.g) / 255, blue: Double(c.b) / 255)
     }
 }

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-11-23). Builds on ADR 0026 (Routines), 0066 (Inbox), 0074 (Settings in the apps) and 0075 (connections per Workspace). Wire: `protocol/PROTOCOL-v2.md`, capability `bots`.
+Proposed (2026-11-23). Decision 3's daily limit is removed by ADR 0094. Builds on ADR 0026 (Routines), 0066 (Inbox), 0074 (Settings in the apps) and 0075 (connections per Workspace). Wire: `protocol/PROTOCOL-v2.md`, capability `bots`.
 
 ## Context
 

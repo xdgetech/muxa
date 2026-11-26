@@ -12,10 +12,6 @@ struct MuxaApp: App {
 
     init() {
         TerminalSettings.registerFonts()
-        // The Reader's native pickers take the mocks' segment colors.
-        let segments = UISegmentedControl.appearance()
-        segments.backgroundColor = UIColor(Palette.surface)
-        segments.selectedSegmentTintColor = UIColor(Palette.selected)
     }
 
     var body: some Scene {
@@ -23,7 +19,7 @@ struct MuxaApp: App {
             NextRoot()
                 .environment(model)
                 .environment(nav)
-                .tint(Theme.accent)
+                .modifier(ThemedWindow())
                 .task {
                     if ProcessInfo.processInfo.arguments.contains("-demo") {
                         await model.startDemo()

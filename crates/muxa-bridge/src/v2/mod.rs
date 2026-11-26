@@ -6,16 +6,22 @@ mod adopt;
 pub mod assistant;
 mod assistant_brief;
 mod bot_run;
+mod build_dirs;
+mod build_paths;
 pub mod chat;
 mod close;
+mod disk;
 pub mod feed;
 pub(crate) mod git;
 mod mcp;
+mod place_records;
 mod places;
 pub mod reader;
+mod reader_folder;
 pub mod review_runs;
 mod routines;
 pub mod runner;
+pub mod sweep;
 pub mod talk;
 mod talk_check;
 pub mod task_loop;
@@ -90,7 +96,7 @@ impl Herdr {
     }
 }
 
-/// `<state dir>/inbox.json` (ADR 0066), with its Later timer running. A file
+/// `<state dir>/inbox.json` (ADR 0066). A file
 /// that cannot be read leaves an Inbox in memory only, and says so in the log.
 pub fn inbox(state_dir: Option<&Path>) -> Arc<Inbox> {
     let opened = match state_dir {
@@ -103,9 +109,7 @@ pub fn inbox(state_dir: Option<&Path>) -> Arc<Inbox> {
             Inbox::memory()
         }
     };
-    let inbox = Arc::new(opened);
-    inbox.spawn_timer();
-    inbox
+    Arc::new(opened)
 }
 
 /// Keeps a Failed item coming for each failing Task agent: watches

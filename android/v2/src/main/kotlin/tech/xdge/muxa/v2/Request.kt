@@ -35,11 +35,14 @@ sealed interface V2Request {
     data class InboxAdd(val capture: Capture, val note: String? = null) : V2Request
     data class InboxMove(val item: String, val index: Int) : V2Request
 
-    /** [until] is Unix seconds. */
-    data class InboxLater(val item: String, val until: Long) : V2Request
+    /** Moves the item to the bottom (ADR 0096). */
+    data class InboxLater(val item: String) : V2Request
     data class InboxDone(val item: String) : V2Request
     data class InboxReopen(val item: String) : V2Request
     data class InboxDelete(val item: String) : V2Request
+
+    /** Deletes every open and done item created more than [days] (1 to 3650) days ago (ADR 0095). */
+    data class InboxDeleteOlder(val days: Int) : V2Request
     data class TaskReview(val terminal: String, val note: String? = null) : V2Request
 
     /** A shell beside the Task's agent [terminal], in its working place (ADR 0079). */
@@ -78,6 +81,10 @@ sealed interface V2Request {
 
     /** The tokens agents used on [day] (`YYYY-MM-DD`, null for today), by Workspace and by Task (ADR 0103 §6). */
     data class TokenUsage(val day: String? = null) : V2Request
+    /** The disk use of Task places and leftovers (ADR 0102). */
+    data object Disk : V2Request
+    /** A dry run unless [dryRun] is false; [force] needs [paths]. */
+    data class DiskClean(val paths: List<String> = emptyList(), val force: Boolean = false, val dryRun: Boolean = true) : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request
     data class ReaderListOf(val terminal: String, val kind: ReaderKind, val html: Boolean = false) : V2Request
@@ -89,6 +96,8 @@ sealed interface V2Request {
         val scope: DiffScope = DiffScope.UNCOMMITTED,
     ) : V2Request
     data class ReaderClose(val reader: Int) : V2Request
+    /** The listed documents and images under [folder], as one zip (ADR 0101). */
+    data class ReaderFolder(val terminal: String, val folder: String) : V2Request
     data object Loops : V2Request
     data class LoopStart(val terminal: String, val spec: LoopSpec = LoopSpec(), val reset: Boolean = false) : V2Request
     data class LoopStop(val terminal: String) : V2Request
@@ -125,10 +134,11 @@ sealed interface V2Request {
                 opt("workspace", r.capture.workspace); opt("due", r.capture.due); opt("note", r.note)
             }
             is InboxMove -> { type("inbox-move"); put("item", r.item); put("index", r.index) }
-            is InboxLater -> { type("inbox-later"); put("item", r.item); put("until", r.until) }
+            is InboxLater -> { type("inbox-later"); put("item", r.item) }
             is InboxDone -> { type("inbox-done"); put("item", r.item) }
             is InboxReopen -> { type("inbox-reopen"); put("item", r.item) }
             is InboxDelete -> { type("inbox-delete"); put("item", r.item) }
+            is InboxDeleteOlder -> { type("inbox-delete-older"); put("days", r.days) }
             is TaskReview -> { type("task-review"); put("terminal", r.terminal); opt("note", r.note) }
             is TaskShell -> { type("task-shell"); put("terminal", r.terminal) }
             is CloseTerminal -> { type("close-terminal"); put("terminal", r.terminal) }
@@ -146,6 +156,13 @@ sealed interface V2Request {
             Subscriptions -> type("subscriptions")
             is LoginStart -> { type("login-start"); put("subscription", r.subscription) }
             is TokenUsage -> { type("token-usage"); opt("day", r.day) }
+            Disk -> type("disk")
+            is DiskClean -> {
+                type("disk-clean")
+                put("paths", buildJsonArray { r.paths.forEach { add(JsonPrimitive(it)) } })
+                put("force", r.force)
+                put("dry_run", r.dryRun)
+            }
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
             is ReaderListOf -> { type("reader-list"); put("terminal", r.terminal); put("kind", r.kind.wire); put("html", r.html) }
@@ -154,6 +171,7 @@ sealed interface V2Request {
                 put("html", r.html); put("scope", r.scope.wire)
             }
             is ReaderClose -> { type("reader-close"); put("reader", r.reader) }
+            is ReaderFolder -> { type("reader-folder"); put("terminal", r.terminal); put("folder", r.folder) }
             Loops -> type("loops")
             is LoopStart -> {
                 type("loop-start"); put("terminal", r.terminal); put("loop", json.encodeToJsonElement(r.spec)); put("reset", r.reset)

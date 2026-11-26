@@ -20,7 +20,6 @@ pub fn brief(bot: &Bot, team: &[&Bot], ws: &Workspace) -> Result<BotBrief, Strin
     Ok(BotBrief {
         reach: Reach {
             workspace: ws.name.clone(),
-            daily_items: bot.daily_items,
             connections: ws
                 .connections
                 .iter()
@@ -231,6 +230,7 @@ mod tests {
             bot_rules: Default::default(),
             subscriptions: Vec::new(),
             switch_subscriptions: true,
+            build: Default::default(),
         }
     }
 

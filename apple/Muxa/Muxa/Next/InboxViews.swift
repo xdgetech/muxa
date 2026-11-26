@@ -79,7 +79,6 @@ struct DueLabel: View {
 /// came from and when it is due. The list around it draws the card.
 struct ItemRow: View {
     let item: InboxItem
-    let now: Int64
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -93,9 +92,6 @@ struct ItemRow: View {
                 HStack(spacing: 6) {
                     Text(item.origin).lineLimit(1)
                     Spacer(minLength: 0)
-                    if item.isLater(now: now) {
-                        Image(systemName: "clock").accessibilityLabel("Later")
-                    }
                     if let due = item.due { DueLabel(due: due) }
                 }
                 .font(.system(size: 12.5))
@@ -111,44 +107,13 @@ struct ItemRow: View {
 /// An item row in its card; picked rows are lighter.
 struct ItemCard: View {
     let item: InboxItem
-    let now: Int64
     var picked = false
 
     var body: some View {
-        ItemRow(item: item, now: now)
+        ItemRow(item: item)
             .padding(12)
             .background(picked ? Palette.rowSelected : Palette.card, in: RoundedRectangle(cornerRadius: 14))
             .contentShape(RoundedRectangle(cornerRadius: 14))
-    }
-}
-
-/// When a Later item comes back.
-enum LaterChoice: CaseIterable, Identifiable {
-    case hour, tomorrow, nextWeek
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .hour: "In 1 Hour"
-        case .tomorrow: "Tomorrow 9:00"
-        case .nextWeek: "Next Monday 9:00"
-        }
-    }
-
-    func until(from now: Date = .now, calendar: Calendar = .current) -> Int64 {
-        let date: Date
-        switch self {
-        case .hour:
-            date = now.addingTimeInterval(3600)
-        case .tomorrow:
-            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
-            date = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) ?? tomorrow
-        case .nextWeek:
-            let monday = calendar.nextDate(after: now, matching: DateComponents(hour: 9, weekday: 2), matchingPolicy: .nextTime)
-            date = monday ?? now.addingTimeInterval(7 * 86400)
-        }
-        return Int64(date.timeIntervalSince1970)
     }
 }
 
@@ -160,8 +125,8 @@ struct ItemSwipeActions: View {
     var body: some View {
         Button("Done", systemImage: "checkmark") { Task { await model.inbox(.inboxDone(item: item.id)) } }
             .tint(Palette.swipeDone)
-        Button("Later", systemImage: "clock") {
-            Task { await model.inbox(.inboxLater(item: item.id, until: LaterChoice.tomorrow.until())) }
+        Button("Later", systemImage: "text.line.last.and.arrowtriangle.forward") {
+            Task { await model.inbox(.inboxLater(item: item.id)) }
         }
         .tint(Palette.swipeLater)
     }

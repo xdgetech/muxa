@@ -5,7 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use muxa_protocol::v2::{Place, PlaceKind};
+use muxa_inbox::{Inbox, NewItem};
+use muxa_protocol::v2::{ItemKind, Place, PlaceKind};
 use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, SUBSCRIPTION, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
@@ -36,6 +37,8 @@ pub struct BridgeHost {
     claude_dirs: Vec<PathBuf>,
     /// Finds an agent that already works in an adopted place.
     agents_in: Arc<AgentLookup>,
+    /// Where Task start says why the build disk was not used.
+    inbox: Option<Arc<Inbox>>,
 }
 
 impl BridgeHost {
@@ -49,6 +52,14 @@ impl BridgeHost {
             settings: None,
             claude_dirs: Vec::new(),
             agents_in: adopt::host_lookup(),
+            inbox: None,
+        }
+    }
+
+    pub fn with_inbox(self, inbox: Arc<Inbox>) -> Self {
+        BridgeHost {
+            inbox: Some(inbox),
+            ..self
         }
     }
 
@@ -278,6 +289,24 @@ impl BridgeHost {
     }
 }
 
+/// A Task's agent starts working on its own with one of these as its first
+/// message (ADR 0098). A talk gets none: it waits for the user.
+const START_PROMPT: &str = "Read .muxa/TASK.md and do the Task.";
+const PLAN_PROMPT: &str = "Read .muxa/TASK.md and plan the Task.";
+const CONTINUE_PROMPT: &str = "Read .muxa/TASK.md and continue the Task.";
+const PLAN_CONTINUE_PROMPT: &str = "Read .muxa/TASK.md and plan how to continue the Task.";
+
+/// Pure. The first message of a new Task's agent, or of one in a place it
+/// adopts (`existing`, `checkout`).
+fn start_prompt(adopts: bool, plan: bool) -> &'static str {
+    match (adopts, plan) {
+        (false, false) => START_PROMPT,
+        (false, true) => PLAN_PROMPT,
+        (true, false) => CONTINUE_PROMPT,
+        (true, true) => PLAN_CONTINUE_PROMPT,
+    }
+}
+
 /// Claude Code may not edit the Workspace's `.muxa/` in a talk: the Bot
 /// proposes changes instead (ADR 0083). It is told to read its brief first.
 /// The Bot's `commands` are allowed too; the user is in the talk, so anything
@@ -413,6 +442,45 @@ fn prepared(
     }
 }
 
+/// Links build paths and records the places. A failure is only logged: the
+/// places are made. Returns why the build disk was not used. Blocking.
+fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place]) -> Option<String> {
+    let disk = match records.load_workspaces() {
+        Ok(all) => all.get(workspace).and_then(|ws| all.build_disk(ws)),
+        Err(_) => None,
+    };
+    super::place_records::after_make(
+        records.state_dir.as_deref(),
+        disk.as_ref(),
+        workspace,
+        made,
+        crate::records::now(),
+    )
+}
+
+/// One open item per message: every Task start that falls back finds it.
+fn ask_for_build_access(inbox: &Inbox, workspace: &str, why: &str) {
+    let item = NewItem {
+        kind: ItemKind::Todo,
+        title: "Allow muxa-bridge to write to the build disk".into(),
+        note: Some(format!(
+            "{why}\n\nUntil then, each Task builds in its own worktree. Tasks started after that use the build disk."
+        )),
+        workspace: Some(workspace.to_owned()),
+        due: None,
+        source: "host".into(),
+        key: Some(format!("build-access:{why}")),
+        once: false,
+        terminal: None,
+        routine: None,
+        place: None,
+        extra: Default::default(),
+    };
+    if let Err(e) = inbox.change(|b, now| b.add(item, now).map(drop)) {
+        tracing::warn!(error = %e, "cannot say why the build disk was not used");
+    }
+}
+
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, TaskError> {
@@ -494,7 +562,14 @@ impl Host for BridgeHost {
         let made = places::make(&ws, title, checked).await?;
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let talk_text = talk.clone();
+        let (records, ws_name) = (Arc::clone(&self.records), ws.name.clone());
+        let inbox = self.inbox.clone();
         let made = blocking(move || {
+            if let Some(why) = note_places(&records, &ws_name, &made.places)
+                && let Some(inbox) = &inbox
+            {
+                ask_for_build_access(inbox, &ws_name, &why);
+            }
             places::brief(&made, &title_owned, goal.as_deref())?;
             if let Some(text) = &talk_text {
                 super::git::append_file(made.working(), "TASK.md", text)?;
@@ -526,6 +601,9 @@ impl Host for BridgeHost {
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
+        if talk.is_none() {
+            line = crate::launch::prompt_line(&line, start_prompt(adopts, spec.plan));
+        }
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
         let mut prepared = prepared(ws, title, made, line, given, login);
         prepared.checkout = spec.checkout().map(str::to_owned);
@@ -556,6 +634,8 @@ impl Host for BridgeHost {
                 None => Vec::new(),
             };
             line = talk_line(&ws, made.working(), line, commands).await?;
+        } else {
+            line = crate::launch::prompt_line(&line, CONTINUE_PROMPT);
         }
         let title = ended
             .name
@@ -723,6 +803,21 @@ impl Host for BridgeHost {
         .await
     }
 
+    async fn disk(
+        &self,
+        holds: &muxa_server::holds::Holds,
+    ) -> Result<Vec<muxa_protocol::v2::DiskRow>, TaskError> {
+        super::disk::report(&self.records, holds).await
+    }
+
+    async fn disk_clean(
+        &self,
+        holds: &muxa_server::holds::Holds,
+        clean: muxa_server::DiskClean,
+    ) -> Result<muxa_server::DiskCleaned, TaskError> {
+        super::disk::clean(&self.records, holds, clean).await
+    }
+
     async fn check_close(
         &self,
         places: &[muxa_protocol::v2::Place],
@@ -736,7 +831,14 @@ impl Host for BridgeHost {
         places: &[muxa_protocol::v2::Place],
         mode: muxa_protocol::v2::WorktreeMode,
     ) -> Result<(), TaskError> {
-        super::close::remove(places, mode).await
+        let removed = super::close::remove(places, mode).await;
+        let (records, places) = (Arc::clone(&self.records), places.to_vec());
+        let _ = blocking(move || {
+            super::place_records::after_close(records.state_dir.as_deref(), &places);
+            Ok(())
+        })
+        .await;
+        removed
     }
 
     async fn routines(&self) -> Result<RoutineList, TaskError> {
@@ -879,6 +981,14 @@ impl Host for BridgeHost {
         super::reader::read(dir, open).await
     }
 
+    async fn reader_folder(
+        &self,
+        dir: &std::path::Path,
+        folder: &str,
+    ) -> Result<Vec<u8>, TaskError> {
+        super::reader_folder::zip(dir, folder).await
+    }
+
     async fn workspaces(&self) -> Vec<String> {
         let records = Arc::clone(&self.records);
         let loaded = tokio::task::spawn_blocking(move || records.load_workspaces()).await;
@@ -1001,6 +1111,7 @@ mod tests {
         assert!(super::super::talk_check::START_PROMPT.contains(".muxa/TASK.md"));
         let brief = std::fs::read_to_string(ready.dir.join(".muxa/TASK.md")).unwrap();
         assert!(brief.contains("`.muxa/bot.json`"));
+        assert!(!ready.argv[2].contains(" -- "), "a talk waits for the user");
         let plain = host.prepare(&spec(&[])).await.unwrap();
         assert!(!plain.argv[2].contains("--append-system-prompt"));
         let _ = std::fs::remove_dir_all(base);
@@ -1015,7 +1126,7 @@ mod tests {
         assert_eq!(
             ready.argv[2],
             format!(
-                "claude --mcp-config '{}' --strict-mcp-config",
+                "claude --mcp-config '{}' --strict-mcp-config -- '{START_PROMPT}'",
                 config.display()
             )
         );
@@ -1026,6 +1137,86 @@ mod tests {
         let named = host.prepare(&spec(&["web"])).await.unwrap();
         assert_eq!(named.mcp, ["docs"]);
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn a_build_disk_muxa_may_not_write_to_starts_the_task_and_says_why() {
+        use std::os::unix::fs::PermissionsExt;
+        let ssd = std::env::temp_dir().join(format!("muxa-tasks-{}-ssd", std::process::id()));
+        std::fs::create_dir_all(&ssd).unwrap();
+        let (host, base) = host(
+            "build-denied",
+            &format!("[build]\ndir = \"{}\"\n", ssd.display()),
+        );
+        let app = base.join("root/app");
+        super::super::adopt::tests::repo(&app);
+        let inbox = Arc::new(Inbox::memory());
+        let host = host.with_inbox(Arc::clone(&inbox));
+        let task = TaskSpec {
+            places: vec![muxa_protocol::v2::PlaceSpec::Branch {
+                repo: "app".into(),
+                branch: "fix".into(),
+                base: None,
+            }],
+            ..spec(&[])
+        };
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let ready = host.prepare(&task).await;
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let ready = ready.unwrap();
+        assert!(ready.dir.is_dir());
+        let items = inbox.view().items;
+        assert_eq!(items.len(), 1, "{items:?}");
+        let note = items[0].note.clone().unwrap_or_default();
+        assert!(note.contains(&ssd.display().to_string()), "{note}");
+        assert!(note.contains("Privacy & Security"), "{note}");
+        // A second start finds the open item.
+        let again = TaskSpec {
+            places: vec![muxa_protocol::v2::PlaceSpec::Branch {
+                repo: "app".into(),
+                branch: "fix-2".into(),
+                base: None,
+            }],
+            ..spec(&[])
+        };
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let second = host.prepare(&again).await;
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+        second.unwrap();
+        assert_eq!(inbox.view().items.len(), 1);
+        let _ = std::fs::remove_dir_all(base);
+        let _ = std::fs::remove_dir_all(ssd);
+    }
+
+    #[tokio::test]
+    async fn a_plan_task_starts_by_planning() {
+        let (host, base) = host("plan", "");
+        let plan = TaskSpec {
+            plan: true,
+            ..spec(&[])
+        };
+        let line = host.prepare(&plan).await.unwrap().argv[2].clone();
+        assert!(
+            line.ends_with(&format!(" --permission-mode plan -- '{PLAN_PROMPT}'")),
+            "{line}"
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn an_adopted_place_continues_its_task() {
+        assert_eq!(start_prompt(false, false), START_PROMPT);
+        assert_eq!(start_prompt(true, false), CONTINUE_PROMPT);
+        assert_eq!(start_prompt(true, true), PLAN_CONTINUE_PROMPT);
+        for p in [
+            START_PROMPT,
+            PLAN_PROMPT,
+            CONTINUE_PROMPT,
+            PLAN_CONTINUE_PROMPT,
+        ] {
+            assert!(p.starts_with("Read .muxa/TASK.md "), "{p}");
+            assert!(!p.contains('\''), "quoted once on the line: {p}");
+        }
     }
 
     #[tokio::test]
@@ -1116,6 +1307,10 @@ mod tests {
         );
         let line = &p.argv[2];
         assert!(line.starts_with("claude --x --settings "), "{line}");
+        assert!(
+            line.ends_with(&format!(" -- '{CONTINUE_PROMPT}'")),
+            "{line}"
+        );
         assert!(dir.join(".muxa/claude-settings.json").is_file());
 
         std::fs::remove_dir_all(&dir).unwrap();

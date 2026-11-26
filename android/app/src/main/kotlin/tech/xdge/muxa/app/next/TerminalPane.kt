@@ -16,10 +16,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.ui.Theme
+import tech.xdge.muxa.app.ui.ThemeStore
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +42,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import tech.xdge.muxa.app.pane.TerminalColors
 import tech.xdge.muxa.app.pane.TerminalPaneView
 import tech.xdge.muxa.session.KeyBar
 import tech.xdge.muxa.session.KeyOutput
@@ -62,6 +63,8 @@ fun TerminalPane(model: NextModel, terminal: String, modifier: Modifier = Modifi
     var content by remember { mutableIntStateOf(0) }
     val link = remember(terminal) { TerminalLink(model, terminal) }
     val hardware = LocalConfiguration.current.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+    val theme = ThemeStore.current
+    val colors = remember(theme) { TerminalColors(theme.resolved.terminal) }
     Column(modifier.fillMaxSize().imePadding()) {
         AndroidView(
             factory = { context ->
@@ -75,6 +78,7 @@ fun TerminalPane(model: NextModel, terminal: String, modifier: Modifier = Modifi
                     view = this
                 }
             },
+            update = { it.colors = colors },
             // The view scrolls to follow the cursor, and Compose does not clip an AndroidView.
             modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("focus.pane").semantics {
                 contentDescription = "Terminal"
@@ -189,7 +193,7 @@ private fun KeyBarRow(bar: KeyBar, tap: (KeyBar.Key) -> Unit) {
                     .weight(1f)
                     .height(KEY_HEIGHT.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (selected) Theme.accent else KEY_FILL)
+                    .background(if (selected) Theme.accent else Palette.cardRaised)
                     .border(1.dp, Palette.borderStrong, RoundedCornerShape(8.dp))
                     .clickable(role = Role.Button) { tap(key) }
                     .testTag("keybar-$key")
@@ -214,5 +218,4 @@ private fun face(key: KeyBar.Key): Pair<String, String> = when (key) {
     KeyBar.Key.INTERRUPT -> "^C" to "Control C"
 }
 
-private val KEY_FILL = Color(0xFF1A1E25)
 private const val KEY_HEIGHT = 48

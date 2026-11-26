@@ -173,6 +173,12 @@ extension Settings {
                 throw refusal("\(w.name) still lists \(name)")
             }
             subscriptions.remove(at: try find(subscriptions, name, \.name))
+        case let .buildUpdate(dir, dropAfter, extraPaths):
+            let old = build ?? SettingsBuild()
+            let newDir = dir.applied(to: old.dir)
+            // The demo host has every folder it is given.
+            build = SettingsBuild(dir: newDir, dropAfter: dropAfter.applied(to: old.dropAfter), dirFound: newDir != nil,
+                                  extraPaths: extraPaths ?? old.extraPaths)
         case let .workerAdd(worker):
             guard !workers.contains(where: { $0.name == worker.name }) else { throw refusal("\(worker.name) exists") }
             workers.append(worker)

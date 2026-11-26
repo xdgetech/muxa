@@ -62,7 +62,7 @@ struct TerminalPane: UIViewRepresentable {
         let settings = TerminalSettings.shared
         return TerminalLook(
             fontName: settings.fontName.isEmpty ? nil : settings.fontName,
-            fallbackFontNames: [TerminalSettings.symbolsFont], theme: settings.theme)
+            fallbackFontNames: [TerminalSettings.symbolsFont], theme: ThemeStore.shared.theme.terminal)
     }
 
     static func dismantleUIView(_ view: V2PaneView, coordinator: Coordinator) {

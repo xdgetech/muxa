@@ -43,6 +43,17 @@ class DemoTest {
     }
 
     @Test
+    fun laterMovesAnItemToTheBottom() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.inbox().items.map { it.id }
+            val after = c.inbox(V2Request.InboxLater(before[0])).items.map { it.id }
+            assertEquals(before.drop(1) + before[0], after)
+            c.close()
+        }
+    }
+
+    @Test
     fun turnedOffRoutinesAreReportedUntilTurnedOn() = runBlocking {
         withTimeout(10_000) {
             val c = open()
@@ -130,7 +141,9 @@ class DemoTest {
             val c = open()
             val terminals = c.terminals()
             val agent = terminals.first { it.isTaskAgent }
-            assertEquals(listOf("PLAN.md", ".muxa/TASK.md"), c.readerList(agent.id, ReaderKind.DOCS).entries.map { it.path })
+            val docs = c.readerList(agent.id, ReaderKind.DOCS).entries
+            assertEquals(listOf("PLAN.md", ".muxa/TASK.md", "output/qa/report.md"), docs.map { it.path })
+            assertEquals(listOf(false, false, true), docs.map { it.ignored })
             val (reader, plan) = c.readerOpen(agent.id, ReaderKind.DOCS, "PLAN.md")
             assertEquals(true, plan.text?.startsWith("# Plan"))
             // The plan links another listed document, for the Reader's links.
@@ -400,7 +413,7 @@ class DemoTest {
             assertEquals("pr-watch", decide.bot)
             assertEquals("https://github.com/example/app/pull/57", decide.links.single().url)
             assertEquals("example/app#57", decide.proposal?.target)
-            // The host's day and its count of items against daily_items come with the counts (ADR 0086).
+            // The host's day and the items the Bot added that day come with the counts (ADR 0086).
             val today = java.time.LocalDate.now().toString()
             assertEquals(listOf(BotCount("app", "pr-watch", 4, 1, today, 2)), inbox.bots)
             assertEquals("pr-watch", c.routines().first.first { it.name == "scan" }.bot)
@@ -476,6 +489,25 @@ class DemoTest {
     }
 
     @Test
+    fun deleteOlderRemovesOldOpenAndDoneItemsAndKeepsNewOnes() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            c.inbox(V2Request.InboxDone("d1"))
+            val fresh = c.inbox(V2Request.InboxAdd(Capture(ItemKind.TODO, "fresh"))).items.first()
+            val inbox = c.inbox(V2Request.InboxDeleteOlder(1))
+            // Every seeded item is older than a day; the one just added is not.
+            assertEquals(listOf(fresh.id), inbox.items.map { it.id })
+            assertTrue(inbox.done.isEmpty())
+            // pr-watch's open d10, d11 and d12 count as deleted, as `inbox-delete` counts them.
+            assertEquals(4L, inbox.bots.single().deleted)
+            for (days in listOf(0, 3651)) {
+                assertEquals("bad-request", refusal { c.inbox(V2Request.InboxDeleteOlder(days)) }.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
     fun applyingABotsSettingsProposalChangesTheSettingsAndEndsTheItem() = runBlocking {
         withTimeout(10_000) {
             val c = open()
@@ -487,7 +519,7 @@ class DemoTest {
             val app = c.settings().workspaces.first { it.name == "app" }
             val sweep = app.routines.first { it.name == "nightly-sweep" }
             assertEquals(false to "pr-watch", sweep.enabled to sweep.bot)
-            assertEquals(4, app.bots.single().dailyItems)
+            assertEquals("Watches the app's open PRs and their CI", app.bots.single().description)
             c.close()
         }
     }
@@ -639,6 +671,24 @@ class DemoTest {
                 "bad-request",
                 refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", subscriptions = listOf("nope")))) }.code,
             )
+            c.close()
+        }
+    }
+
+    @Test
+    fun theBuildDiskIsSaved() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings()
+            assertEquals(SettingsBuild("/Volumes/Build/muxa", dirFound = true, extraPaths = listOf("out")), before.build)
+            val moved = c.settingsUpdate("1", listOf(SettingsOp.BuildUpdate(dir = Patch.Set("~/build"), dropAfter = Patch.Set("12h"))))
+            assertEquals(SettingsBuild("~/build", "12h", dirFound = true, extraPaths = listOf("out")), moved.build)
+            val extra = c.settingsUpdate(moved.revision, listOf(SettingsOp.BuildUpdate(extraPaths = listOf("out", "web/dist"))))
+            assertEquals(listOf("out", "web/dist"), extra.build?.extraPaths)
+            val kept = c.settingsUpdate(extra.revision, listOf(SettingsOp.BuildUpdate(dropAfter = Patch.Clear)))
+            assertEquals(SettingsBuild("~/build", null, dirFound = true, extraPaths = listOf("out", "web/dist")), kept.build)
+            val off = c.settingsUpdate(kept.revision, listOf(SettingsOp.BuildUpdate(dir = Patch.Clear, extraPaths = emptyList())))
+            assertEquals(SettingsBuild(), off.build)
             c.close()
         }
     }

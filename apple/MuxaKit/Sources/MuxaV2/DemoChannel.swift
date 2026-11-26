@@ -121,11 +121,14 @@ actor DemoServer {
             guard let (seq, bytes) = f.splitU64(), let id = channels[n] else { return }
             if seq > applied[n, default: 0] {
                 applied[n] = seq
-                // The demo's program echoes; Return starts a new line.
-                let echo = bytes.flatMap { $0 == 13 ? [13, 10] : [$0] }
-                content.screens[id, default: ""] += String(decoding: echo, as: UTF8.self)
-                write(Frame.withU64(n, offsets[n, default: 0], echo))
-                offsets[n, default: 0] += UInt64(echo.count)
+                // The demo's program echoes keys; Return starts a new line. Mouse
+                // reports (SGR, `ESC [ <`) are the program's, not text.
+                if !Self.isMouseReport(bytes) {
+                    let echo = bytes.flatMap { $0 == 13 ? [13, 10] : [$0] }
+                    content.screens[id, default: ""] += String(decoding: echo, as: UTF8.self)
+                    write(Frame.withU64(n, offsets[n, default: 0], echo))
+                    offsets[n, default: 0] += UInt64(echo.count)
+                }
             }
             write(Frame(channel: n, kind: .ack, payload: le(seq)))
         case (let n, .close):
@@ -166,7 +169,7 @@ actor DemoServer {
             let new = InboxItem(
                 id: "d\(nextItem)", kind: ItemKind(rawValue: m["kind"] as? String ?? "") ?? .todo,
                 title: m["title"] as? String ?? "", note: m["note"] as? String,
-                workspace: m["workspace"] as? String, due: m["due"] as? String, laterUntil: nil,
+                workspace: m["workspace"] as? String, due: m["due"] as? String,
                 created: Int64(Date().timeIntervalSince1970), source: "capture")
             nextItem += 1
             change(id) { $0.items.insert(new, at: 0) }
@@ -179,10 +182,9 @@ actor DemoServer {
                 return true
             }
         case "inbox-later":
-            let until = (m["until"] as? NSNumber)?.int64Value
             change(id) { inbox in
                 guard let at = inbox.items.firstIndex(where: { $0.id == item }) else { return false }
-                inbox.items[at].laterUntil = until
+                inbox.items.append(inbox.items.remove(at: at))
                 return true
             }
         case "inbox-done":
@@ -200,11 +202,21 @@ actor DemoServer {
                 inbox.done.removeAll { $0.id == item }
                 return inbox.items.count + inbox.done.count < before
             }
+        case "inbox-delete-older":
+            guard let days = (m["days"] as? NSNumber)?.int64Value, (1...3650).contains(days) else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "days must be 1 to 3650"])
+            }
+            let cutoff = Int64(Date().timeIntervalSince1970) - days * 86_400
+            change(id) { inbox in
+                inbox.items.removeAll { $0.created < cutoff }
+                inbox.done.removeAll { $0.created < cutoff }
+                return true
+            }
         case "task-review":
             let t = content.terminals.first { $0.id == m["terminal"] as? String }
             let review = InboxItem(
                 id: "d\(nextItem)", kind: .review, title: "Review \(t?.branch ?? "the Task")",
-                note: m["note"] as? String, workspace: nil, due: nil, laterUntil: nil,
+                note: m["note"] as? String, workspace: nil, due: nil,
                 created: Int64(Date().timeIntervalSince1970), source: "task", terminal: t?.id)
             nextItem += 1
             change(id) { $0.items.insert(review, at: 0) }
@@ -274,6 +286,8 @@ actor DemoServer {
             reply(id, ["reader": n, "content": json(file.content)])
         case "reader-close":
             reply(id, [:])
+        case "reader-folder":
+            readerFolder(id, m["folder"] as? String ?? "")
         case "chat-open":
             let terminal = m["terminal"] as? String ?? ""
             guard content.terminals.contains(where: { $0.id == terminal && $0.isTaskAgent }) else {
@@ -386,7 +400,7 @@ actor DemoServer {
         let parts = accept ? s.split.map { title -> InboxItem in
             defer { nextItem += 1 }
             return InboxItem(id: "d\(nextItem)", kind: s.kind ?? found.kind, title: title,
-                             workspace: s.workspace ?? found.workspace, due: s.due ?? found.due, laterUntil: nil,
+                             workspace: s.workspace ?? found.workspace, due: s.due ?? found.due,
                              created: now, source: "capture")
         } : []
         change(id) { inbox in
@@ -572,6 +586,10 @@ actor DemoServer {
         for shell in content.terminals where shell.isTaskShell && dir != nil && shell.taskDir == dir { close(shell.id) }
     }
 
+    static func isMouseReport(_ bytes: [UInt8]) -> Bool {
+        bytes.starts(with: [0x1b, 0x5b, 0x3c]) && (bytes.last == 0x4d || bytes.last == 0x6d)
+    }
+
     /// Input as if the user typed it: the screen and every attached channel show it.
     private func type(_ terminal: String, _ bytes: [UInt8]) {
         content.screens[terminal, default: ""] += String(decoding: bytes, as: UTF8.self)
@@ -597,6 +615,25 @@ actor DemoServer {
     }
 
     /// The kind of a Reader request on a terminal with a folder, or nil after an error.
+    /// The demo's listed documents and images under `folder`, zipped as the daemon does.
+    private func readerFolder(_ id: UInt64, _ asked: String) {
+        let folder = asked.hasSuffix("/") ? String(asked.dropLast()) : asked
+        let members: [DemoZip.Member] = [ReaderKind.docs, .images].flatMap { content.files[$0, default: []] }.compactMap { file in
+            let path = file.entry.path
+            let inside = folder.isEmpty ? path : path.hasPrefix(folder + "/") ? String(path.dropFirst(folder.count + 1)) : nil
+            guard let inside, let data = file.content.text.map({ Data($0.utf8) }) ?? file.content.bytes else { return nil }
+            return DemoZip.Member(path: inside, data: data)
+        }
+        guard !members.isEmpty else {
+            let shown = folder.isEmpty ? "This folder" : folder
+            return send(["type": "error", "id": id, "code": "bad-request",
+                         "message": "\(shown) has no documents or images the Reader lists"])
+        }
+        let top = folder.isEmpty ? "app" : ReaderFolder.name(of: folder)
+        let zip = DemoZip.stored(members.map { DemoZip.Member(path: top + "/" + $0.path, data: $0.data) })
+        reply(id, ["zip": zip.base64EncodedString()])
+    }
+
     private func readerKind(_ id: UInt64, _ m: [String: Any]) -> ReaderKind? {
         let t = content.terminals.first { $0.id == m["terminal"] as? String }
         guard t?.taskDir != nil else {

@@ -3,22 +3,44 @@ import AppKit
 import SwiftUI
 
 /// Debug builds only: with `-demo`, `MUXA_SNAPSHOT=<png>` and optionally
-/// `MUXA_SCREEN=home|focus|routines|shortcuts|palette|reader|settings[-tab]|settings-terminal|settings-assistant|bots[-chat|-chats|-run|-routines|-files|-settings|-new|-routine-edit|-soul-edit]` in the environment, the app
+/// `MUXA_THEME=<theme id>` and
+/// `MUXA_SCREEN=home|focus|routines|shortcuts|palette|reader|settings[-tab]|settings-terminal|settings-assistant|bots[-chat|-chats|-run|-routines|-files|-settings|-new|-routine-edit|-soul-edit|-landing-chat|-landing-done|-landing-left-home|-landing-run]|focus-tab-hidden|focus-select|focus-link` in the environment, the app
 /// draws its main window into the PNG and quits, so a change can be compared
-/// with the mocks without screen-recording permission. Environment, not
+/// with the mocks without screen-recording permission. `focus-select` and
+/// `focus-link` Option-drag over, or ⌘-hover, the URL in `MUXA_TERMINAL`
+/// (default `t1`, which takes the mouse as Codex does). Environment, not
 /// arguments: macOS opens a path argument as a document and shows no window.
 @MainActor
 enum Snapshot {
     static func runIfAsked(model: NextModel, nav: NextNavigation, chrome: MacChrome) async {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["MUXA_SNAPSHOT"] else { return }
+        if let theme = env["MUXA_THEME"] { ThemeStore.shared.preview(theme) }
         switch env["MUXA_SCREEN"] {
         case "focus": nav.focus = true
+        case "focus-select", "focus-link":
+            nav.focus = true
+            nav.terminal = env["MUXA_TERMINAL"] ?? "t1"
         case "routines": nav.tab = .bots
-        case "bots-landing-home", "bots-landing-chat":
-            // The landing rule picks the tab: scout has a live talk, pr-watch none.
+        case "bots-landing-chat":
+            // The landing rule picks the tab: scout has a live talk.
             nav.tab = .bots
-            chrome.botPick = .bot(workspace: "app", name: env["MUXA_SCREEN"] == "bots-landing-chat" ? "scout" : "pr-watch")
+            chrome.botPick = .bot(workspace: "app", name: "scout")
+        case "bots-landing-done", "bots-landing-left-home":
+            // pr-watch's talk reported `done`; "left-home" was last left on Home. Both land on the talk.
+            nav.tab = .bots
+            chrome.botTab = .home
+            if env["MUXA_SCREEN"] == "bots-landing-left-home" { chrome.botTabs[.bot(workspace: "app", name: "pr-watch")] = .home }
+            chrome.botPick = .bot(workspace: "app", name: "pr-watch")
+        case "bots-landing-run":
+            // An Inbox item's run opens on its Bot's page and stays there, not on the talk.
+            for _ in 0..<30 where model.terminals.isEmpty { try? await Task.sleep(for: .milliseconds(100)) }
+            if let run = model.terminals.first(where: { $0.id == "t8" }) { _ = chrome.showOnBotPage(run, nav: nav) }
+        case "focus-tab-hidden":
+            // t1's tab was closed: t1 still runs in the sidebar, t2 is open.
+            nav.focus = true
+            nav.terminal = "t2"
+            chrome.hiddenTabs = ["t1"]
         case let screen? where screen.hasPrefix("bots"):
             nav.tab = .bots
             chrome.botPick = .bot(workspace: "app", name: "pr-watch")
@@ -26,6 +48,8 @@ enum Snapshot {
                                           "bots-files": .files, "bots-settings": .settings, "bots-routine-edit": .routines, "bots-soul-edit": .files]
             chrome.botTab = tabs[screen] ?? .home
             chrome.botTabs[.bot(workspace: "app", name: "pr-watch")] = chrome.botTab
+            // The screen picks the tab, not the landing rule.
+            chrome.botRoutedTo = .bot(workspace: "app", name: "pr-watch")
             chrome.botTerminal = screen == "bots-run" ? "t8" : "t7"
             chrome.botView = screen == "bots-run" ? .terminal : .chat
             chrome.showNewBot = screen == "bots-new"
@@ -43,6 +67,10 @@ enum Snapshot {
         NSApp.windows.first { $0.isVisible && !($0 is NSPanel) }?.setContentSize(NSSize(width: 1440, height: 900))
         let settings = await openSettings(env["MUXA_SCREEN"])
         try? await Task.sleep(for: .seconds(2))
+        if let screen = env["MUXA_SCREEN"], screen == "focus-select" || screen == "focus-link" {
+            mouseOverURL(select: screen == "focus-select")
+            try? await Task.sleep(for: .milliseconds(500))
+        }
         let window = settings ?? NSApp.windows.first { $0.attachedSheet != nil }
             ?? NSApp.windows.first { $0.isVisible && !($0 is NSPanel) }
         let target = window?.attachedSheet ?? window
@@ -63,6 +91,44 @@ enum Snapshot {
         } else if let scan = app.routines.first(where: { $0.name == "scan" }) {
             chrome.botSheet = .routine(workspace: "app", draft: RoutineDraft(scan))
         }
+    }
+
+    /// Option-drags across the pane's first URL, or ⌘-hovers it, with synthetic events.
+    private static func mouseOverURL(select: Bool) {
+        guard let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }),
+              let pane = window.contentView.flatMap(firstPane) else { return }
+        let lines = String(decoding: pane.getBufferAsData(kind: .active), as: UTF8.self).components(separatedBy: "\n")
+        guard let row = lines.firstIndex(where: { $0.contains("https://") }),
+              let start = lines[row].range(of: "https://") else { return }
+        let col = lines[row].distance(from: lines[row].startIndex, to: start.lowerBound)
+        let length = lines[row][start.lowerBound...].prefix { $0 != " " }.count
+        let rows = CGFloat(pane.terminalDimensions.rows), cols = CGFloat(pane.terminalDimensions.cols)
+        func event(_ type: NSEvent.EventType, _ c: Int, _ flags: NSEvent.ModifierFlags) -> NSEvent? {
+            let x = (CGFloat(c) + 0.5) * pane.bounds.width / cols
+            let y = pane.bounds.height - (CGFloat(row) + 0.5) * pane.bounds.height / rows
+            let point = pane.convert(NSPoint(x: x, y: y), to: nil)
+            if type == .flagsChanged {
+                return NSEvent.keyEvent(with: type, location: point, modifierFlags: flags, timestamp: 0,
+                                        windowNumber: window.windowNumber, context: nil, characters: "",
+                                        charactersIgnoringModifiers: "", isARepeat: false, keyCode: 55)
+            }
+            return NSEvent.mouseEvent(with: type, location: point, modifierFlags: flags, timestamp: 0,
+                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                      clickCount: 1, pressure: 1)
+        }
+        if select {
+            event(.leftMouseDown, col, .option).map(pane.mouseDown)
+            event(.leftMouseDragged, col + length - 1, .option).map(pane.mouseDragged)
+            event(.leftMouseUp, col + length - 1, .option).map(pane.mouseUp)
+        } else {
+            event(.flagsChanged, col, .command).map(pane.flagsChanged)
+            event(.mouseMoved, col + 2, .command).map(pane.mouseMoved)
+        }
+    }
+
+    private static func firstPane(in view: NSView) -> MacPaneView? {
+        if let pane = view as? MacPaneView { return pane }
+        return view.subviews.lazy.compactMap(firstPane).first
     }
 
     /// `settings` or `settings-<tab>` (connections, mcp, agent, routines, bots):

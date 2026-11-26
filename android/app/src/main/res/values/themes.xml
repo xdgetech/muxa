@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-        Compose draws everything. The window theme still matters: the Reader's WebView takes
-        prefers-color-scheme from it, and the system bars their icon color. The design is dark only.
+        Compose draws everything. This window background shows only until MainActivity
+        reads the device's theme (ADR 0091) and sets its ground and the system bars.
     -->
     <style name="Theme.Muxa" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/ground</item>

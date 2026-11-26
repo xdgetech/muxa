@@ -120,6 +120,7 @@ mod tests {
             bot_rules: Default::default(),
             subscriptions: Vec::new(),
             switch_subscriptions: true,
+            build: Default::default(),
         }
     }
 

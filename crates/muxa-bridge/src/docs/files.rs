@@ -29,6 +29,8 @@ pub struct Doc {
     pub file: PathBuf,
     /// The file must stay inside this directory, even through symlinks.
     pub root: PathBuf,
+    /// git ignores the file: it is not in the repo.
+    pub ignored: bool,
 }
 
 #[derive(Debug, Default)]
@@ -60,9 +62,9 @@ fn build(
     let root = repo_root(path);
     if let Some(root) = &root {
         listing.root = root.file_name().map(|n| n.to_string_lossy().into_owned());
-        let (files, truncated) = repo_files(root, html);
+        let (files, truncated) = repo_files(root, html, MAX_DOCS);
         listing.truncated = truncated;
-        listing.docs.extend(files.into_iter().map(|rel| {
+        listing.docs.extend(files.into_iter().map(|(rel, ignored)| {
             let file = root.join(&rel);
             Doc {
                 info: DocInfo {
@@ -73,6 +75,7 @@ fn build(
                 },
                 file,
                 root: root.clone(),
+                ignored,
             }
         }));
     }
@@ -94,6 +97,7 @@ fn build(
                 },
                 file,
                 root: base.clone(),
+                ignored: false,
             }
         }));
     }
@@ -124,6 +128,7 @@ fn task_file(base: &Path, path: &str) -> Option<Doc> {
         },
         file,
         root: base.to_path_buf(),
+        ignored: false,
     })
 }
 
@@ -165,41 +170,100 @@ pub(crate) fn is_doc_or_html(path: &str) -> bool {
     is_doc(path) || is_html(path)
 }
 
-/// Tracked files, and untracked ones git does not ignore: a plan an agent just
-/// wrote shows up, a secret in an ignored file does not.
-fn repo_files(root: &Path, html: bool) -> (Vec<String>, bool) {
+/// Folders whose ignored files are never listed: dependencies and build output, which are heavy
+/// and not the user's documents.
+const SKIPPED_DIRS: [&str; 7] = [
+    "node_modules",
+    "target",
+    "vendor",
+    "Pods",
+    "DerivedData",
+    "bower_components",
+    "venv",
+];
+/// Ignored files whose name holds one of these may carry a secret (ADR 0099).
+const SECRET_WORDS: [&str; 5] = ["secret", "credential", "password", "token", "private"];
+
+/// The repo's documents as (path, ignored), at most `max`. Tracked and not-ignored files come
+/// first, so ignored output never pushes them out.
+/// Ignored files are listed too (ADR 0099), except under a dot name or a skipped folder, or
+/// with a secret-like name. Only Markdown (and HTML when asked) is ever listed.
+fn repo_files(root: &Path, html: bool, max: usize) -> (Vec<(String, bool)>, bool) {
     let html_patterns: &[&str] = if html { &HTML_PATTERNS } else { &[] };
+    let patterns: Vec<String> = DOC_PATTERNS
+        .iter()
+        .chain(html_patterns)
+        .map(|p| (*p).to_owned())
+        .collect();
+    let mut files = ls_files(
+        root,
+        &["--cached", "--others", "--exclude-standard"],
+        &patterns,
+    );
+    let skipped: Vec<String> = SKIPPED_DIRS
+        .iter()
+        .map(|d| format!(":(exclude,glob)**/{d}/**"))
+        .collect();
+    let mut ignored: Vec<String> = ls_files(
+        root,
+        &["--others", "--ignored", "--exclude-standard"],
+        &[patterns, skipped].concat(),
+    )
+    .into_iter()
+    .filter(|p| keep_ignored(p))
+    .collect();
+    let truncated = files.len() + ignored.len() > max;
+    files.truncate(max);
+    ignored.truncate(max - files.len());
+    let mut out: Vec<(String, bool)> = files
+        .into_iter()
+        .map(|p| (p, false))
+        .chain(ignored.into_iter().map(|p| (p, true)))
+        .collect();
+    out.sort();
+    (out, truncated)
+}
+
+/// The sorted paths `git ls-files -z` prints for `flags` and `pathspecs`; none when git fails.
+fn ls_files(root: &Path, flags: &[&str], pathspecs: &[String]) -> Vec<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args([
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "--",
-        ])
-        .args(DOC_PATTERNS)
-        .args(html_patterns)
+        .args(["ls-files", "-z"])
+        .args(flags)
+        .arg("--")
+        .args(pathspecs)
         .output();
-    let Ok(out) = out else {
-        return (Vec::new(), false);
+    let out = match out {
+        Ok(out) if out.status.success() => out,
+        Ok(out) => {
+            tracing::warn!(status = %out.status, "git ls-files failed for documents");
+            return Vec::new();
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "cannot run git to list documents");
+            return Vec::new();
+        }
     };
-    if !out.status.success() {
-        return (Vec::new(), false);
-    }
-    let mut files: Vec<String> = out
+    let mut paths: Vec<String> = out
         .stdout
         .split(|&b| b == 0)
         .filter(|p| !p.is_empty())
         .filter_map(|p| String::from_utf8(p.to_vec()).ok())
         .collect();
-    files.sort();
-    files.dedup();
-    let truncated = files.len() > MAX_DOCS;
-    files.truncate(MAX_DOCS);
-    (files, truncated)
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+/// An ignored file the Reader may list: no dot name and no skipped folder on its path, and no
+/// secret-like word in its name.
+fn keep_ignored(path: &str) -> bool {
+    let mut parts = path.split('/');
+    let name = parts.next_back().unwrap_or_default();
+    let dirs_ok = parts.all(|d| !d.starts_with('.') && !SKIPPED_DIRS.contains(&d));
+    let lower = name.to_ascii_lowercase();
+    dirs_ok && !name.starts_with('.') && !SECRET_WORDS.iter().any(|w| lower.contains(w))
 }
 
 /// The first `# ` heading, from the start of the file.
@@ -273,6 +337,11 @@ impl Listing {
 pub fn read(doc: &Doc) -> Result<(String, Option<u64>), ReadError> {
     let (bytes, mtime) = read_bytes(&doc.file, &doc.root, &doc.info.path, MAX_DOC)?;
     Ok((String::from_utf8_lossy(&bytes).into_owned(), mtime))
+}
+
+/// The bytes of `doc` as they are on disk, and its mtime.
+pub fn read_raw(doc: &Doc) -> Result<(Vec<u8>, Option<u64>), ReadError> {
+    read_bytes(&doc.file, &doc.root, &doc.info.path, MAX_DOC)
 }
 
 /// The bytes of the listed file `file`, named `path` in errors, and its mtime.

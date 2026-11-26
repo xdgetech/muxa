@@ -13,7 +13,6 @@ fn ws() -> SettingsWorkspace {
             name: "b".into(),
             description: Some("Watches PRs".into()),
             worker: None,
-            daily_items: None,
             enabled: true,
             members: Vec::new(),
             handoffs_per_day: None,
@@ -116,7 +115,7 @@ fn the_brief_carries_the_soul_memory_routines_and_the_output() {
 }
 
 #[test]
-fn the_brief_says_what_runs_can_use_and_what_the_daily_limit_does() {
+fn the_brief_says_what_runs_can_use_and_that_no_daily_limit_holds_items() {
     let mut w = ws();
     w.mcp = serde_json::from_value(json!([{"name": "linear", "command": "npx"}])).unwrap();
     let text = brief(&w, "b");
@@ -127,10 +126,14 @@ fn the_brief_says_what_runs_can_use_and_what_the_daily_limit_does() {
         "You are a muxa Bot",
         "you may propose",
         "claude.ai connectors do not",
-        "\"N more\"",
+        "no daily limit",
         "One item per key",
+        "\"items\":10",
     ] {
         assert!(text.contains(part), "{part}");
+    }
+    for gone in ["\"N more\"", "daily_items", "daily items"] {
+        assert!(!text.contains(gone), "{gone}");
     }
 }
 

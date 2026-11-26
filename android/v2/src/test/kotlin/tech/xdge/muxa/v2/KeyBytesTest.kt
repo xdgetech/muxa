@@ -1,6 +1,7 @@
 package tech.xdge.muxa.v2
 
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -9,6 +10,13 @@ class KeyBytesTest {
 
     private fun check(name: String, vararg expected: Int) =
         assertArrayEquals(name, ByteArray(expected.size) { expected[it].toByte() }, KeyBytes.bytes(name))
+
+    @Test
+    fun aMessageKeepsItsReturnApart() {
+        val long = "x".repeat(300)
+        assertEquals(long to "\r", KeyBytes.message(long))
+        assertEquals("\u001b[200~Fix it.\nAnd add a test.\u001b[201~" to "\r", KeyBytes.message("Fix it.\nAnd add a test."))
+    }
 
     @Test
     fun namedKeysAreXtermSequences() {

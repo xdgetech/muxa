@@ -57,10 +57,18 @@ struct BotsDestinationView: View {
 /// first), as cards. The phone pushes the picked one; the tablet shows it beside.
 struct BotsList: View {
     @Environment(NextModel.self) private var model
+    @Environment(NextNavigation.self) private var nav
     var picked: BotsDestination?
     /// The tablet's chevron-less rows mark the picked one instead.
     var showsChevrons = true
     let pick: (BotsDestination) -> Void
+
+    /// A Bot with a live talk opens on it, whatever tab its page was left on
+    /// (ADR 0086): the same route an Inbox item takes, on the phone and the tablet.
+    private func open(_ e: BotEntry, as dest: BotsDestination) {
+        if let talk = model.liveTalk(of: e), nav.showOnBotPage(talk) { return }
+        pick(dest)
+    }
 
     var body: some View {
         let entries = model.botEntries()
@@ -70,7 +78,7 @@ struct BotsList: View {
                 Section {
                     ForEach(entries.filter { $0.workspace.name == w }) { e in
                         let dest = BotsDestination.bot(workspace: w, name: e.name)
-                        Button { pick(dest) } label: { BotCard(entry: e, picked: picked == dest, chevron: showsChevrons) }
+                        Button { open(e, as: dest) } label: { BotCard(entry: e, picked: picked == dest, chevron: showsChevrons) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("bot.\(w).\(e.name)")
                             .cardRow()
@@ -181,6 +189,7 @@ extension NextNavigation {
         tab = .bots
         taskView = t.isTaskAgent ? .chat : .terminal
         botTabs["\(workspace)/\(bot)"] = .chats
+        botRoutedTo = "\(workspace)/\(bot)"
         botRoute = BotRoute(workspace: workspace, bot: bot, terminal: t.id)
         return true
     }

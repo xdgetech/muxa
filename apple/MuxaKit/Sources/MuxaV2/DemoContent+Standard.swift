@@ -1,7 +1,8 @@
 import Foundation
 
 extension DemoContent {
-    /// Two Tasks (one waits on the user, one has a shell beside its agent), a
+    /// Two Tasks (one waits on the user, one runs Codex, which takes the mouse,
+    /// and has a shell beside its agent), a
     /// shell, a terminal muxa did not start, a Routine run, every Inbox kind,
     /// four Routines, and the Bot `pr-watch` with two items (ADR 0082) and a
     /// settings proposal (`d12`, ADR 0083) from its talk `t7`, and a run of
@@ -10,9 +11,9 @@ extension DemoContent {
     /// where `d13` goes (ADR 0084). Approving `d8` needs force: its worktree
     /// holds work. `d9` came from muxa v1.
     public static let standard: DemoContent = {
-        func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
+        func agent(_ id: String, _ branch: String, _ state: String, app: String = "claude-code") -> Terminal {
             Terminal(
-                id: id, name: branch, live: true, status: TerminalStatus(state: state, app: "claude-code"),
+                id: id, name: branch, live: true, status: TerminalStatus(state: state, app: app),
                 labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.branch": branch, "muxa.workspace": "app",
                          "muxa.repo": "/demo/app", "muxa.dir": "/demo/app-\(branch)"],
                 cols: 80, rows: 24)
@@ -21,7 +22,7 @@ extension DemoContent {
                   due: String? = nil, source: String, terminal: String? = nil, routine: RoutineRef? = nil,
                   place: ItemPlace? = nil) -> InboxItem {
             InboxItem(id: id, kind: kind, title: title, note: note, workspace: workspace, due: due,
-                      laterUntil: nil, created: 1_764_000_000, source: source, terminal: terminal, routine: routine,
+                      created: 1_764_000_000, source: source, terminal: terminal, routine: routine,
                       place: place)
         }
         func bot(_ id: String, _ kind: ItemKind, _ title: String, note: String? = nil, due: String? = nil,
@@ -40,7 +41,7 @@ extension DemoContent {
         let everyRoutine = ["dependency-digest", "nightly-backup", "release-notes"]
         return DemoContent(
             terminals: [
-                agent("t1", "fix-login", "working"),
+                agent("t1", "fix-login", "working", app: "codex"),
                 agent("t2", "docs-audit", "blocked"),
                 Terminal(id: "t3", name: "shell", live: true, status: nil, labels: [:], cols: 80, rows: 24),
                 // A terminal muxa did not start: no name, no labels.
@@ -78,8 +79,12 @@ extension DemoContent {
                     cols: 80, rows: 24),
             ],
             screens: [
-                "t1": "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
-                "t2": "● The README links three pages that moved.\r\n\r\n  Allow edits to README.md? (y/n) ",
+                // Codex's screen: the alternate screen, and the mouse reported to the program.
+                "t1": "\u{1b}[?1049h\u{1b}[?1000h\u{1b}[?1002h\u{1b}[?1003h\u{1b}[?1006h"
+                    + "• Reading src/auth/session.ts\r\n• Editing src/auth/session.ts\r\n"
+                    + "  The session now refreshes before it expires, as https://example.com/auth/refresh describes.\r\n",
+                "t2": "● The README links three pages that moved: https://example.com/docs/moved\r\n\r\n"
+                    + "  Allow edits to README.md? (y/n) ",
                 "t3": "$ ",
                 "t4": "% ",
                 "t5": "● Reading the lockfile\r\n",
@@ -146,6 +151,8 @@ extension DemoContent {
                     DemoFile(entry: ReaderEntry(path: "PLAN.md"), content: ReaderContent(path: "PLAN.md", text: plan)),
                     DemoFile(entry: ReaderEntry(path: ".muxa/TASK.md"),
                              content: ReaderContent(path: ".muxa/TASK.md", text: "# fix-login\n\nRefresh the session before it expires.\n")),
+                    DemoFile(entry: ReaderEntry(path: "output/qa/report.md", ignored: true),
+                             content: ReaderContent(path: "output/qa/report.md", text: qaReport)),
                 ],
                 .changes: [
                     DemoFile(entry: ReaderEntry(path: "src/auth/session.ts", status: "modified", added: 2, removed: 1),
@@ -159,6 +166,11 @@ extension DemoContent {
                 ],
             ],
             chats: [
+                "t7": ChatUpdate(reset: true, entries: [
+                    ChatEntry(id: "u1", kind: "user", text: "Every night, list the PRs nobody touched for a week."),
+                    ChatEntry(id: "a1", kind: "assistant",
+                              text: "I proposed a Routine **stale-prs** that runs at 21:00. Apply it to turn it on."),
+                ]),
                 "t9": ChatUpdate(reset: true, entries: [
                     ChatEntry(id: "u1", kind: "user", text: "Which of our dependencies have open CVEs?"),
                     ChatEntry(id: "a1", kind: "assistant", text: "I'm checking the lockfile against the advisories."),
@@ -220,15 +232,15 @@ extension DemoContent {
     }()
 
     /// What pr-watch proposed in a talk: a turned-off Routine of its own and
-    /// more items a day, against the demo's first settings revision.
+    /// the commands it may run, against the demo's first settings revision.
     private static let proposal: InboxItem = {
         let sweep = RoutineSpec(name: "nightly-sweep", at: "02:30", timezone: "Europe/Berlin",
                                 instructions: "routines/nightly-sweep.md", enabled: false, bot: "pr-watch", readOnly: true)
-        let watch = BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me", dailyItems: 5,
+        let watch = BotSpec(name: "pr-watch", description: "Watches PRs and threads that wait for me",
                             commands: ["gh pr list:*", "gh pr diff:*"])
         var i = InboxItem(
             id: "d12", kind: .decide, title: "pr-watch proposes: a nightly sweep of stale PRs",
-            note: "- routine-add nightly-sweep (off)\n- Change Bot pr-watch, may run: gh pr list:*; gh pr diff:*\n", workspace: "app", due: nil, laterUntil: nil,
+            note: "- routine-add nightly-sweep (off)\n- Change Bot pr-watch, may run: gh pr list:*; gh pr diff:*\n", workspace: "app", due: nil,
             created: 1_764_000_000, source: "task", terminal: "t7", routine: nil)
         i.bot = "pr-watch"
         i.settingsProposal = SettingsProposal(revision: "1", ops: [
@@ -243,7 +255,7 @@ extension DemoContent {
     private static let suggested: InboxItem = {
         var i = InboxItem(
             id: "d13", kind: .todo, title: "Look into the flaky login test", note: nil, workspace: nil, due: nil,
-            laterUntil: nil, created: 1_764_000_000, source: "capture", terminal: nil, routine: nil)
+            created: 1_764_000_000, source: "capture", terminal: nil, routine: nil)
         i.suggestion = ItemSuggestion(
             workspace: "app", due: "2026-11-28", note: "It fails about once in ten CI runs.",
             taskGoal: "Find why the login test fails now and then, and fix it.", bot: "pr-watch")
@@ -311,7 +323,8 @@ extension DemoContent {
             SubscriptionSpec(name: "chatgpt", agent: "codex", home: "~/.codex", plan: "Plus"),
         ],
         // app's env names its own Claude login: onboarding offers to adopt it.
-        foundLogins: [FoundLogin(agent: "claude-code", workspace: "app")])
+        foundLogins: [FoundLogin(agent: "claude-code", workspace: "app")],
+        build: SettingsBuild(dir: "/Volumes/Build/muxa", dirFound: true, extraPaths: ["out"]))
 
     private static let plan = """
         # Plan
@@ -321,6 +334,14 @@ extension DemoContent {
         3. Add a test for a session that expired while the app slept.
 
         The goal is in [the Task's brief](.muxa/TASK.md).
+
+        """
+
+    private static let qaReport = """
+        # QA report
+
+        - [x] A session refreshes 60 s before it expires.
+        - [x] A failed refresh retries once.
 
         """
 

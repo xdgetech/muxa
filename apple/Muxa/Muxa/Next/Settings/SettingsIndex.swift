@@ -11,6 +11,8 @@ enum SettingsPlace: Hashable {
     case subscriptions
     /// The plan limits of each subscription.
     case usage
+    /// The build disk (ADR 0102).
+    case build
     /// How terminals look on this device.
     case terminal
 }
@@ -40,7 +42,7 @@ struct SettingsIndex: View {
             HostsSection(editing: $editingHost)
             Section("This device") {
                 row(.terminal, id: "settings.terminal") {
-                    LabeledContent("Terminal", value: TerminalSettings.shared.theme.name)
+                    LabeledContent("Appearance", value: ThemeStore.shared.theme.name)
                 }
             }
         }
@@ -92,6 +94,11 @@ struct SettingsIndex: View {
             row(.assistant, id: "settings.assistant") {
                 LabeledContent("Capture assistant", value: s.settings?.assistant?.enabled == true ? "on" : "off")
             }
+            if let build = s.settings?.build {
+                row(.build, id: "settings.build") {
+                    LabeledContent("Build disk", value: Self.summary(build))
+                }
+            }
         }
         .listRowBackground(Palette.card)
     }
@@ -117,6 +124,11 @@ struct SettingsIndex: View {
         return "\(s?.subscriptions.count ?? 0)"
     }
 
+    static func summary(_ b: SettingsBuild) -> String {
+        guard b.dir != nil else { return "off" }
+        return b.dirFound ? "on" : "not found"
+    }
+
     static func summary(_ w: SettingsWorkspace) -> String {
         var parts = [w.root]
         if !w.connections.isEmpty { parts.append(w.connections.count == 1 ? "1 connection" : "\(w.connections.count) connections") }
@@ -137,7 +149,8 @@ struct SettingsDetail: View {
         case .assistant: AssistantSettings()
         case .subscriptions: SubscriptionsSettings()
         case .usage: PlanUsageView()
-        case .terminal: TerminalSettingsForm().navigationTitle("Terminal")
+        case .build: BuildSettings()
+        case .terminal: TerminalSettingsForm().navigationTitle("Appearance")
         }
     }
 }

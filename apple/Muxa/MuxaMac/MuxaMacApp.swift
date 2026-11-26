@@ -24,10 +24,8 @@ struct MuxaMacApp: App {
                 .environment(model)
                 .environment(nav)
                 .environment(chrome)
-                .tint(Theme.accent)
+                .modifier(ThemedWindow())
                 .frame(minWidth: 720, minHeight: 480)
-                .containerBackground(Palette.ground, for: .window)
-                .toolbarBackground(Palette.ground, for: .windowToolbar)
                 .sheet(isPresented: $chrome.showShortcuts) { ShortcutsSheet() }
                 .background(WindowReader { chrome.mainWindow = $0 })
                 // Every screen draws the mocks' header where the title bar was.
@@ -52,6 +50,7 @@ struct MuxaMacApp: App {
                         await model.startDemo()
                         #if DEBUG
                         await Snapshot.runIfAsked(model: model, nav: nav, chrome: chrome)
+                        await KeyCheck.runIfAsked(model: model, nav: nav, chrome: chrome)
                         #endif
                     } else if model.prefersLocal, model.serverIsLocal {
                         await model.connectLocal()
@@ -69,8 +68,7 @@ struct MuxaMacApp: App {
                 .environment(nav)
                 .environment(chrome)
                 .frame(minWidth: 960, minHeight: 600)
-                .background(Palette.ground)
-                .preferredColorScheme(.dark)
+                .modifier(ThemedWindow())
         }
         .commands {
             // The items are views: a View body observes the model and the
@@ -104,6 +102,12 @@ struct MuxaMacApp: App {
 /// Capture, and Capture's `⌘⏎` opens the window again.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    #if DEBUG
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        ReaderCheck.runIfAsked()
+    }
+    #endif
 }
 
 /// Runs `start` when the main window appears, with the action that reopens it.

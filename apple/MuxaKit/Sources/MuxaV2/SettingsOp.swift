@@ -1,6 +1,6 @@
 import Foundation
 
-/// A field `workspaceUpdate` may keep (absent on the wire), clear (`null`) or set.
+/// A field `workspaceUpdate` or `buildUpdate` may keep (absent on the wire), clear (`null`) or set.
 public enum FieldChange<Value: Codable & Equatable & Sendable>: Equatable, Sendable {
     case keep
     case clear
@@ -58,6 +58,9 @@ public enum SettingsOp: Equatable, Sendable {
     /// Makes the login `workspace`'s env names a subscription called `name`, takes the
     /// variable out of the env, and puts it first in the Workspace's list.
     case subscriptionAdopt(workspace: String, agent: String, name: String, plan: String? = nil)
+    /// The build disk (ADR 0102).
+    /// `extraPaths` replaces the list; nil keeps it.
+    case buildUpdate(dir: FieldChange<String> = .keep, dropAfter: FieldChange<String> = .keep, extraPaths: [String]? = nil)
     case workerAdd(worker: WorkerSpec)
     /// Replaces the worker named `worker.name`.
     case workerUpdate(worker: WorkerSpec)
@@ -93,6 +96,7 @@ public enum SettingsOp: Equatable, Sendable {
         case .subscriptionUpdate: "subscription-update"
         case .subscriptionRemove: "subscription-remove"
         case .subscriptionAdopt: "subscription-adopt"
+        case .buildUpdate: "build-update"
         case .workerAdd: "worker-add"
         case .workerUpdate: "worker-update"
         case .workerRemove: "worker-remove"
@@ -108,8 +112,10 @@ public enum SettingsOp: Equatable, Sendable {
 extension SettingsOp: Codable {
     enum CodingKeys: String, CodingKey {
         case from, to
-        case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot
+        case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot, dir
         case subscription, subscriptions, agent, plan
+        case dropAfter = "drop_after"
+        case extraPaths = "extra_paths"
         case claudeConnectors = "claude_connectors"
         case switchSubscriptions = "switch_subscriptions"
         case botRules = "bot_rules"
@@ -196,6 +202,10 @@ extension SettingsOp: Codable {
             try c.encode(agent, forKey: .agent)
             try c.encode(name, forKey: .name)
             try c.encodeIfPresent(plan, forKey: .plan)
+        case let .buildUpdate(dir, dropAfter, extraPaths):
+            try c.encode(dir, forKey: .dir)
+            try c.encode(dropAfter, forKey: .dropAfter)
+            try c.encodeIfPresent(extraPaths, forKey: .extraPaths)
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(mcp, forKey: .mcp)
@@ -278,6 +288,9 @@ extension SettingsOp: Codable {
         case "subscription-adopt":
             self = .subscriptionAdopt(workspace: try ws(), agent: try s(.agent), name: try s(.name),
                                       plan: try c.decodeIfPresent(String.self, forKey: .plan))
+        case "build-update":
+            self = .buildUpdate(dir: try FieldChange(c, .dir), dropAfter: try FieldChange(c, .dropAfter),
+                                extraPaths: try c.decodeIfPresent([String].self, forKey: .extraPaths))
         case "worker-add": self = .workerAdd(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-update": self = .workerUpdate(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-remove": self = .workerRemove(name: try s(.name))
@@ -352,6 +365,8 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp): "\(name)(\(workspace), \(mcp))"
         case let .routineAdd(workspace, routine, text), let .routineUpdate(workspace, routine, text):
             "\(name)(\(workspace), \(routine), instructions_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
+        case let .buildUpdate(dir, dropAfter, extraPaths):
+            "\(name)(dir: \(dir), drop_after: \(dropAfter), extra_paths: \(extraPaths.map { "\($0)" } ?? "keep"))"
         case let .workerAdd(worker), let .workerUpdate(worker): "\(name)(\(worker))"
         case let .workerRemove(n): "\(name)(\(n))"
         }

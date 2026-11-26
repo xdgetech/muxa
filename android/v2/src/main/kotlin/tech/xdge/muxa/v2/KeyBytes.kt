@@ -6,6 +6,19 @@ package tech.xdge.muxa.v2
  * the key names stay the app's vocabulary for keys.
  */
 object KeyBytes {
+    /** The wait between a message and its Return; the server waits as long. */
+    const val SUBMIT_PAUSE_MS = 200L
+
+    /**
+     * A message typed into an agent: its text, then Return as a write of its
+     * own after [SUBMIT_PAUSE_MS]. Claude Code reads a burst of about 65 bytes
+     * or more as a paste, and a Return inside a paste is a new line, not a
+     * send (docs/findings/claude-code-input.md). Several lines go as one
+     * bracketed paste (ADR 0072).
+     */
+    fun message(text: String): Pair<String, String> =
+        if ('\n' in text) "\u001b[200~$text\u001b[201~" to "\r" else text to "\r"
+
     /** The bytes for one key name; null for a name no terminal sends. */
     fun bytes(name: String): ByteArray? {
         var rest = name

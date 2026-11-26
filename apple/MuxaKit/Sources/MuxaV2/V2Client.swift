@@ -195,6 +195,16 @@ public actor V2Client {
         try field("token_usage", of: await request(.tokenUsage(day: day)), decoder: Coding.plainDecoder)
     }
 
+    /// The host's Task places, other worktrees and build folders (ADR 0102).
+    public func disk() async throws -> [DiskRow] {
+        try field("rows", of: await request(.disk))
+    }
+
+    /// Removes rows of `disk`; a dry run unless `dryRun` is false.
+    public func diskClean(paths: [String] = [], force: Bool = false, dryRun: Bool = true) async throws -> DiskCleaned {
+        try Coding.decoder.decode(DiskCleaned.self, from: await request(.diskClean(paths: paths, force: force, dryRun: dryRun)))
+    }
+
     /// The host's editable settings.
     public func settings() async throws -> Settings {
         try field("settings", of: await request(.settings), decoder: Coding.plainDecoder)
@@ -238,6 +248,14 @@ public actor V2Client {
 
     public func readerClose(_ reader: UInt32) async throws {
         _ = try await request(.readerClose(reader: reader))
+    }
+
+    /// The documents and images the Reader lists under `folder`, subfolders
+    /// too, as a zip under a folder of that name (ADR 0101). Empty: all.
+    public func readerFolder(_ terminal: String, folder: String) async throws -> Data {
+        let zip: String = try field("zip", of: await request(.readerFolder(terminal: terminal, folder: folder)))
+        guard let data = Data(base64Encoded: zip) else { throw V2Error.badMessage("zip: not base64") }
+        return data
     }
 
     // MARK: Chat

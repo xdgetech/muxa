@@ -20,12 +20,15 @@ public struct Settings: Codable, Equatable, Sendable {
     public var subscriptions: [SubscriptionSpec]
     /// Logins on the host that are no subscription yet, for onboarding (ADR 0103 §7).
     public var foundLogins: [FoundLogin]
+    /// The build disk (ADR 0102); nil from an older server.
+    public var build: SettingsBuild?
 
     public init(revision: String, readOnly: Bool = false, problem: String? = nil, workspaces: [SettingsWorkspace] = [],
                 workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil, subscriptions: [SubscriptionSpec] = [],
-                foundLogins: [FoundLogin] = []) {
+                foundLogins: [FoundLogin] = [], build: SettingsBuild? = nil) {
         self.subscriptions = subscriptions
         self.foundLogins = foundLogins
+        self.build = build
         self.revision = revision
         self.readOnly = readOnly
         self.problem = problem
@@ -35,7 +38,7 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case revision, problem, workspaces, workers, assistant, subscriptions
+        case revision, problem, workspaces, workers, assistant, subscriptions, build
         case readOnly = "read_only"
         case foundLogins = "found_logins"
     }
@@ -50,6 +53,43 @@ public struct Settings: Codable, Equatable, Sendable {
         assistant = try c.decodeIfPresent(SettingsAssistant.self, forKey: .assistant)
         subscriptions = try c.decode(.subscriptions, or: [])
         foundLogins = try c.decode(.foundLogins, or: [])
+        build = try c.decodeIfPresent(SettingsBuild.self, forKey: .build)
+    }
+}
+
+/// `[build]` in `workspaces.toml`: where Task worktrees put their build
+/// output, and how long an ended Task keeps it (ADR 0102).
+public struct SettingsBuild: Codable, Equatable, Sendable {
+    /// As written, `~/` included; nil: no build disk.
+    public var dir: String?
+    /// `12h`, `3d`; nil: three days.
+    public var dropAfter: String?
+    /// `dir` is a folder on the host now; false while its disk is not mounted.
+    public var dirFound: Bool
+    /// Paths every worktree also links, beside the build folders muxa finds
+    /// from each repo's build files; used only where git ignores them.
+    public var extraPaths: [String]
+
+    public init(dir: String? = nil, dropAfter: String? = nil, dirFound: Bool = false, extraPaths: [String] = []) {
+        self.dir = dir
+        self.dropAfter = dropAfter
+        self.dirFound = dirFound
+        self.extraPaths = extraPaths
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case dir
+        case dropAfter = "drop_after"
+        case dirFound = "dir_found"
+        case extraPaths = "extra_paths"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dir = try c.decodeIfPresent(String.self, forKey: .dir)
+        dropAfter = try c.decodeIfPresent(String.self, forKey: .dropAfter)
+        dirFound = try c.decode(.dirFound, or: false)
+        extraPaths = try c.decode(.extraPaths, or: [])
     }
 }
 
@@ -510,8 +550,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     public var description: String?
     public var worker: String?
-    /// Nil: 3.
-    public var dailyItems: UInt32?
     public var enabled: Bool
     /// A team lead's members (ADR 0085): Bots of the same Workspace that lead
     /// no team themselves.
@@ -533,7 +571,7 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
             && name.allSatisfy { ($0.isASCII && ($0.isLowercase || $0.isNumber)) || $0 == "-" || $0 == "_" }
     }
 
-    public init(name: String, description: String? = nil, worker: String? = nil, dailyItems: UInt32? = nil,
+    public init(name: String, description: String? = nil, worker: String? = nil,
                 enabled: Bool = true, members: [String] = [], handoffsPerDay: UInt32? = nil, commands: [String] = [],
                 subscriptions: [String] = []) {
         self.subscriptions = subscriptions
@@ -541,7 +579,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         self.name = name
         self.description = description
         self.worker = worker
-        self.dailyItems = dailyItems
         self.enabled = enabled
         self.members = members
         self.handoffsPerDay = handoffsPerDay
@@ -549,7 +586,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case name, description, worker, enabled, members, commands, subscriptions
-        case dailyItems = "daily_items"
         case handoffsPerDay = "handoffs_per_day"
     }
 
@@ -558,7 +594,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         try c.encode(name, forKey: .name)
         try c.encodeIfPresent(description, forKey: .description)
         try c.encodeIfPresent(worker, forKey: .worker)
-        try c.encodeIfPresent(dailyItems, forKey: .dailyItems)
         try c.encode(enabled, forKey: .enabled)
         // As the host spells it: no `members` for a Bot that leads no team.
         if !members.isEmpty { try c.encode(members, forKey: .members) }
@@ -572,7 +607,6 @@ public struct BotSpec: Codable, Equatable, Sendable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         description = try c.decodeIfPresent(String.self, forKey: .description)
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
-        dailyItems = try c.decodeIfPresent(UInt32.self, forKey: .dailyItems)
         enabled = try c.decode(.enabled, or: true)
         members = try c.decode(.members, or: [])
         handoffsPerDay = try c.decodeIfPresent(UInt32.self, forKey: .handoffsPerDay)

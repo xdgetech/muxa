@@ -183,6 +183,32 @@ pub(super) async fn existing_worktree(
     ))
 }
 
+/// Every worktree of `main` but the main checkout, with its branch (None
+/// when its HEAD is detached).
+pub(super) async fn worktrees(main: &Path) -> Result<Vec<(PathBuf, Option<String>)>, GitError> {
+    let out = run(
+        git(main).args(["worktree", "list", "--porcelain"]),
+        "git worktree list",
+    )
+    .await?;
+    Ok(parse_worktrees(&String::from_utf8_lossy(&out.stdout), main))
+}
+
+fn parse_worktrees(porcelain: &str, main: &Path) -> Vec<(PathBuf, Option<String>)> {
+    let mut out: Vec<(PathBuf, Option<String>)> = Vec::new();
+    for line in porcelain.lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            out.push((PathBuf::from(p), None));
+        } else if let Some(b) = line.strip_prefix("branch refs/heads/")
+            && let Some(last) = out.last_mut()
+        {
+            last.1 = Some(b.to_owned());
+        }
+    }
+    out.retain(|(p, _)| p != main);
+    out
+}
+
 /// A worktree other than the main checkout that has `branch` checked out.
 fn find_worktree(porcelain: &str, main: &Path, branch: &str) -> Option<PathBuf> {
     let want = format!("refs/heads/{branch}");
@@ -301,6 +327,11 @@ pub fn append_file(dir: &Path, name: &str, text: &str) -> Result<PathBuf, String
 /// Adds `.muxa/` to the repo's `info/exclude`, shared by all its worktrees.
 /// Blocking.
 pub fn exclude(dir: &Path) -> Result<(), String> {
+    exclude_line(dir, EXCLUDE)
+}
+
+/// Adds `line` to the repo's `info/exclude` unless it is there. Blocking.
+pub fn exclude_line(dir: &Path, line: &str) -> Result<(), String> {
     let out = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -320,7 +351,7 @@ pub fn exclude(dir: &Path) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
     };
-    let Some(addition) = exclude_addition(&existing) else {
+    let Some(addition) = exclude_addition(&existing, line) else {
         return Ok(());
     };
     std::fs::create_dir_all(&info).map_err(|e| format!("cannot create {}: {e}", info.display()))?;
@@ -333,11 +364,11 @@ pub fn exclude(dir: &Path) -> Result<(), String> {
 }
 
 /// What to append to an exclude file, or None when it already has the line.
-fn exclude_addition(existing: &str) -> Option<String> {
+fn exclude_addition(existing: &str, line: &str) -> Option<String> {
     let present = existing
         .lines()
         .map(str::trim)
-        .any(|l| l == EXCLUDE || l == "/.muxa/" || l == ".muxa");
+        .any(|l| l == line || (line == EXCLUDE && (l == "/.muxa/" || l == ".muxa")));
     if present {
         return None;
     }
@@ -346,7 +377,7 @@ fn exclude_addition(existing: &str) -> Option<String> {
     } else {
         "\n"
     };
-    Some(format!("{lead}{EXCLUDE}\n"))
+    Some(format!("{lead}{line}\n"))
 }
 
 #[cfg(test)]
@@ -362,6 +393,14 @@ mod tests {
             Some("/w/r-fix".into())
         );
         assert_eq!(find_worktree(porcelain, Path::new("/r"), "main"), None);
+        let detached = format!("{porcelain}\nworktree /w/r-x\nHEAD 3\ndetached\n");
+        assert_eq!(
+            parse_worktrees(&detached, Path::new("/r")),
+            vec![
+                (PathBuf::from("/w/r-fix"), Some("fix".into())),
+                (PathBuf::from("/w/r-x"), None)
+            ]
+        );
         assert_eq!(
             worktree_path(Path::new("/src/app"), "fix/login"),
             PathBuf::from("/src/.worktrees/app-fix-login")
@@ -370,8 +409,11 @@ mod tests {
 
     #[test]
     fn the_exclude_line_is_added_once() {
-        assert_eq!(exclude_addition(""), Some(".muxa/\n".into()));
-        assert_eq!(exclude_addition("target"), Some("\n.muxa/\n".into()));
-        assert_eq!(exclude_addition("/.muxa/\n"), None);
+        assert_eq!(exclude_addition("", EXCLUDE), Some(".muxa/\n".into()));
+        assert_eq!(
+            exclude_addition("target", EXCLUDE),
+            Some("\n.muxa/\n".into())
+        );
+        assert_eq!(exclude_addition("/.muxa/\n", EXCLUDE), None);
     }
 }

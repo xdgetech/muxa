@@ -12,6 +12,7 @@ ADR 0067 relies on these facts. Checked on a Mac on 2026-11-21: herdr-core 0.1.2
 | `hello` with `framed: true` switches to frames: `[channel u32 LE][kind u8][len u32 LE][payload]`. Channel 0 carries JSON-RPC. `hello` lists the features `attach` and `events`. | Script (DATA, CREDIT, CLOSE, RESIZE used) |
 | The other frame kinds are FOCUS, FACTS and AUTOMATIC_INPUT. | Docs (`schema/README.md`) |
 | `terminal.run` takes argv, `cwd`, a `name` and labels, and returns once the program runs. | Script |
+| `terminal.run` refuses a `name` that a live terminal already has: JSON-RPC error -32000, `a live terminal is already named "…"`. Names are at most 32 characters, so a long Task title and its shell's `<title>-sh` cut to the same name. `HerdrBackend` adds `-2`, `-3`… within the 32. | Seen on the developer's host (2026-11-25); the backend contract checks it |
 | `terminal.attach` with `cols` and `rows` opens a stream. It starts with a first paint that holds the current screen and the latest OSC 7501 report. The program's raw output follows. | Script |
 | The first paint also holds the history asked for and the title. | Docs |
 | Bytes sent as DATA on the stream reach the program. | Script |

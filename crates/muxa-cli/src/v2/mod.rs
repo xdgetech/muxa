@@ -4,6 +4,7 @@
 
 mod chat;
 pub mod client;
+mod disk;
 mod inbox;
 mod reader;
 mod settings;
@@ -31,8 +32,9 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
        muxa-cli v2 [--bridge CMD] inbox [--json]
        muxa-cli v2 [--bridge CMD] inbox done|reopen|delete ITEM
+       muxa-cli v2 [--bridge CMD] inbox delete-older DAYS
        muxa-cli v2 [--bridge CMD] inbox move ITEM INDEX
-       muxa-cli v2 [--bridge CMD] inbox later ITEM --minutes N
+       muxa-cli v2 [--bridge CMD] inbox later ITEM
        muxa-cli v2 [--bridge CMD] review [TERMINAL] [--note TEXT]
        muxa-cli v2 [--bridge CMD] approve ITEM [--force]
        muxa-cli v2 [--bridge CMD] request-changes ITEM COMMENT...
@@ -46,6 +48,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] workspaces [--json]
        muxa-cli v2 [--bridge CMD] subscriptions [--json]
        muxa-cli v2 [--bridge CMD] token-usage [--day YYYY-MM-DD] [--json]
+       muxa-cli v2 [--bridge CMD] disk [--json]
+       muxa-cli v2 [--bridge CMD] disk clean [PATH]... [--force] [--yes] [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
        muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
@@ -58,6 +62,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                 [--timeout SECONDS] [--reset]
        muxa-cli v2 [--bridge CMD] loop-stop TERMINAL
        muxa-cli v2 [--bridge CMD] reader TERMINAL docs|changes|images [--html] [--json]
+       muxa-cli v2 [--bridge CMD] reader-folder TERMINAL FOLDER OUT.zip
        muxa-cli v2 [--bridge CMD] read TERMINAL docs|changes|images PATH [--html] [--commits]
                 [--seconds N]
 
@@ -100,7 +105,9 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   chat           the conversation of a Task's agent, from its own records
   reader         the files of a Task's or a Routine run's folder; read prints
                  one (an image as its bytes), and with --seconds each change;
-                 --commits: a change's diff over the branch's commits";
+                 --commits: a change's diff over the branch's commits
+  reader-folder  writes the documents and images the Reader lists under FOLDER
+                 (. for all) as one zip to OUT.zip; at most 11 MB";
 
 /// ADR 0075: every agent of a Workspace gets all its connections and servers.
 const CHOICE_DEPRECATED: &str = "muxa-cli: --connection and --mcp are deprecated and ignored: \
@@ -128,6 +135,7 @@ enum Cmd {
         day: Option<String>,
         json: bool,
     },
+    Disk(disk::Disk),
     Inbox {
         action: inbox::Action,
         json: bool,
@@ -202,6 +210,11 @@ enum Cmd {
         json: bool,
     },
     Read(reader::Read),
+    ReaderFolder {
+        terminal: String,
+        folder: String,
+        out: String,
+    },
 }
 
 /// Runs `muxa-cli v2 <args>`; `Ok(None)` printed the usage.
@@ -233,9 +246,8 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut places: Vec<PlaceSpec> = Vec::new();
     let mut chose = false;
     let mut words = Vec::new();
-    let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
-    let (mut force, mut dry_run) = (false, false);
+    let (mut force, mut dry_run, mut yes) = (false, false, false);
     let mut revision: Option<String> = None;
     let mut day: Option<String> = None;
     while let Some(arg) = p.next()? {
@@ -284,10 +296,10 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("read") => places.push(PlaceSpec::Read {
                 repo: p.value()?.string()?,
             }),
-            Long("minutes") => minutes = Some(p.value()?.parse()?),
             Long("note") => note = Some(p.value()?.string()?),
             Long("force") => force = true,
             Long("dry-run") => dry_run = true,
+            Long("yes") => yes = true,
             Long("existing") => places.push(PlaceSpec::Existing {
                 path: p.value()?.string()?,
             }),
@@ -311,6 +323,13 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             day: day.clone(),
             json,
         },
+        ["disk"] => Cmd::Disk(disk::Disk::Report { json }),
+        ["disk", "clean", paths @ ..] => Cmd::Disk(disk::Disk::Clean {
+            paths: paths.iter().map(|p| (*p).to_owned()).collect(),
+            yes,
+            force,
+            json,
+        }),
         ["approve", i] => Cmd::Inbox {
             action: inbox::Action::Approve {
                 item: (*i).to_owned(),
@@ -410,7 +429,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             note,
         },
         ["inbox", rest @ ..] => Cmd::Inbox {
-            action: inbox_action(rest, minutes)?,
+            action: inbox_action(rest)?,
             json,
         },
         ["reader", t, k] => Cmd::Reader {
@@ -418,6 +437,15 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             kind: reader::kind(k)?,
             html,
             json,
+        },
+        ["reader-folder", t, folder, out] => Cmd::ReaderFolder {
+            terminal: (*t).to_owned(),
+            folder: if *folder == "." {
+                String::new()
+            } else {
+                (*folder).to_owned()
+            },
+            out: (*out).to_owned(),
         },
         ["read", t, k, path] => Cmd::Read(reader::Read {
             terminal: (*t).to_owned(),
@@ -436,13 +464,17 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     Ok(Some((bridge, cmd)))
 }
 
-fn inbox_action(words: &[&str], minutes: Option<u32>) -> Result<inbox::Action, lexopt::Error> {
+fn inbox_action(words: &[&str]) -> Result<inbox::Action, lexopt::Error> {
     use inbox::Action;
     let item = |s: &&str| (*s).to_owned();
     Ok(match words {
         [] => Action::List,
         ["done", i] => Action::Done(item(i)),
         ["reopen", i] => Action::Reopen(item(i)),
+        ["delete-older", n] => Action::DeleteOlder(
+            n.parse()
+                .map_err(|_| lexopt::Error::from(format!("{n:?} is not a number of days")))?,
+        ),
         ["delete", i] => Action::Delete(item(i)),
         ["move", i, n] => Action::Move {
             item: item(i),
@@ -450,10 +482,7 @@ fn inbox_action(words: &[&str], minutes: Option<u32>) -> Result<inbox::Action, l
                 .parse()
                 .map_err(|_| lexopt::Error::from(format!("{n:?} is not an index")))?,
         },
-        ["later", i] => Action::Later {
-            item: item(i),
-            minutes: minutes.ok_or("inbox later needs --minutes")?,
-        },
+        ["later", i] => Action::Later(item(i)),
         _ => return Err("unknown inbox command; see muxa-cli v2 --help".into()),
     })
 }
@@ -587,6 +616,12 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             json,
         } => reader::list(bridge, &terminal, &kind, html, json).await,
         Cmd::Read(r) => reader::read(bridge, &r).await,
+        Cmd::ReaderFolder {
+            terminal,
+            folder,
+            out,
+        } => reader::folder(bridge, &terminal, &folder, &out).await,
+        Cmd::Disk(d) => disk::run(bridge, &d).await,
         Cmd::Workspaces { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "workspaces"})).await?;
@@ -690,23 +725,21 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let msg = json!({"type": "task-review", "terminal": terminal, "note": note});
             let reply = c.request(msg).await?;
-            let now = jiff::Timestamp::now().as_second();
-            if let Some(row) = inbox::rows(&reply["inbox"], now).into_iter().next() {
+            if let Some(row) = inbox::rows(&reply["inbox"]).into_iter().next() {
                 println!("{row}");
             }
             Ok(())
         }
         Cmd::Inbox { action, json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
-            let now = jiff::Timestamp::now().as_second();
-            let mut reply = c.request(inbox::request(&action, now)).await?;
+            let mut reply = c.request(inbox::request(&action)).await?;
             if matches!(action, inbox::Action::Capture(_)) {
                 reply = c.request(inbox::capture_add(&reply)).await?;
             }
             if json {
                 println!("{}", reply["inbox"]);
             } else {
-                for row in inbox::rows(&reply["inbox"], now) {
+                for row in inbox::rows(&reply["inbox"]) {
                     println!("{row}");
                 }
             }
@@ -1002,7 +1035,7 @@ mod tests {
     #[test]
     fn task_actions_parse_into_inbox_requests() {
         let action = |words: &[&str]| match parse(args(words)).unwrap() {
-            Some((_, Cmd::Inbox { action, .. })) => inbox::request(&action, 0),
+            Some((_, Cmd::Inbox { action, .. })) => inbox::request(&action),
             other => panic!("{other:?}"),
         };
         assert_eq!(
@@ -1030,10 +1063,27 @@ mod tests {
             action(&["dismiss", "i6"]),
             json!({"type": "inbox-suggestion", "item": "i6", "accept": false})
         );
+        assert_eq!(
+            action(&["inbox", "delete-older", "3"]),
+            json!({"type": "inbox-delete-older", "days": 3})
+        );
+        assert!(parse(args(&["inbox", "delete-older", "soon"])).is_err());
         assert_eq!(parse(args(&["request-changes", "i3"])).unwrap(), None);
         assert_eq!(
             parse(args(&["workspaces", "--json"])).unwrap(),
             Some(("muxa-bridge connect".into(), Cmd::Workspaces { json: true }))
+        );
+        assert_eq!(
+            parse(args(&["disk", "clean", "/w/r-x", "--force", "--yes"])).unwrap(),
+            Some((
+                "muxa-bridge connect".into(),
+                Cmd::Disk(disk::Disk::Clean {
+                    paths: vec!["/w/r-x".into()],
+                    yes: true,
+                    force: true,
+                    json: false,
+                })
+            ))
         );
     }
 

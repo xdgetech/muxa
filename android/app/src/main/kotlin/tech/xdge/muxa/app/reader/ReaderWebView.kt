@@ -13,12 +13,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import tech.xdge.muxa.app.ui.Palette
+import kotlinx.serialization.json.put
+import tech.xdge.muxa.app.ui.ThemeStore
+import tech.xdge.muxa.session.ResolvedTheme
+import tech.xdge.muxa.session.ThemeToken
 
 /**
  * Shows one Markdown document, or one unified diff, with the bundled renderer
@@ -30,9 +37,14 @@ import tech.xdge.muxa.app.ui.Palette
 fun ReaderWebView(text: String, path: String, diff: Boolean, onLink: (String, String) -> Unit, modifier: Modifier = Modifier) {
     val state = remember { ReaderPage() }
     state.onLink = onLink
+    val theme = ThemeStore.current
+    val json = remember(theme) { themeJson(theme.resolved) }
     AndroidView(
-        factory = { context -> state.create(context) },
-        update = { state.show(ReaderPage.Shown(text, path, diff)) },
+        factory = { context -> state.create(context, json, theme[ThemeToken.ground].toArgb()) },
+        update = {
+            state.theme(json, theme[ThemeToken.ground].toArgb())
+            state.show(ReaderPage.Shown(text, path, diff))
+        },
         modifier = modifier.testTag("reader"),
     )
 }
@@ -45,15 +57,20 @@ private class ReaderPage {
     private var loaded = false
     private var wanted: Shown? = null
     private var shown: Shown? = null
+    private var theme = ""
+    private var pageTheme: String? = null
+    private var injected: ScriptHandler? = null
+    private var injectedTheme: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
-    fun create(context: android.content.Context): WebView {
+    fun create(context: android.content.Context, json: String, ground: Int): WebView {
+        theme = json
         val assets = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
             .build()
         return WebView(context).apply {
             // The page's own ground, so no white shows before it loads.
-            setBackgroundColor(Palette.ground.toArgb())
+            setBackgroundColor(ground)
             settings.javaScriptEnabled = true
             settings.blockNetworkLoads = true
             settings.allowFileAccess = false
@@ -71,17 +88,49 @@ private class ReaderPage {
                     (view.parent as? android.view.ViewGroup)?.removeView(view)
                     view.destroy()
                     this@ReaderPage.view = null
+                    injected = null
                     return true
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
                     loaded = true
+                    pageTheme = injectedTheme
+                    syncTheme()
                     render()
                 }
             }
-            loadUrl(PAGE)
             view = this
+            inject(this)
+            loadUrl(PAGE)
         }
+    }
+
+    /** A new theme: the page gets it now, and a reload gets it before its first paint. */
+    fun theme(json: String, ground: Int) {
+        if (json == theme) return
+        theme = json
+        val view = view ?: return
+        view.setBackgroundColor(ground)
+        inject(view)
+        syncTheme()
+    }
+
+    /**
+     * reader.js reads `window.muxaTheme` as it starts, so the first paint has the theme.
+     * A WebView without document-start scripts gets it from [syncTheme] once loaded.
+     */
+    private fun inject(view: WebView) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        injected?.remove()
+        injected = WebViewCompat.addDocumentStartJavaScript(view, "window.muxaTheme = $theme;", setOf(ORIGIN))
+        injectedTheme = theme
+    }
+
+    private fun syncTheme() {
+        val view = view ?: return
+        if (!loaded || pageTheme == theme) return
+        pageTheme = theme
+        view.evaluateJavascript("setTheme($theme)", null)
     }
 
     fun show(content: Shown) {
@@ -122,6 +171,13 @@ private class ReaderPage {
     }
 
     private companion object {
-        const val PAGE = "https://appassets.androidplatform.net/assets/reader.html"
+        const val ORIGIN = "https://appassets.androidplatform.net"
+        const val PAGE = "$ORIGIN/assets/reader.html"
     }
 }
+
+/** Every token as `#rrggbb`, and the appearance: what reader.js reads, as on iOS. */
+internal fun themeJson(theme: ResolvedTheme): String = buildJsonObject {
+    ThemeToken.entries.forEach { put(it.key, theme[it].hex) }
+    put("appearance", theme.appearance.name.lowercase())
+}.toString()

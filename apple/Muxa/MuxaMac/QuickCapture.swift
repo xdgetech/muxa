@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import MuxaSession
 import MuxaV2
 import SwiftUI
 
@@ -41,6 +42,8 @@ final class QuickCapture {
     func show() {
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        // Nil under Automatic: the panel takes the system's appearance.
+        panel.appearance = ThemeStore.shared.colorScheme.map { NSAppearance(named: $0 == .light ? .aqua : .darkAqua) } ?? nil
         panel.contentView = NSHostingView(rootView: content())
         NSApp.activate()
         panel.center()
@@ -71,7 +74,6 @@ final class QuickCapture {
             backing: .buffered, defer: false)
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.appearance = NSAppearance(named: .darkAqua)
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
@@ -118,7 +120,7 @@ private struct QuickCaptureView: View {
         }
         .frame(width: 580, alignment: .leading)
         .background(Palette.surface)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeStore.shared.colorScheme)
     }
 
     /// The window's keys, as the QuickCapture mock lists them.

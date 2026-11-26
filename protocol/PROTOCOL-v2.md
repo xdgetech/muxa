@@ -90,20 +90,24 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
 | `{"type":"inbox-add","kind","title","note"?,"workspace"?,"due"?}` | `{"inbox":Inbox}`. The item goes on top |
 | `{"type":"inbox-move","item","index"}` | `{"inbox":Inbox}`. An index past the end means last |
-| `{"type":"inbox-later","item","until"}` | `{"inbox":Inbox}`. `until` is Unix seconds, in the future |
+| `{"type":"inbox-later","item"}` | `{"inbox":Inbox}`. The open item goes last (ADR 0096). Apps before ADR 0096 also send `until`; it is ignored |
 | `{"type":"inbox-done","item"}`, `inbox-reopen`, `inbox-delete` | `{"inbox":Inbox}` |
+| `{"type":"inbox-delete-older","days"}` | `{"inbox":Inbox}`. Deletes every open and done item made more than `days` × 24 h ago, as `inbox-delete` does; `days` is 1 to 3650 (ADR 0095) |
 | `{"type":"routines"}` | `{"routines":[Routine...],"problems":[{"workspace","reason"}...],"off"?:[{"workspace","count"}...]}` |
 | `{"type":"run-routine","workspace","name"}` | `{}`. The run reports through the Inbox; `conflict` while it already runs |
 | `{"type":"task-review","terminal","note"?}` | `{"inbox":Inbox}`. One open Review item for the Task of this agent terminal; `bad-request` for a terminal that is not a Task's agent |
 | `{"type":"reader-list","terminal","kind","html"?}` | `{"list":ReaderList}`: the files of the terminal's folder. See Reader |
 | `{"type":"reader-open","terminal","kind","path","html"?,"scope"?}` | `{"reader","content":ReaderContent}`. `reader` and `reader-ended` notifications follow |
 | `{"type":"reader-close","reader"}` | `{}`. `not-found` after `reader-ended` |
+| `{"type":"reader-folder","terminal","folder"}` | `{"zip"}`: the listed files under `folder`, zipped, in base64. See Reader |
 | `{"type":"chat-open","terminal"}` | `{"chat","update":ChatUpdate}`: the conversation of a Task's agent. `chat` and `chat-ended` notifications follow |
 | `{"type":"chat-close","chat"}` | `{}`. `not-found` after `chat-ended` |
 | `{"type":"loops"}` | `{"loops":[Loop...]}`: the Task Loops of the live Task agents |
 | `{"type":"loop-start","terminal","loop":LoopSpec,"reset"?}` | `{"loop":Loop}`. Starts or restarts the loop of a Task's agent |
 | `{"type":"loop-stop","terminal"}` | `{"loop":Loop}`. Stopped with reason `user` |
 | `{"type":"workspaces"}` | `{"workspaces":[Workspace...]}`: what a Task may use. See Task actions |
+| `{"type":"disk"}` | `{"rows":[DiskRow...]}`: the disk use of Task places and leftovers. See Disk |
+| `{"type":"disk-clean","paths"?,"force"?,"dry_run"?}` | `{"dry_run","removed":[path...],"kept":[{"path","why"}...]}`. See Disk |
 | `{"type":"inbox-approve","item","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of a Review item; `worktree` is `remove` (the default) or `force`. See Task actions |
 | `{"type":"inbox-request-changes","item","comment"}` | `{"inbox":Inbox}`. Types the comment into the Task's agent and resolves the Review item |
 | `{"type":"inbox-retry","item"}` | `{"inbox":Inbox}`. Runs again what made a Failed item and resolves it |
@@ -124,7 +128,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 - `{"kind":"checkout","repo"}`: the repo's own main checkout as the working place, as it is (ADR 0077). Like `existing`, it comes without a folder or a branch place, nothing is made, and the same busy check and `--continue` apply. On `muxa.places` it is a `checkout` place with the branch the checkout had. The agent gets `muxa.checkout` = the `repo` as the request gave it, and `muxa.repo`; a second `start-task` with the same Workspace and `repo` returns the running agent with `existing: true`. Approve never removes it.
 - `{"kind":"all-read"}`: every repo of the Workspace (the scan of its root and the listed repos), each as a `read` place. A repo already named by another place is not added twice. With no folder or branch, the server adds the folder as usual.
 
-A `repo` is absolute, or relative to the Workspace's root. The working place is the folder, else the first branch; with neither, the server adds a folder, so no `places` means one folder. A Task has at most one folder and one place per repo. The working place gets `.muxa/TASK.md` with the title, the goal and every place with its mode. A restarted Task keeps its own. Claude Code also gets the other places as additional directories, with edits denied in the read-only ones (`--settings .muxa/claude-settings.json`). Read only is a rule for the agent, not a boundary.
+A `repo` is absolute, or relative to the Workspace's root. The working place is the folder, else the first branch; with neither, the server adds a folder, so no `places` means one folder. A Task has at most one folder and one place per repo. The working place gets `.muxa/TASK.md` with the title, the goal and every place with its mode. A restarted Task keeps its own. A new agent starts working on its own: its first message, on its launch line, tells it to read `.muxa/TASK.md` and do the Task, to plan it in plan mode, or to continue it in an `existing` or `checkout` place and on a restart (ADR 0098). Only Claude Code and Codex get it, and a talk with a Bot gets none. Claude Code also gets the other places as additional directories, with edits denied in the read-only ones (`--settings .muxa/claude-settings.json`). Read only is a rule for the agent, not a boundary.
 
 An `existing` path is absolute. With its symlinks resolved, it is a folder inside the Workspace's root, or a linked worktree of one of the Workspace's repos; else `bad-request`. A worktree on a branch is a `branch` place with that branch on `muxa.places`, so Approve closes it as below; any other path is a `folder` place. `.muxa/TASK.md` is written only when it is missing, and `.muxa/` goes into the repo's `info/exclude`. When muxa's agent already runs there (`muxa.dir` is the path), the reply has it with `existing: true`. When another `claude` or `codex` process works in the folder, the request is `conflict` and nothing is written. Claude Code gets `--continue` when its config dir holds a conversation for the folder.
 
@@ -220,15 +224,17 @@ The Reader shows the files of a terminal's folder, its `muxa.dir` label (plan F2
 
 `kind` is one of:
 
-- `docs`: the repo's Markdown files, or outside a repo every Markdown file in the folder, then `.muxa/TASK.md`, `.muxa/HANDOFF.md` and `.muxa/CHECK.md` when present. `html: true` adds HTML files (ADR 0065). Names that start with a dot are never listed, except those three.
+- `docs`: the repo's Markdown files, or outside a repo every Markdown file in the folder, then `.muxa/TASK.md`, `.muxa/HANDOFF.md` and `.muxa/CHECK.md` when present. `html: true` adds HTML files (ADR 0065). In a repo, ignored files are listed too, with `ignored: true`, except under a dependency or build folder (`node_modules`, `target`, `vendor`…) or with `secret`, `credential`, `password`, `token` or `private` in the name (ADR 0099). Tracked and untracked files come first when the list is cut. Names that start with a dot are never listed, except those three.
 - `changes`: the files that differ from HEAD (staged, unstaged and untracked), and in `branch` what the branch's commits changed since it left its base. Outside a repo: `bad-request`. `scope` in `reader-open` is `uncommitted` (the default) or `branch`.
 - `images`: the repo's PNG, JPEG, GIF, WebP and HEIC files, ignored ones too, newest first; outside a repo, the folder's. At most 11 MiB each, so one fits in a frame.
 
 `ReaderList`: `{"root"?,"entries":[ReaderEntry...],"truncated"?,"branch"?:{"base","commits","entries","truncated"?}}`. `root` is the repo's folder name.
 
-`ReaderEntry`: `{"path","title"?,"mtime"?,"size"?,"status"?,"old_path"?,"added"?,"removed"?}`. Documents have `title` for HTML; images `size`; changes `status` (`modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`), `old_path` for a rename and the line counts for a text file.
+`ReaderEntry`: `{"path","title"?,"mtime"?,"size"?,"status"?,"old_path"?,"added"?,"removed"?,"ignored"?}`. Documents have `title` for HTML and `ignored: true` when git ignores the file; images `size`; changes `status` (`modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`), `old_path` for a rename and the line counts for a text file.
 
 `ReaderContent`: `{"path","text"?,"data"?,"binary"?,"mtime"?}`. A document or a diff is `text`; a diff of a binary file is `binary: true`; an image is `data`, its bytes in base64.
+
+`reader-folder` (ADR 0101) zips the files that `docs` (with HTML) and `images` list under `folder`, subfolders included; an empty `folder` means every listed file. `folder` is only compared with listed paths, never opened. The zip has one top folder named after `folder` (the repo's or the folder's name for an empty one), and its entries are stored. More than 11 MB of files, more than 1000 files, or none: `bad-request`, with a message for the user. Nothing is cut.
 
 The server reads each open file every 2 s and sends `reader` only when it changed. File content never reaches the server's log.
 
@@ -238,13 +244,13 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ### Inbox
 
-ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"workspace","bot","done","deleted","day"?,"added"}]}`. `added` is how many of the Bot's items counted against its `daily_items` on `day`, the host's local date (ADR 0086); its "N more" item and its talks' proposals do not count. Servers before ADR 0086 send neither. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
+ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"workspace","bot","done","deleted","day"?,"added"}]}`. `added` is how many items the Bot's runs added on `day`, the host's local date (ADR 0086, 0094); its talks' items and proposals do not count. Servers before ADR 0086 send neither. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
 
-`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?,"settings_proposal"?,"suggestion"?}`. `settings_proposal` is on a Decide item of a talk with a Bot (ADR 0083); `suggestion` is the Capture assistant's (ADR 0084). ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot adds at most its `daily_items` a day; the rest go into one Read item titled `N more from <bot>`, whose note lists their titles.
+`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"created","source","terminal"?,"routine"?,"place"?,"links"?,"proposal"?,"bot"?,"settings_proposal"?,"suggestion"?}`. `settings_proposal` is on a Decide item of a talk with a Bot (ADR 0083); `suggestion` is the Capture assistant's (ADR 0084). ADR 0082: `links` are up to 10 `{"url","title"?}`, `http` or `https` pages the item is about; `proposal` is `{"action","target","content"}` on a Decide item, which Start Task takes as its goal, and muxa never performs by itself; `bot` names the Bot of `workspace` whose run made the item. `bots` counts, per Bot, its items that ended Done and those deleted while open. A Bot has no daily limit (ADR 0094): each item of its runs is its own item. Servers before ADR 0094 put the items past `daily_items` into one Read item titled `N more from <bot>`.
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
-- `due`: `YYYY-MM-DD`. `created` and `later_until`: Unix seconds.
-- An item with `later_until` in the future stays in `items` and the client hides it. At that time the server puts it back on top, clears `later_until` and sends `inbox`.
-- `source`: `capture`, `task`, `routine` or `v1`.
+- `due`: `YYYY-MM-DD`. `created`: Unix seconds.
+- Every open item is in `items`; a client hides none. Servers before ADR 0096 sent `later_until` on an item Later hid. A server since then never sends it, and on start it moves such stored items to the end of `items`.
+- `source`: `capture`, `task`, `routine`, `v1` or `host`.
 - `terminal`: the Task agent terminal that made the item (Review, and Failed of an agent or a Task Loop). `routine`: `{"workspace","name"}`, the Routine that made it. Items made before these fields have neither.
 - `place`: `{"workspace","path"}`, where an older Task worked. A client offers Resume Task for it: `start-task` with that workspace, the title without `Resume: `, and `places: [{"kind":"existing","path"}]`, then `inbox-done`.
 
@@ -254,6 +260,7 @@ Items the server makes:
 - **Review** (`source: task`): on `task-review`. An agent can send it for its own Task (`muxa-cli v2 review` uses `HC_TERMINAL_ID`). While one is open, another `task-review` for the Task makes none.
 - **Failed** (`source: task`): a Task's agent ended with a non-zero code, on a signal it did not get from a kill, or was lost. Once per terminal. A clean exit or a kill makes none.
 - **Read** and **Decide** (`source: routine`): a Routine's briefing and proposal entries; **Failed** for a Routine's failure. Once each. Entries from before the server first ran are not copied.
+- **Decide** (`source: host`): the place sweep kept a Task worktree that nothing holds, because removing it would lose work (ADR 0102). Once per worktree.
 
 ### Migration from v1
 
@@ -278,7 +285,7 @@ Each time the agent reports `done`, the host reads `.muxa/bot.json` in the Task'
 An accepted proposal becomes one Decide item: `title` is `<bot> proposes: <summary>`, `note` lists the ops one per line, and `settings_proposal` is `{"revision","ops"}`, with the settings' revision when the item was made. `bot`, `workspace` and `terminal` are set. `inbox-apply` sends the ops as `settings-update` with that revision and marks the item Done. When the settings changed since, it is `conflict` and nothing changes; the user asks the Bot again. Dismiss is `inbox-done` or `inbox-delete`.
 
 
-A talk's output may also carry `items` (ADR 0089): up to 20 Inbox items the user asked for, in the Routine output's item format, checked the same way. They become the Bot's items with the talk's `terminal` at once, keyed by the Workspace, the Bot and the item's `key`, and do not count against `daily_items`. One bad item refuses the whole output.
+A talk's output may also carry `items` (ADR 0089): up to 20 Inbox items the user asked for, in the Routine output's item format, checked the same way. They become the Bot's items with the talk's `terminal` at once, keyed by the Workspace, the Bot and the item's `key`. One bad item refuses the whole output.
 
 ### Capture assistant
 
@@ -292,7 +299,7 @@ ADR 0084. When `[assistant] enabled = true` in `workspaces.toml`, each item adde
 
 ADR 0086. Clients show each Bot on a page of its own. Every client groups the data it already has by these rules, and the demo servers answer them the same way. For a Bot `b` of Workspace `w`:
 
-- **Items:** open Inbox items with `bot` = `b` and `workspace` = `w`. Later items count once they are back.
+- **Items:** open Inbox items with `bot` = `b` and `workspace` = `w`.
 - **Terminals:** live terminals with `muxa.workspace` = `w` and `muxa.bot` = `b` (its talks, runs, and its runs as a member), or `muxa.lead` = `b` (its members' runs).
 - **Needs you:** its items, then its terminals whose `status.state` is `blocked` or `waiting`.
 - **In progress:** its other terminals.
@@ -354,14 +361,30 @@ ADR 0103. `{"type":"subscriptions","id"}` answers `{"subscriptions":[Subscriptio
 
 Where the host gets them: a Claude Code agent with a subscription reports through its status line, which muxa adds to its `--settings` and which still prints the login's own status line; it reports only while a session runs, after its first reply. A Codex subscription's newest session log is read every minute. muxa never reads a login's credential and never asks the vendor itself.
 
+### Disk
+
+ADR 0102. `disk` lists, with sizes in bytes (`du -sk`, links not followed):
+- the places muxa recorded for Tasks (`task-worktree`, `task-folder`), with their folders on the build disk in `build_bytes`;
+- every other worktree of the Workspaces' repos: `claude-worktree` under `<repo>/.claude/worktrees`, else `worktree`;
+- folders under `<root>/tasks` with no record (`task-folder`), and folders on the build disk no record names (`build-folder`).
+
+`DiskRow`: `{"path","kind","workspace"?,"branch"?,"bytes"?,"build_bytes"?,"held"?,"clean"?,"merged"?,"cleanable"}`. `held` is `live` (a live terminal names the place in `muxa.places` or `muxa.dir`) or `ended` (only an ended agent with an open Inbox item does). `cleanable` is true for an unheld row with nothing to lose: a worktree that is clean and merged, its submodules too (no change, no commit that no remote has), (one muxa did not make must also be unchanged for a day; a Task worktree must be older than 10 minutes), or a build folder. A Task folder is never cleanable: it holds the user's files.
+
+`disk-clean` scans again and acts on that scan:
+1. `dry_run` defaults to true: the reply says what it would remove, and nothing changes.
+2. No `paths` means every cleanable row. A path that is not a row of the scan is `bad-request`, and nothing changes.
+3. Without `force`, a named row that is not cleanable is kept, with why. `force` needs `paths`, and removes them with `git worktree remove --force` and `git branch -D`.
+4. A held row is always kept.
+
 ### Settings
 
 ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace's `.muxa/routines.toml` and the Routines' instruction files. The files stay the source of truth, and a person can still edit them by hand. The daemon edits them in place, so comments and order stay, and reads them again on its next use.
 
-`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...],"assistant"?,"subscriptions"?:[SubscriptionSpec...],"found_logins"?:[FoundLogin...]}`.
+`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...],"assistant"?,"subscriptions"?:[SubscriptionSpec...],"found_logins"?:[FoundLogin...],"build"?}`.
 - `assistant`: `{"enabled","worker"?,"soul_text","memory_text","subscriptions"?}`, the Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`, and `assistant/soul.md` and `memory.md` beside it. Absent from an older server. `subscriptions` (ADR 0103): the Claude subscriptions it runs on, in order; any of the host's. Absent or empty: the default login.
 - `subscriptions`: `[[subscription]]` in `workspaces.toml` (ADR 0103), absent when there are none. `SubscriptionSpec`: `{"name","agent","home","plan"?}`. `name` follows a Bot's name rules. `agent` is `claude-code` or `codex`. `home` is the login's folder as written, `~/` included: the agent's `CLAUDE_CONFIG_DIR` or `CODEX_HOME`; `~/.claude` and `~/.codex` are the default logins and set no variable. `plan` is a label. muxa keeps the name and the folder; the login itself stays with the agent, and its credential never crosses the wire.
 - `found_logins` (ADR 0103 §7): logins on the host that are no subscription yet, for onboarding. `FoundLogin`: `{"agent","home"?,"workspace"?}`: `~/.claude` or `~/.codex` when that folder exists and no subscription has it, or a Workspace whose env sets `CLAUDE_CONFIG_DIR` or `CODEX_HOME` and lists no subscriptions. An env value never crosses the wire, so such a login has `workspace` and no `home`; `subscription-adopt` makes it a subscription on the host.
+- `build`: `{"dir","drop_after","dir_found","extra_paths"}`, the build disk (ADR 0102): `[build]` in `workspaces.toml`. `dir` is the folder as written, or `null` (off). `drop_after` is like `park_after`, or `null` (three days). `dir_found` is true when `dir` is a folder on the host now; it is false while the disk is not mounted. `extra_paths`: relative paths every Task worktree links too, beside the build folders muxa finds from each repo's build files, each only where the repo ignores it. `[workspace.build] dir` is not in the view; edit it by hand. Absent from an older server.
 - `revision`: a hash of the files' bytes. It changes when any of them changes, by hand too.
 - `read_only`: the daemon runs with `--settings-read-only`; `settings-update` is refused.
 - `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
@@ -386,7 +409,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 
 `SettingsBot`: a `BotSpec` plus `"soul_text"` (`.muxa/bots/<name>/soul.md`, empty when there is none), `"memory_text"` (`memory.md`, which the Bot's runs write) `"memory_versions"`, how many earlier memories `bot-memory-restore` can bring back, and `"memory_history"`: `[{"version","at"}]`, newest first, `at` in Unix seconds when that memory was replaced (absent from servers before ADR 0086). A text is `null` when it cannot be read. The Soul counts in `revision`; the Memory does not, so a run does not make a client's edit stale.
 
-`BotSpec`: `{"name","description"?,"worker"?,"daily_items"?,"enabled","members"?,"handoffs_per_day"?,"commands"?}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. `daily_items` is 1 to 50, absent 3. A turned-off Bot turns off its Routines. `members` makes the Bot a team lead (ADR 0085): up to 6 other Bots of the same file, none of which leads a team. `handoffs_per_day` is 1 to 50, absent 10. `subscriptions` (ADR 0103): its own order of subscriptions, only from its Workspace's list, for its runs, talks and members; absent: the Workspace's. A name the Workspace does not list is skipped when the host starts an agent, never refused. `commands` (ADR 0088): up to 50 shell command patterns, each the inside of a Claude Code `Bash(...)` rule (one line, no parentheses), that only this Bot may run. Its Routine runs and members run with `--permission-mode dontAsk`, so any other command is refused; its talks may still ask the user. A talk proposes commands with `bot-update`, and the proposal's note names each one. A Bot has its Workspace's access only (ADR 0087): it, its Routines, its talks and its members run Claude Code (the Workspace's agent when that is Claude Code, else `claude`) with the Workspace's env, connections, MCP servers and `bot_rules`, and `--strict-mcp-config` even in a Workspace with no server, unless `claude_connectors`; a `worker` on the Bot or on its Routines is ignored. Clients stop offering it.
+`BotSpec`: `{"name","description"?,"worker"?,"enabled","members"?,"handoffs_per_day"?,"commands"?,"subscriptions"?}`, as `[[bot]]` in `.muxa/routines.toml` (ADR 0082). `name` is 1 to 64 lowercase letters, digits, `-` or `_`. A `daily_items` from a client or a file before ADR 0094 is ignored, and `bot-update` removes it from the file. A turned-off Bot turns off its Routines. `members` makes the Bot a team lead (ADR 0085): up to 6 other Bots of the same file, none of which leads a team. `handoffs_per_day` is 1 to 50, absent 10. `subscriptions` (ADR 0103): its own order of subscriptions, only from its Workspace's list, for its runs, talks and members; absent: the Workspace's. A name the Workspace does not list is skipped when the host starts an agent, never refused. `commands` (ADR 0088): up to 50 shell command patterns, each the inside of a Claude Code `Bash(...)` rule (one line, no parentheses), that only this Bot may run. Its Routine runs and members run with `--permission-mode dontAsk`, so any other command is refused; its talks may still ask the user. A talk proposes commands with `bot-update`, and the proposal's note names each one. A Bot has its Workspace's access only (ADR 0087): it, its Routines, its talks and its members run Claude Code (the Workspace's agent when that is Claude Code, else `claude`) with the Workspace's env, connections, MCP servers and `bot_rules`, and `--strict-mcp-config` even in a Workspace with no server, unless `claude_connectors`; a `worker` on the Bot or on its Routines is ignored. Clients stop offering it.
 
 `SettingsWorker`, also `WorkerSpec` in ops: `{"name","description"?,"agent","args":[...],"instructions"?,"workspaces"?,"loop"?:{"check","max_attempts"?,"timeout"?}}`, as `[[worker]]`. `agent` is `claude-code` or `codex`.
 
@@ -416,6 +439,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `subscription-add`, `subscription-update` | `subscription`: SubscriptionSpec | Adds a `[[subscription]]`, or changes the one named `subscription.name` (ADR 0103) |
 | `subscription-adopt` | `workspace`, `agent`, `name`, `plan`? | Makes the login the Workspace's env names (`CLAUDE_CONFIG_DIR` for `claude-code`, `CODEX_HOME` for `codex`) a subscription `name` with that folder, or reuses a subscription that has it; removes the variable from the env; puts the subscription first in the Workspace's `subscriptions`. No env is `bad-request` |
 | `subscription-remove` | `name` | Removes it. Refused while a Workspace lists it; a Bot's or the assistant's list may still name it and skips it |
+| `build-update` | `dir`?, `drop_after`?, `extra_paths`? | Sets `[build]`; `null` removes `dir` or `drop_after`, and `[]` removes `extra_paths`. `dir` must be absolute after `~/` |
 | `worker-add`, `worker-update` | `worker`: WorkerSpec | Adds a worker, or replaces the one named `worker.name` |
 | `worker-remove` | `name` | |
 
@@ -423,7 +447,7 @@ Names are not renamed: a Keychain account, a Routine's state and a Task's labels
 
 Rules:
 1. `revision` must be the current one, else `conflict` and nothing changes. The client reads `settings` again and shows the user what changed.
-2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, the connections an MCP server needs, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
+2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, build paths of plain relative names, the connections an MCP server needs, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
 3. `value` and `secret` are write-only. They are never sent back, never logged, and never in an error message. A `secret` goes only to the host's macOS Keychain (service `muxa`, account `<workspace>/<name>`), at most 1800 bytes of one line. An env `value` goes only into `workspaces.toml`, as before.
 4. An `instructions_text` or `soul_text` is at most 12 KiB of UTF-8 without NUL. The file must stay inside `.muxa/`, also through a symlink.
 5. Each file is written whole to a temporary file and renamed over the old one; the old one is kept as `<file>.bak`. A file keeps its mode; a new file gets 0600.

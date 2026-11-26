@@ -342,11 +342,13 @@ pub enum ClientMsg {
         item: String,
         index: usize,
     },
-    /// Hides an item until `until` (Unix seconds); it then returns on top.
+    /// Moves an open item to the bottom (ADR 0096).
     InboxLater {
         id: u64,
         item: String,
-        until: i64,
+        /// Sent by apps before ADR 0096; ignored.
+        #[serde(default)]
+        until: Option<i64>,
     },
     InboxDone {
         id: u64,
@@ -359,6 +361,11 @@ pub enum ClientMsg {
     InboxDelete {
         id: u64,
         item: String,
+    },
+    /// Deletes every open and done item older than `days` (ADR 0095).
+    InboxDeleteOlder {
+        id: u64,
+        days: u32,
     },
     Routines {
         id: u64,
@@ -430,6 +437,13 @@ pub enum ClientMsg {
         id: u64,
         reader: u32,
     },
+    /// The documents and images listed under `folder` of the terminal's
+    /// folder, as one zip (ADR 0101). Empty `folder`: every listed file.
+    ReaderFolder {
+        id: u64,
+        terminal: String,
+        folder: String,
+    },
     /// The Task Loops of the live Task agents.
     Loops {
         id: u64,
@@ -477,6 +491,22 @@ pub enum ClientMsg {
     LoginStart {
         id: u64,
         subscription: String,
+    },
+    /// The disk use of Task places, build folders and leftovers (ADR 0102).
+    Disk {
+        id: u64,
+    },
+    /// Removes rows of `disk`. Empty `paths` means every row `disk` marks
+    /// `cleanable`. `force` removes the named rows even when they hold work,
+    /// and needs `paths`. A held place is never removed.
+    DiskClean {
+        id: u64,
+        #[serde(default)]
+        paths: Vec<String>,
+        #[serde(default)]
+        force: bool,
+        #[serde(default = "yes")]
+        dry_run: bool,
     },
     /// Approves a Review item: closes its Task (ADR 0068 §7, ADR 0043).
     InboxApprove {
@@ -526,6 +556,68 @@ pub enum ClientMsg {
         #[serde(default)]
         dry_run: bool,
     },
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// How a place is held (ADR 0102 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Hold {
+    /// A live terminal works there.
+    Live,
+    /// Only an ended agent whose Inbox item is still open.
+    Ended,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiskKind {
+    /// A worktree muxa made for a Task.
+    TaskWorktree,
+    /// A Task's folder under `<root>/tasks`.
+    TaskFolder,
+    /// A worktree of a Workspace repo that muxa did not make.
+    Worktree,
+    /// A worktree under `<repo>/.claude/worktrees`, made by Claude Code.
+    ClaudeWorktree,
+    /// A folder on the build disk that no place links to.
+    BuildFolder,
+}
+
+/// One row of `disk`. Sizes are in bytes, None when they could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiskRow {
+    pub path: String,
+    pub kind: DiskKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    /// The place's folders on the build disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<Hold>,
+    /// No uncommitted changes. None for a row that is not a worktree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clean: Option<bool>,
+    /// The branch is in the base. None for a row that is not a worktree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged: Option<bool>,
+    /// `disk-clean` without `force` removes it.
+    pub cleanable: bool,
+}
+
+/// A row `disk-clean` did not remove, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiskKept {
+    pub path: String,
+    pub why: String,
 }
 
 /// What closing a Task does with a branch worktree that holds work.
@@ -847,6 +939,9 @@ pub struct ReaderEntry {
     pub added: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<u32>,
+    /// Documents: git ignores the file (ADR 0099).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignored: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -914,9 +1009,6 @@ pub struct InboxItem {
     /// `YYYY-MM-DD`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<String>,
-    /// Hidden until then (Unix seconds).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub later_until: Option<i64>,
     /// Unix seconds.
     pub created: i64,
     /// `capture`, `task`, or `routine`.
@@ -1005,8 +1097,8 @@ pub struct BotCount {
     /// The host's local date of `added`, `YYYY-MM-DD`; empty before its first item.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub day: String,
-    /// Items that counted against `daily_items` on `day`. Its "N more" item and
-    /// its talks' proposals do not count.
+    /// Items the Bot's runs added on `day` (ADR 0094). Its talks' items and
+    /// proposals do not count.
     #[serde(default)]
     pub added: u32,
 }
@@ -1294,8 +1386,16 @@ pub enum Reply {
     TokenUsage {
         token_usage: TokenUsage,
     },
+    Disk {
+        rows: Vec<DiskRow>,
+    },
+    DiskCleaned {
+        dry_run: bool,
+        removed: Vec<String>,
+        kept: Vec<DiskKept>,
+    },
     Settings {
-        settings: Settings,
+        settings: Box<Settings>,
     },
     Migrated {
         tasks: Vec<V1Task>,
@@ -1304,6 +1404,10 @@ pub enum Reply {
     /// Where an upload went, relative to the Task's working place.
     Uploaded {
         path: String,
+    },
+    /// A Reader folder as a zip, in base64.
+    Zipped {
+        zip: String,
     },
     Empty {},
 }
@@ -1421,16 +1525,36 @@ mod tests {
             json!({"type": "reply", "id": 5, "reader": 2, "content": {"path": "a.rs", "text": "diff"}})
         );
         assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), opened);
+        let folder: ClientMsg = serde_json::from_value(json!({"type": "reader-folder", "id": 7,
+            "terminal": "t7", "folder": "output/qa"}))
+        .unwrap();
+        assert!(
+            matches!(folder, ClientMsg::ReaderFolder { ref folder, .. } if folder == "output/qa")
+        );
+        let zipped = ServerMsg::Reply {
+            id: 7,
+            body: Reply::Zipped { zip: "UEsF".into() },
+        };
+        let wire = serde_json::to_value(&zipped).unwrap();
+        assert_eq!(wire, json!({"type": "reply", "id": 7, "zip": "UEsF"}));
+        assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), zipped);
         let listed = ServerMsg::Reply {
             id: 6,
             body: Reply::Listed {
                 list: ReaderList {
-                    entries: vec![ReaderEntry {
-                        path: "a.rs".into(),
-                        status: Some(crate::ChangeStatus::Renamed),
-                        old_path: Some("b.rs".into()),
-                        ..ReaderEntry::default()
-                    }],
+                    entries: vec![
+                        ReaderEntry {
+                            path: "a.rs".into(),
+                            status: Some(crate::ChangeStatus::Renamed),
+                            old_path: Some("b.rs".into()),
+                            ..ReaderEntry::default()
+                        },
+                        ReaderEntry {
+                            path: "out/report.md".into(),
+                            ignored: true,
+                            ..ReaderEntry::default()
+                        },
+                    ],
                     ..ReaderList::default()
                 },
             },
@@ -1438,7 +1562,10 @@ mod tests {
         let wire = serde_json::to_value(&listed).unwrap();
         assert_eq!(
             wire["list"],
-            json!({"entries": [{"path": "a.rs", "status": "renamed", "old_path": "b.rs"}]})
+            json!({"entries": [
+                {"path": "a.rs", "status": "renamed", "old_path": "b.rs"},
+                {"path": "out/report.md", "ignored": true}
+            ]})
         );
         assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), listed);
         let err = ServerMsg::Error {

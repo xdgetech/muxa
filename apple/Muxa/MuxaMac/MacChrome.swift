@@ -11,6 +11,9 @@ final class MacChrome {
     var showShortcuts = false
     /// The Task the user asked to close; Focus confirms it first.
     var closingTask: MuxaV2.Terminal?
+    /// Tasks whose tab the user closed (ADR 0097): they still run and stay in
+    /// the sidebar. Opening one shows its tab again.
+    var hiddenTabs: Set<String> = []
     /// The main window, so ⌘W knows when Focus has the keyboard.
     weak var mainWindow: NSWindow?
     /// Vim's window prefix was pressed and waits for its command key.
@@ -26,6 +29,9 @@ final class MacChrome {
     var botView = BotView.chat
     /// The tab each Bot was left on in this run; a Bot not in it opens by the landing rule.
     var botTabs: [BotPick: BotTab] = [:]
+    /// The Bot `showOnBotPage` opened on a terminal: its page keeps that
+    /// terminal instead of landing.
+    var botRoutedTo: BotPick?
     /// The Routine or Soul editor open over the Bot page.
     var botSheet: BotSheet?
 }
@@ -38,9 +44,11 @@ extension MacChrome {
         guard t.belongsToBot, let workspace = t.labels["muxa.workspace"], let bot = t.bot ?? t.lead else { return false }
         nav.focus = false
         nav.tab = .bots
-        botPick = .bot(workspace: workspace, name: bot)
+        let pick = BotPick.bot(workspace: workspace, name: bot)
+        botPick = pick
+        botRoutedTo = pick
         botTab = .chats
-        botTabs[.bot(workspace: workspace, name: bot)] = .chats
+        botTabs[pick] = .chats
         botTerminal = t.id
         botView = t.isTaskAgent ? .chat : .terminal
         return true
@@ -62,19 +70,20 @@ enum BotSheet: Identifiable {
 }
 
 extension MacChrome {
-    /// A Bot's page opens on the tab it was left on in this run. The first
-    /// time, on Chats with its live talk if it has one, else on Home (ADR 0086).
-    func land(on pick: BotPick, liveTalk: MuxaV2.Terminal?) {
-        if let left = botTabs[pick] {
-            botTab = left
+    /// A Bot's page opens on its live talk, the one open on Chats if it is
+    /// still live; else on the tab it was left on in this run, else on Home
+    /// (ADR 0086). A page `showOnBotPage` opened keeps its terminal.
+    func land(on pick: BotPick, talks: [MuxaV2.Terminal]) {
+        if botRoutedTo == pick {
+            botRoutedTo = nil
             return
         }
-        if let talk = liveTalk {
+        if let talk = talks.first(where: { $0.id == botTerminal }) ?? talks.last {
             botTab = .chats
             botTerminal = talk.id
             botView = .chat
         } else {
-            botTab = .home
+            botTab = botTabs[pick] ?? .home
         }
         botTabs[pick] = botTab
     }

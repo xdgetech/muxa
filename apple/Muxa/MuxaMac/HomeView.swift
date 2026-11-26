@@ -12,13 +12,12 @@ struct HomeView: View {
 
     @State private var selected: String?
     @State private var filter = InboxFilter()
-    @State private var now = Int64(Date().timeIntervalSince1970)
 
     var body: some View {
         VStack(spacing: 0) {
             HomeHeader(openTerminal: openTerminal, showFocus: showFocus)
             HStack(spacing: 0) {
-                HomeInboxColumn(selected: $selected, filter: $filter, now: now, open: openTask)
+                HomeInboxColumn(selected: $selected, filter: $filter, open: openTask)
                     .column(width: 540, background: Palette.ground)
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -46,16 +45,9 @@ struct HomeView: View {
             keepSelection(was: [])
         }
         .onChange(of: visible.map(\.id)) { old, _ in keepSelection(was: old) }
-        .task {
-            // Later items come back on their own; the clock decides what shows.
-            while !Task.isCancelled {
-                now = Int64(Date().timeIntervalSince1970)
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
     }
 
-    private var visible: [InboxItem] { filter.apply(model.inbox.items, now: now) }
+    private var visible: [InboxItem] { filter.apply(model.inbox.items) }
 
     @ViewBuilder
     private var detail: some View {

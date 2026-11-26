@@ -18,11 +18,13 @@ public enum V2Request: Sendable {
     case parseCapture(text: String, today: String)
     case inboxAdd(Capture, note: String? = nil)
     case inboxMove(item: String, index: Int)
-    /// `until` is Unix seconds.
-    case inboxLater(item: String, until: Int64)
+    /// Moves the item to the bottom (ADR 0096).
+    case inboxLater(item: String)
     case inboxDone(item: String)
     case inboxReopen(item: String)
     case inboxDelete(item: String)
+    /// Deletes every open and done item older than `days`, 1 to 3650 (ADR 0095).
+    case inboxDeleteOlder(days: Int)
     /// Closes the Review item's Task. `worktree` nil means `remove`.
     case inboxApprove(item: String, worktree: WorktreeChoice? = nil)
     /// Types `comment` into the Review item's Task agent and resolves the item.
@@ -47,6 +49,8 @@ public enum V2Request: Sendable {
     case readerList(terminal: String, kind: ReaderKind, html: Bool = false)
     case readerOpen(terminal: String, kind: ReaderKind, path: String, html: Bool = false, scope: DiffScope = .uncommitted)
     case readerClose(reader: UInt32)
+    /// The listed documents and images under `folder`, as one zip (ADR 0101).
+    case readerFolder(terminal: String, folder: String)
     case loops
     case loopStart(terminal: String, spec: LoopSpec, reset: Bool = false)
     case loopStop(terminal: String)
@@ -61,6 +65,10 @@ public enum V2Request: Sendable {
     /// The tokens agents used on `day` (`YYYY-MM-DD`, nil for today), by
     /// Workspace and by Task (ADR 0103 §6).
     case tokenUsage(day: String?)
+    /// The disk use of Task places and leftovers (ADR 0102).
+    case disk
+    /// A dry run unless `dryRun` is false; `force` needs `paths`.
+    case diskClean(paths: [String] = [], force: Bool = false, dryRun: Bool = true)
     /// The host's editable settings (ADR 0074).
     case settings
     /// `revision` must be the current one; the ops apply all or none.
@@ -88,10 +96,11 @@ public enum V2Request: Sendable {
             set("inbox-add", ["kind": c.kind.rawValue, "title": c.title, "workspace": c.workspace,
                               "due": c.due, "note": note])
         case let .inboxMove(item, index): set("inbox-move", ["item": item, "index": index])
-        case let .inboxLater(item, until): set("inbox-later", ["item": item, "until": until])
+        case let .inboxLater(item): set("inbox-later", ["item": item])
         case let .inboxDone(item): set("inbox-done", ["item": item])
         case let .inboxReopen(item): set("inbox-reopen", ["item": item])
         case let .inboxDelete(item): set("inbox-delete", ["item": item])
+        case let .inboxDeleteOlder(days): set("inbox-delete-older", ["days": days])
         case let .inboxApprove(item, worktree):
             set("inbox-approve", ["item": item, "worktree": worktree?.rawValue])
         case let .inboxRequestChanges(item, comment):
@@ -114,6 +123,7 @@ public enum V2Request: Sendable {
             set("reader-open", ["terminal": terminal, "kind": kind.rawValue, "path": path, "html": html,
                                 "scope": scope.rawValue])
         case let .readerClose(reader): set("reader-close", ["reader": reader])
+        case let .readerFolder(terminal, folder): set("reader-folder", ["terminal": terminal, "folder": folder])
         case .loops: set("loops", [:])
         case let .loopStart(terminal, spec, reset):
             set("loop-start", ["terminal": terminal, "loop": spec.json, "reset": reset])
@@ -124,6 +134,9 @@ public enum V2Request: Sendable {
         case .subscriptions: set("subscriptions", [:])
         case let .loginStart(subscription): set("login-start", ["subscription": subscription])
         case let .tokenUsage(day): set("token-usage", ["day": day])
+        case .disk: set("disk", [:])
+        case let .diskClean(paths, force, dryRun):
+            set("disk-clean", ["paths": paths, "force": force, "dry_run": dryRun])
         case .settings: set("settings", [:])
         case let .settingsUpdate(revision, ops):
             set("settings-update", ["revision": revision, "ops": try ops.map { try $0.jsonObject() }])

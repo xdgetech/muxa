@@ -30,6 +30,8 @@ data class Settings(
     val subscriptions: List<SubscriptionSpec> = emptyList(),
     /** Logins on the host that are no subscription yet, for onboarding (ADR 0103 §7). */
     @SerialName("found_logins") val foundLogins: List<FoundLogin> = emptyList(),
+    /** The build disk (ADR 0102); null from an older server. */
+    val build: SettingsBuild? = null,
 )
 
 /**
@@ -57,6 +59,19 @@ data class SubscriptionSpec(
     val home: String,
     /** A label only. Absent when null, as the server writes it. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val plan: String? = null,
+)
+
+/** `[build]` in `workspaces.toml`: where Task worktrees put their build output (ADR 0102). */
+@Serializable
+data class SettingsBuild(
+    /** As written, `~/` included; null: the build disk is off. */
+    val dir: String? = null,
+    /** `3d`, `12h`; null: three days. */
+    @SerialName("drop_after") val dropAfter: String? = null,
+    /** [dir] is a folder on the host now. A disk that is not mounted is not. */
+    @SerialName("dir_found") val dirFound: Boolean = false,
+    /** Paths every Task worktree sends to the build disk too, beside the build folders muxa finds from each repo's build files. */
+    @SerialName("extra_paths") val extraPaths: List<String> = emptyList(),
 )
 
 /** `[assistant]` in `workspaces.toml`, and its `soul.md` and `memory.md` beside it. A text is null when it cannot be read. */
@@ -210,7 +225,7 @@ data class RoutineSpec(
 )
 
 /**
- * A `[[bot]]` (ADR 0082). [name] is lowercase letters, digits, `-` and `_`; [dailyItems] null is 3.
+ * A `[[bot]]` (ADR 0082). [name] is lowercase letters, digits, `-` and `_`.
  * [members] make it a team lead (ADR 0085); [handoffsPerDay] null is 10.
  */
 @OptIn(ExperimentalSerializationApi::class)
@@ -219,7 +234,6 @@ data class BotSpec(
     val name: String,
     val description: String? = null,
     val worker: String? = null,
-    @SerialName("daily_items") val dailyItems: Int? = null,
     val enabled: Boolean = true,
     // Absent when empty, as the server writes it.
     @EncodeDefault(EncodeDefault.Mode.NEVER) val members: List<String> = emptyList(),
@@ -236,7 +250,6 @@ data class SettingsBot(
     val name: String,
     val description: String? = null,
     val worker: String? = null,
-    @SerialName("daily_items") val dailyItems: Int? = null,
     val enabled: Boolean = true,
     @SerialName("soul_text") val soulText: String? = null,
     @SerialName("memory_text") val memoryText: String? = null,
@@ -249,14 +262,11 @@ data class SettingsBot(
     val subscriptions: List<String> = emptyList(),
 ) {
     val spec: BotSpec
-        get() = BotSpec(name, description, worker, dailyItems, enabled, members, handoffsPerDay, commands, subscriptions)
+        get() = BotSpec(name, description, worker, enabled, members, handoffsPerDay, commands, subscriptions = subscriptions)
 
     companion object {
         fun of(spec: BotSpec, soulText: String?) = with(spec) {
-            SettingsBot(
-                name, description, worker, dailyItems, enabled, soulText, "", 0, members, handoffsPerDay, commands,
-                subscriptions = subscriptions,
-            )
+            SettingsBot(name, description, worker, enabled, soulText, "", 0, members, handoffsPerDay, commands, subscriptions = subscriptions)
         }
     }
 }

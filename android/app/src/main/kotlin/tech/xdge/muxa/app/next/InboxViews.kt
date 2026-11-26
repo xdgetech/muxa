@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -31,15 +30,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
-import java.time.temporal.TemporalAdjusters
 import java.util.Locale
-import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.KindColors
 import tech.xdge.muxa.app.ui.KindPalette
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
@@ -125,7 +120,7 @@ fun whereFrom(item: InboxItem): String = listOfNotNull(
 
 /** An Inbox item as the design's card: the kind's chip, the title, where it came from and when it is due. */
 @Composable
-fun ItemRow(item: InboxItem, now: Long, modifier: Modifier = Modifier, selected: Boolean = false, onClick: (() -> Unit)? = null) {
+fun ItemRow(item: InboxItem, modifier: Modifier = Modifier, selected: Boolean = false, onClick: (() -> Unit)? = null) {
     val clickable = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     // The tablet's sidebar is denser, as the design's rows there.
     val compact = !LocalPhoneLayout.current
@@ -150,26 +145,10 @@ fun ItemRow(item: InboxItem, now: Long, modifier: Modifier = Modifier, selected:
                 Text(whereFrom(item), Modifier.weight(1f), fontSize = 12.5.sp, color = Palette.textSecondary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 item.bot?.let { BotChip(it, Modifier.testTag("item.${item.id}.bot")) }
-                if (item.isLater(now)) Icon(Icons.later, "Later", Modifier.size(14.dp), tint = Palette.textSecondary)
                 item.due?.let { DueLabel(it) }
             }
         }
     }
-}
-
-/** When a Later item comes back. */
-enum class LaterChoice(val title: String) {
-    HOUR("In 1 Hour"),
-    TOMORROW("Tomorrow 9:00"),
-    NEXT_WEEK("Next Monday 9:00"),
-    ;
-
-    /** Unix seconds. */
-    fun until(now: ZonedDateTime = ZonedDateTime.now()): Long = when (this) {
-        HOUR -> now.plusHours(1)
-        TOMORROW -> now.plusDays(1).withHour(9).withMinute(0).withSecond(0).withNano(0)
-        NEXT_WEEK -> now.with(TemporalAdjusters.next(DayOfWeek.MONDAY)).withHour(9).withMinute(0).withSecond(0).withNano(0)
-    }.toEpochSecond()
 }
 
 /**
