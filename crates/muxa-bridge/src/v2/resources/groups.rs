@@ -46,12 +46,12 @@ pub fn groups(procs: &[Proc], owners: &[UsageOwner], cores: u32) -> Vec<UsageGro
             terminal: Some(o.terminal.clone()),
             workspace: o.workspace.clone(),
             cpu: share(s.cpu, cores),
-            rss: s.rss,
+            memory: s.memory,
             processes: s.count,
             idle_since_ms: o.idle_since_ms,
         })
         .collect();
-    out.sort_by_key(|g| std::cmp::Reverse(g.rss));
+    out.sort_by_key(|g| std::cmp::Reverse(g.memory));
     out.extend(others(rest, cores));
     out
 }
@@ -150,7 +150,7 @@ fn app_bundle(path: &str) -> Option<&str> {
 
 fn others(rest: HashMap<(UsageKind, String), Sum>, cores: u32) -> Vec<UsageGroup> {
     let mut rows: Vec<((UsageKind, String), Sum)> = rest.into_iter().collect();
-    rows.sort_by_key(|r| std::cmp::Reverse(r.1.rss));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.1.memory));
     let mut kept = Vec::new();
     let mut other = Sum::default();
     let mut apps = 0;
@@ -178,7 +178,7 @@ fn group(kind: UsageKind, name: String, s: &Sum, cores: u32) -> UsageGroup {
         terminal: None,
         workspace: None,
         cpu: share(s.cpu, cores),
-        rss: s.rss,
+        memory: s.memory,
         processes: s.count,
         idle_since_ms: None,
     }
@@ -187,20 +187,20 @@ fn group(kind: UsageKind, name: String, s: &Sum, cores: u32) -> UsageGroup {
 #[derive(Debug, Default, Clone)]
 struct Sum {
     cpu: f32,
-    rss: u64,
+    memory: u64,
     count: u32,
 }
 
 impl Sum {
     fn add(&mut self, p: &Proc) {
         self.cpu += p.cpu;
-        self.rss += p.rss;
+        self.memory += p.memory;
         self.count += 1;
     }
 
     fn merge(&mut self, o: &Sum) {
         self.cpu += o.cpu;
-        self.rss += o.rss;
+        self.memory += o.memory;
         self.count += o.count;
     }
 }

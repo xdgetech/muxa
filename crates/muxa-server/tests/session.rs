@@ -37,7 +37,7 @@ impl Host for FakeTasks {
             "swap": {"used": 0, "total": 0}, "disks": [], "alerts": ["memory"],
             "groups": owners.iter().map(|o| json!({
                 "kind": o.kind, "name": o.name, "terminal": o.terminal,
-                "cpu": 0.0, "rss": 0, "processes": o.pids.len(),
+                "cpu": 0.0, "memory": 0, "processes": o.pids.len(),
             })).collect::<Vec<_>>(),
         });
         serde_json::from_value(report).map_err(|e| TaskError::Failed(e.to_string()))
@@ -1567,7 +1567,7 @@ async fn host_groups_a_task_with_its_shell_and_watch_sends_samples() {
     assert_eq!(
         reply["host"]["groups"],
         json!([{"kind": "task", "name": "Fix the bug", "terminal": agent.id.as_str(),
-                "cpu": 0.0, "rss": 0, "processes": 2}])
+                "cpu": 0.0, "memory": 0, "processes": 2}])
     );
 
     let watching = request(&mut client, json!({"type": "host-watch", "id": 2})).await;

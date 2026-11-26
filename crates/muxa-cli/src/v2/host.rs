@@ -77,7 +77,7 @@ pub fn text(h: &Value) -> String {
     for g in h["groups"].as_array().into_iter().flatten() {
         out.push_str(&format!(
             "{:>7} {:>5.1}% {:>5}  {:<14} {}{}\n",
-            size(g["rss"].as_u64()),
+            size(g["memory"].as_u64()),
             g["cpu"].as_f64().unwrap_or(0.0),
             g["processes"].as_u64().unwrap_or(0),
             g["kind"].as_str().unwrap_or("?"),
@@ -128,7 +128,7 @@ mod tests {
             "swap": {"used": 0, "total": 0},
             "disks": [{"name": "system", "path": "/", "free": 10_737_418_240u64, "total": 494_384_795_648u64}],
             "groups": [{"kind": "task", "name": "Fix it", "terminal": "t1", "cpu": 0.5,
-                        "rss": 419_430_400, "processes": 3, "idle_since_ms": 0}],
+                        "memory": 419_430_400, "processes": 3, "idle_since_ms": 0}],
             "alerts": ["memory", "disk:/"],
         });
         let out = text(&host);

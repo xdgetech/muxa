@@ -2,6 +2,7 @@
 //! Commands and `/proc` only: no extra crate, no `unsafe`. The parsers are
 //! pure so tests run them on captured text.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use muxa_protocol::v2::{HostDisk, HostMemory, HostSwap, Pressure};
@@ -15,7 +16,8 @@ pub struct Proc {
     pub ppid: u32,
     /// Percent of one core, as `ps` reports it.
     pub cpu: f32,
-    pub rss: u64,
+    /// Bytes: the footprint on macOS, resident memory elsewhere.
+    pub memory: u64,
     pub path: String,
 }
 
@@ -47,7 +49,7 @@ pub fn parse_ps(text: &str) -> Vec<Proc> {
                 pid,
                 ppid,
                 cpu,
-                rss: rss_kib * 1024,
+                memory: rss_kib * 1024,
                 path,
             })
         })
@@ -174,7 +176,52 @@ const PSI_STALL: f32 = 10.0;
 
 pub async fn processes() -> Result<Vec<Proc>, String> {
     let text = run("ps", &["-A", "-o", "pid=,ppid=,%cpu=,rss=,comm="]).await?;
-    Ok(parse_ps(&text))
+    let procs = parse_ps(&text);
+    if !cfg!(target_os = "macos") {
+        return Ok(procs);
+    }
+    // macOS resident memory counts shared pages in every process: 240
+    // simulator processes showed 24G of RSS on a 24G host, and 3G of
+    // footprint. `ps` has no footprint column; `top` has.
+    let footprints = parse_top_mem(&run("top", &["-l", "1", "-stats", "pid,mem"]).await?);
+    Ok(with_footprints(procs, &footprints))
+}
+
+/// Each process's footprint where `top` listed it, else its resident memory.
+pub fn with_footprints(procs: Vec<Proc>, footprints: &HashMap<u32, u64>) -> Vec<Proc> {
+    procs
+        .into_iter()
+        .map(|p| Proc {
+            memory: footprints.get(&p.pid).copied().unwrap_or(p.memory),
+            ..p
+        })
+        .collect()
+}
+
+/// `top -l 1 -stats pid,mem`: after the header, `PID MEM` lines such as
+/// `99671  6178K` or `38460  2691M+`.
+pub fn parse_top_mem(text: &str) -> HashMap<u32, u64> {
+    text.lines()
+        .filter_map(|line| {
+            let mut f = line.split_whitespace();
+            let pid = f.next()?.parse().ok()?;
+            let mem = top_size(f.next()?)?;
+            f.next().is_none().then_some((pid, mem))
+        })
+        .collect()
+}
+
+fn top_size(s: &str) -> Option<u64> {
+    let s = s.trim_end_matches(['+', '-']);
+    let (n, scale) = match s.chars().last()? {
+        'B' => (&s[..s.len() - 1], 1),
+        'K' => (&s[..s.len() - 1], 1 << 10),
+        'M' => (&s[..s.len() - 1], 1 << 20),
+        'G' => (&s[..s.len() - 1], 1 << 30),
+        _ => (s, 1),
+    };
+    let n: f64 = n.parse().ok()?;
+    Some((n * scale as f64) as u64)
 }
 
 pub async fn system() -> Result<System, String> {

@@ -4,7 +4,8 @@ use muxa_server::owners::UsageOwner;
 use super::groups::{groups, share};
 use super::limits::alerts;
 use super::probe::{
-    Proc, parse_loadavg, parse_meminfo, parse_ps, parse_psi, parse_sysctl, parse_vm_stat,
+    Proc, parse_loadavg, parse_meminfo, parse_ps, parse_psi, parse_sysctl, parse_top_mem,
+    parse_vm_stat, with_footprints,
 };
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -82,8 +83,38 @@ fn ps_lines_keep_paths_with_spaces() {
     assert_eq!(procs.len(), 2);
     assert_eq!(procs[1].pid, 496);
     assert_eq!(procs[1].cpu, 2.5);
-    assert_eq!(procs[1].rss, 14752 * 1024);
+    assert_eq!(procs[1].memory, 14752 * 1024);
     assert_eq!(procs[1].name(), "Google Chrome");
+}
+
+#[test]
+fn macos_memory_is_the_footprint_from_top() {
+    let top = "Processes: 963 total, 2 running
+PhysMem: 23G used (3481M wired, 8601M compressor), 236M unused.
+
+PID    MEM
+99945  12M
+99671  6178K
+38460  2691M+
+69164  1G-
+";
+    let mem = parse_top_mem(top);
+    assert_eq!(mem.len(), 4);
+    assert_eq!(mem[&99945], 12 << 20);
+    assert_eq!(mem[&99671], 6178 << 10);
+    assert_eq!(mem[&38460], 2691 << 20);
+    assert_eq!(mem[&69164], 1 << 30);
+    let procs = with_footprints(vec![p(99945, 1, 0.0, 300, "a"), p(7, 1, 0.0, 5, "b")], &mem);
+    assert_eq!(
+        procs[0].memory,
+        12 << 20,
+        "the footprint replaces resident memory"
+    );
+    assert_eq!(
+        procs[1].memory,
+        5 << 20,
+        "a process top missed keeps its resident memory"
+    );
 }
 
 fn p(pid: u32, ppid: u32, cpu: f32, mib: u64, path: &str) -> Proc {
@@ -91,7 +122,7 @@ fn p(pid: u32, ppid: u32, cpu: f32, mib: u64, path: &str) -> Proc {
         pid,
         ppid,
         cpu,
-        rss: mib * 1024 * 1024,
+        memory: mib * 1024 * 1024,
         path: path.to_owned(),
     }
 }
@@ -186,14 +217,14 @@ fn processes_group_by_task_tree_then_by_kind() {
         .find(|g| g.terminal.as_deref() == Some("t1"))
         .expect("t1");
     assert_eq!(a.processes, 4);
-    assert_eq!(a.rss, 460 * 1024 * 1024);
+    assert_eq!(a.memory, 460 * 1024 * 1024);
     assert_eq!(a.cpu, 1.0);
     assert_eq!(a.idle_since_ms, Some(7));
 
     let outside = find(UsageKind::ClaudeOutside);
     assert_eq!(outside.processes, 2, "its MCP server counts with it");
     assert_eq!(find(UsageKind::Simulator).processes, 2);
-    assert_eq!(find(UsageKind::Docker).rss, 230 * 1024 * 1024);
+    assert_eq!(find(UsageKind::Docker).memory, 230 * 1024 * 1024);
     assert_eq!(find(UsageKind::Vm).cpu, 4.0);
     let chrome = find(UsageKind::App);
     assert_eq!(
@@ -225,7 +256,7 @@ fn apps_past_the_limit_count_as_other() {
     assert_eq!(got.iter().filter(|g| g.kind == UsageKind::App).count(), 8);
     let other = got.last().expect("other");
     assert_eq!((other.kind, other.processes), (UsageKind::Other, 2));
-    assert_eq!(other.rss, (100 + 101) * 1024 * 1024, "the two smallest");
+    assert_eq!(other.memory, (100 + 101) * 1024 * 1024, "the two smallest");
 }
 
 #[test]

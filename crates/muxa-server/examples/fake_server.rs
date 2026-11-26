@@ -93,7 +93,7 @@ impl Host for FakeHost {
                 terminal: Some(o.terminal.clone()),
                 workspace: o.workspace.clone(),
                 cpu: 1.5,
-                rss: GIB / 2,
+                memory: GIB / 2,
                 processes: o.pids.len() as u32,
                 idle_since_ms: o.idle_since_ms,
             })
@@ -104,7 +104,7 @@ impl Host for FakeHost {
             terminal: None,
             workspace: None,
             cpu: 1.0,
-            rss: 3 * GIB,
+            memory: 3 * GIB,
             processes: 240,
             idle_since_ms: None,
         });

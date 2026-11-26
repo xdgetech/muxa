@@ -680,8 +680,9 @@ pub struct UsageGroup {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
     pub cpu: f32,
-    /// Resident memory, in bytes.
-    pub rss: u64,
+    /// The memory the OS charges to the group, in bytes: the footprint
+    /// (Activity Monitor's Memory) on macOS, resident memory on Linux.
+    pub memory: u64,
     pub processes: u32,
     /// When the agent last reported `done` or `idle`; None while it works.
     #[serde(default, skip_serializing_if = "Option::is_none")]

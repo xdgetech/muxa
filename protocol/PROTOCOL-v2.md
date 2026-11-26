@@ -375,12 +375,12 @@ ADR 0103. `HostReport`:
  "swap":{"used":4402341478,"total":5368709120},
  "disks":[{"name":"system","path":"/","free":44023414784,"total":494384795648},
           {"name":"build","path":"/Volumes/Atlas/muxa/build","free":1319413953331,"total":2000398934016}],
- "groups":[{"kind":"task","name":"Host resources","terminal":"t7","workspace":"xdge","cpu":0.3,"rss":429496729,"processes":6,"idle_since_ms":1795690000000},
-           {"kind":"simulator","name":"Simulator","cpu":0.1,"rss":3328599654,"processes":240}],
+ "groups":[{"kind":"task","name":"Host resources","terminal":"t7","workspace":"xdge","cpu":0.3,"memory":429496729,"processes":6,"idle_since_ms":1795690000000},
+           {"kind":"simulator","name":"Simulator","cpu":0.1,"memory":3328599654,"processes":240}],
  "alerts":["memory"]}
 ```
 
-- Sizes are bytes. `cpu` is a percent of all cores together, for the host and for each group. `pressure` is `normal`, `warn`, `critical` or `unknown`. `compressed` is absent where the OS keeps no compressed memory.
+- Sizes are bytes. `cpu` is a percent of all cores together, for the host and for each group. A group's `memory` is what the OS charges to its processes: the footprint on macOS (Activity Monitor's Memory; it counts compressed memory and leaves out shared pages), resident memory on Linux. `pressure` is `normal`, `warn`, `critical` or `unknown`. `compressed` is absent where the OS keeps no compressed memory.
 - `disks` lists the system disk (`system`), and the build disk (`build`, `[build] dir`) when that folder is on another disk.
 - `groups`: the Tasks, talks, Routine runs and team members first, biggest first; then the rest, biggest first. Kinds:
   - `task`: a Task or talk. `terminal` is its agent. The group holds the process trees of the agent and its shells. `idle_since_ms` is when the agent last reported `done` or `idle`; it is absent while the agent works.
