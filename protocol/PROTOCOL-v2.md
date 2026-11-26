@@ -435,6 +435,8 @@ Rules:
 
 `bad-request`, `version`, `not-found`, `backend`, `closed`, `conflict`, `would-lose-work` (closing a Task would lose work; nothing changed), `read-only` (the host locked its settings with `--settings-read-only`).
 
+A request the server cannot read, such as a type it does not know, gets `bad-request` with the request's `id` when it has one. Servers before ADR 0102 sent it without the `id`, so a client gives a request newer than its host a timeout.
+
 ## Not yet specified
 
 Review from a draft PR, adding a place to an open Task (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.

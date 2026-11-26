@@ -314,7 +314,13 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         let msg = match serde_json::from_slice::<ClientMsg>(payload) {
             Ok(msg) => msg,
             Err(e) => {
-                self.error(None, ErrorCode::BadRequest, bad_message(payload, &e));
+                // A request this server does not know still gets its reply, so a
+                // newer client does not wait for ever (ADR 0102).
+                self.error(
+                    request_id(payload),
+                    ErrorCode::BadRequest,
+                    bad_message(payload, &e),
+                );
                 return;
             }
         };
@@ -1102,6 +1108,14 @@ async fn next_revision(revisions: &mut Option<watch::Receiver<u64>>) {
 /// wrong type: only errors that name a field or an op are passed on.
 /// serde's message can quote a value, so for a request that carries secrets or
 /// file bytes it only says which field, or that the request is wrong.
+/// The `id` of a message that did not parse, when it has a whole number one.
+fn request_id(payload: &[u8]) -> Option<u64> {
+    serde_json::from_slice::<serde_json::Value>(payload)
+        .ok()?
+        .get("id")?
+        .as_u64()
+}
+
 fn bad_message(payload: &[u8], e: &serde_json::Error) -> String {
     let kind = serde_json::from_slice::<serde_json::Value>(payload)
         .ok()

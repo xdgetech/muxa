@@ -2282,3 +2282,20 @@ async fn only_a_tasks_agent_pauses() {
     .await;
     assert_eq!(gone["code"], "not-found");
 }
+
+#[tokio::test]
+async fn a_request_the_server_does_not_know_gets_its_id_back() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let unknown = request(&mut client, json!({"type": "from-the-future", "id": 7})).await;
+    assert_eq!(
+        (
+            unknown["type"].as_str(),
+            unknown["id"].as_u64(),
+            unknown["code"].as_str()
+        ),
+        (Some("error"), Some(7), Some("bad-request")),
+        "{unknown}"
+    );
+}
