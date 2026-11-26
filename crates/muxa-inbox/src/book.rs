@@ -253,6 +253,21 @@ impl Book {
         Ok(())
     }
 
+    /// Points the open items of the agent `from` at `to`: a resumed Task's
+    /// new agent (ADR 0102). Done items keep the old one.
+    pub fn retarget(&mut self, from: &str, to: &str) {
+        let mut changed = false;
+        for s in &mut self.items {
+            if s.item.terminal.as_deref() == Some(from) {
+                s.item.terminal = Some(to.to_owned());
+                changed = true;
+            }
+        }
+        if changed {
+            self.revision += 1;
+        }
+    }
+
     /// Moves an open item to the bottom (ADR 0096). New items go on top, so
     /// items moved down stay below them, in the order they were moved.
     pub fn later(&mut self, id: &str) -> Result<(), InboxError> {
@@ -489,6 +504,27 @@ mod tests {
         b.add(todo("d"), 4).unwrap();
         assert_eq!(titles(&b), ["d", "c", "b", "a"]);
         assert_eq!(b.later("i99"), Err(InboxError::NotFound("i99".into())));
+    }
+
+    #[test]
+    fn retarget_moves_only_the_open_items_of_an_agent() {
+        let mut b = Book::default();
+        let of = |t: &str| NewItem {
+            terminal: Some(t.into()),
+            ..todo(t)
+        };
+        let done = add(&mut b, of("old"), 1);
+        b.done(&done).unwrap();
+        add(&mut b, of("old"), 2);
+        add(&mut b, of("other"), 3);
+        let before = b.revision();
+        b.retarget("old", "new");
+        let open: Vec<_> = b.view().items.into_iter().map(|i| i.terminal).collect();
+        assert_eq!(open, [Some("other".into()), Some("new".into())]);
+        assert_eq!(b.view().done[0].terminal.as_deref(), Some("old"));
+        assert_eq!(b.revision(), before + 1);
+        b.retarget("gone", "new");
+        assert_eq!(b.revision(), before + 1);
     }
 
     #[test]

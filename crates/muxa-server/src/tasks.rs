@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
 use muxa_protocol::v2::{
-    ChatUpdate, LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList,
-    Routine, RoutineProblem, Settings, SettingsOp, V1Task, Workspace, WorktreeMode,
+    ChatUpdate, LoopInfo, LoopSpec, Paused, Place, PlaceSpec, ReaderContent, ReaderKind,
+    ReaderList, Routine, RoutineProblem, Settings, SettingsOp, V1Task, Workspace, WorktreeMode,
 };
 use tokio::sync::watch;
 
@@ -201,6 +201,27 @@ pub trait Host: Send + Sync {
         _ended: &TerminalInfo,
     ) -> impl Future<Output = Result<Prepared, TaskError>> + Send {
         async { Err(TaskError::Invalid("this host cannot restart Tasks".into())) }
+    }
+
+    /// The paused Tasks (ADR 0102), oldest first.
+    fn paused(&self) -> impl Future<Output = Vec<Paused>> + Send {
+        async { Vec::new() }
+    }
+
+    /// Keeps `paused`, replacing a record with its id. It must last before
+    /// the agent ends, so a host that cannot keep it refuses the pause.
+    fn pause_keep(&self, _paused: Paused) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host cannot pause Tasks".into())) }
+    }
+
+    /// Drops the record `id`; an id that is not paused is no error.
+    fn pause_drop(&self, _id: &str) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Bumped when a Task is paused or a pause ends, for `watch`.
+    fn paused_changes(&self) -> Option<watch::Receiver<u64>> {
+        None
     }
 
     fn routines(&self) -> impl Future<Output = Result<RoutineList, TaskError>> + Send {

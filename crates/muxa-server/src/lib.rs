@@ -7,6 +7,7 @@ mod inbox;
 mod item_actions;
 pub mod memory_settings;
 mod migrate;
+pub mod paused;
 pub mod reader;
 mod ring;
 mod session;
@@ -21,6 +22,7 @@ mod usage;
 mod wire;
 
 pub use muxa_inbox::Inbox;
+pub use paused::MemoryPaused;
 pub use reader::ReaderOpen;
 pub use session::{Config, PARK, ServeError, Services, serve};
 pub use sessions::Sessions;

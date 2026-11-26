@@ -41,6 +41,9 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] apply ITEM
        muxa-cli v2 [--bridge CMD] accept|dismiss ITEM
        muxa-cli v2 [--bridge CMD] close-task TERMINAL [--force]
+       muxa-cli v2 [--bridge CMD] pause-task TERMINAL
+       muxa-cli v2 [--bridge CMD] resume-task TERMINAL [--json]
+       muxa-cli v2 [--bridge CMD] paused [--json]
        muxa-cli v2 [--bridge CMD] shell TERMINAL
        muxa-cli v2 [--bridge CMD] close-shell TERMINAL
        muxa-cli v2 [--bridge CMD] upload TERMINAL FILE
@@ -77,6 +80,11 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   --bot NAME     talks to the Workspace's Bot NAME (a new name: to set one up)
   close-task     closes the Task of an agent terminal as approve does, and marks
                  its open items Done
+  pause-task     stops the Task's agent and shells to free the host, and keeps the
+                 Task with its places and items; close-task still closes it
+  resume-task    runs a paused Task's agent again where it worked; Claude Code
+                 continues its conversation
+  paused         the paused Tasks: id, title and working place
   shell          starts a shell in the working place of the Task of an agent
                  terminal; every client lists it under the Task
   upload         copies FILE (at most 10 MB) into the Task's working place under
@@ -155,6 +163,16 @@ enum Cmd {
         json: bool,
     },
     Loops {
+        json: bool,
+    },
+    Pause {
+        terminal: String,
+    },
+    Resume {
+        terminal: String,
+        json: bool,
+    },
+    Paused {
         json: bool,
     },
     Chat {
@@ -358,6 +376,14 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             },
             json,
         },
+        ["pause-task", t] => Cmd::Pause {
+            terminal: (*t).to_owned(),
+        },
+        ["resume-task", t] => Cmd::Resume {
+            terminal: (*t).to_owned(),
+            json,
+        },
+        ["paused"] => Cmd::Paused { json },
         ["shell", t] => Cmd::Shell {
             terminal: (*t).to_owned(),
             close: false,
@@ -532,6 +558,38 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             } else {
                 for l in reply["loops"].as_array().into_iter().flatten() {
                     println!("{}", loop_row(l));
+                }
+            }
+            Ok(())
+        }
+        Cmd::Pause { terminal } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c
+                .request(json!({"type": "pause-task", "terminal": terminal}))
+                .await?;
+            println!("paused {}", paused_row(&reply["paused"]));
+            Ok(())
+        }
+        Cmd::Resume { terminal, json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c
+                .request(json!({"type": "resume-task", "terminal": terminal}))
+                .await?;
+            if json {
+                println!("{reply}");
+            } else {
+                println!("resumed {}", row(&reply["terminal"]));
+            }
+            Ok(())
+        }
+        Cmd::Paused { json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c.request(json!({"type": "paused-tasks"})).await?;
+            if json {
+                println!("{}", reply["paused"]);
+            } else {
+                for p in reply["paused"].as_array().into_iter().flatten() {
+                    println!("{}", paused_row(p));
                 }
             }
             Ok(())
@@ -777,6 +835,16 @@ async fn watch(bridge: &str, seconds: Option<u64>) -> Result<(), String> {
 }
 
 /// `TERMINAL\tSTATE\tATTEMPTS/MAX\tREASON`; the check is not shown.
+fn paused_row(p: &Value) -> String {
+    let t = &p["terminal"];
+    format!(
+        "{}\t{}\t{}",
+        t["id"].as_str().unwrap_or("?"),
+        t["labels"]["muxa.title"].as_str().unwrap_or(""),
+        t["labels"]["muxa.dir"].as_str().unwrap_or("")
+    )
+}
+
 fn loop_row(l: &Value) -> String {
     format!(
         "{}\t{}\t{}/{}\t{}",
@@ -921,6 +989,29 @@ mod tests {
 
     fn args(s: &[&str]) -> Vec<OsString> {
         s.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn pause_and_resume_parse() {
+        let cmd = |words: &[&str]| parse(args(words)).unwrap().map(|(_, c)| c);
+        assert_eq!(
+            cmd(&["pause-task", "t1"]),
+            Some(Cmd::Pause {
+                terminal: "t1".into()
+            })
+        );
+        assert_eq!(
+            cmd(&["resume-task", "t1", "--json"]),
+            Some(Cmd::Resume {
+                terminal: "t1".into(),
+                json: true
+            })
+        );
+        assert_eq!(cmd(&["paused"]), Some(Cmd::Paused { json: false }));
+        assert!(
+            matches!(parse(args(&["pause-task"])), Ok(None)),
+            "the usage shows"
+        );
     }
 
     #[test]

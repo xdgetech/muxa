@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use muxa_protocol::v2::{Place, PlaceKind};
-use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, WORKSPACE};
+use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, TITLE, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::adopt::{self, AgentLookup};
 use super::chat::Chats;
 use super::mcp;
+use super::paused::PausedStore;
 use super::places;
 use super::runner::Runner;
 use super::task_loop::TaskLoops;
@@ -35,19 +36,21 @@ pub struct BridgeHost {
     claude_dirs: Vec<PathBuf>,
     /// Finds an agent that already works in an adopted place.
     agents_in: Arc<AgentLookup>,
+    paused: Arc<PausedStore>,
 }
 
 impl BridgeHost {
     pub fn new(command: String, records: Arc<crate::config::Config>) -> Self {
         BridgeHost {
             command,
-            records,
             runner: None,
             loops: None,
             chats: None,
             settings: None,
             claude_dirs: Vec::new(),
             agents_in: adopt::host_lookup(),
+            paused: Arc::new(PausedStore::open(records.state_dir.as_deref())),
+            records,
         }
     }
 
@@ -373,6 +376,14 @@ fn prepared(
     }
 }
 
+async fn paused_blocking(
+    f: impl FnOnce() -> Result<(), TaskError> + Send + 'static,
+) -> Result<(), TaskError> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| TaskError::Failed(format!("the paused Tasks were not kept: {e}")))?
+}
+
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, TaskError> {
@@ -496,6 +507,7 @@ impl Host for BridgeHost {
         };
         let ws = self.workspace(&label(WORKSPACE)?).await?;
         let made = made_of(ended, &label(DIR)?)?;
+        adopt::refuse_if_busy(Arc::clone(&self.agents_in), made.working()).await?;
         // The Workspace's connections and servers as they are now.
         let given = given(&ws).await?;
         let is_talk = ended.labels.contains_key(BOT);
@@ -508,12 +520,19 @@ impl Host for BridgeHost {
                 None => Vec::new(),
             };
             line = talk_line(&ws, made.working(), line, commands).await?;
-        } else {
+        }
+        // The kept conversation goes on (ADR 0102), as in an adopted place.
+        if self.resumes(&ws, &line, made.working()) {
+            line.push_str(" --continue");
+        }
+        if !is_talk {
             line = crate::launch::prompt_line(&line, CONTINUE_PROMPT);
         }
         let title = ended
-            .name
-            .clone()
+            .labels
+            .get(TITLE)
+            .cloned()
+            .or_else(|| ended.name.clone())
             .or_else(|| made.branch.clone())
             .unwrap_or_else(|| "Task".into());
         let mut prepared = prepared(ws, &title, made, line, given);
@@ -684,6 +703,24 @@ impl Host for BridgeHost {
 
     fn loop_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
         self.loops.as_ref().map(|l| l.subscribe())
+    }
+
+    async fn paused(&self) -> Vec<muxa_protocol::v2::Paused> {
+        self.paused.list()
+    }
+
+    async fn pause_keep(&self, paused: muxa_protocol::v2::Paused) -> Result<(), TaskError> {
+        let store = Arc::clone(&self.paused);
+        paused_blocking(move || store.keep(paused)).await
+    }
+
+    async fn pause_drop(&self, id: &str) -> Result<(), TaskError> {
+        let (store, id) = (Arc::clone(&self.paused), id.to_owned());
+        paused_blocking(move || store.remove(&id)).await
+    }
+
+    fn paused_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        Some(self.paused.changes())
     }
 
     async fn chat_open(

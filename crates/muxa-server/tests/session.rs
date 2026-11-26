@@ -10,13 +10,13 @@ use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
 use muxa_inbox::NewItem;
 use muxa_protocol::v2::{
-    ChatUpdate, Frame, INITIAL_CREDIT, ItemKind, Kind, LoopChecks, LoopInfo, LoopSpec, Place,
-    PlaceKind, ReaderContent, ReaderEntry, ReaderKind, ReaderList, RoutineRef, UsedBy, V1Status,
-    V1Task, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp, WorktreeMode,
+    ChatUpdate, Frame, INITIAL_CREDIT, ItemKind, Kind, LoopChecks, LoopInfo, LoopSpec, Paused,
+    Place, PlaceKind, ReaderContent, ReaderEntry, ReaderKind, ReaderList, RoutineRef, UsedBy,
+    V1Status, V1Task, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp, WorktreeMode,
 };
 use muxa_server::{
-    Config, Host, Inbox, Prepared, ReaderOpen, RoutineList, ServeError, Services, Sessions,
-    TaskError, TaskSpec, serve, watch_tasks,
+    Config, Host, Inbox, MemoryPaused, Prepared, ReaderOpen, RoutineList, ServeError, Services,
+    Sessions, TaskError, TaskSpec, serve, watch_tasks,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -222,6 +222,22 @@ impl Host for FakeTasks {
         Some(LOOP_CHANGES.with(|c| c.subscribe()))
     }
 
+    async fn paused(&self) -> Vec<Paused> {
+        PAUSED.with(MemoryPaused::list)
+    }
+
+    async fn pause_keep(&self, paused: Paused) -> Result<(), TaskError> {
+        PAUSED.with(|p| p.keep(paused, |_| Ok(())))
+    }
+
+    async fn pause_drop(&self, id: &str) -> Result<(), TaskError> {
+        PAUSED.with(|p| p.remove(id, |_| Ok(())))
+    }
+
+    fn paused_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        Some(PAUSED.with(MemoryPaused::changes))
+    }
+
     /// One user entry and a permission prompt; the agent in `/work/gone` has exited.
     async fn chat_open(&self, dir: &Path) -> Result<(u64, ChatUpdate), TaskError> {
         let handle = if dir.ends_with("gone") { 2 } else { 1 };
@@ -311,6 +327,8 @@ thread_local! {
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
     /// The agents whose loop `loop_start` started over.
     static RESETS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// The paused Tasks.
+    static PAUSED: MemoryPaused = MemoryPaused::default();
     /// The titles of the agents `agent_started` heard of.
     static STARTED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
@@ -2061,4 +2079,206 @@ async fn an_upload_goes_to_the_tasks_folder_by_the_host() {
         "a bad upload never echoes its bytes: {message}"
     );
     assert_eq!(UPLOADS.with(|u| u.borrow().len()), 1);
+}
+
+/// Sends `msg` and reads until its reply and a `paused` notification came.
+async fn request_paused(client: &mut Client, msg: Value) -> (Value, Value) {
+    client.control(msg).await;
+    let (mut reply, mut note) = (None, None);
+    while reply.is_none() || note.is_none() {
+        let m = client.read_control().await;
+        match m["type"].as_str() {
+            Some("reply" | "error") => reply = Some(m),
+            Some("paused") => note = Some(m),
+            _ => {}
+        }
+    }
+    (reply.unwrap(), note.unwrap())
+}
+
+#[tokio::test]
+async fn a_paused_task_keeps_its_items_and_resumes_where_it_worked() {
+    let backend = FakeBackend::new();
+    let inbox = Arc::new(Inbox::memory());
+    let sessions = Arc::new(Sessions::new());
+    let (watched, inbox2) = (backend.clone(), Arc::clone(&inbox));
+    let watched = tokio::spawn(async move { watch_tasks(&watched, &inbox2).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let mut client = Client::connect_with(&backend, &sessions, &inbox, PARK, hello(None)).await;
+    client.welcome().await;
+    let agent = task_agent(&backend, "/work/fix").await;
+    let shell = request(
+        &mut client,
+        json!({"type": "task-shell", "id": 1, "terminal": agent.as_str()}),
+    )
+    .await;
+    let shell = TerminalId::new(shell["terminal"]["id"].as_str().unwrap().to_owned());
+    let item = review_item(&mut client, &agent).await;
+    request(
+        &mut client,
+        json!({"type": "loop-start", "id": 2, "terminal": agent.as_str(),
+               "loop": {"check": "make test"}}),
+    )
+    .await;
+    request(&mut client, json!({"type": "watch", "id": 3})).await;
+
+    let (paused, note) = request_paused(
+        &mut client,
+        json!({"type": "pause-task", "id": 4, "terminal": agent.as_str()}),
+    )
+    .await;
+    let record = &paused["paused"];
+    assert_eq!(record["terminal"]["id"], agent.as_str(), "{paused}");
+    assert_eq!(record["terminal"]["live"], false);
+    assert_eq!(record["terminal"]["labels"]["muxa.dir"], "/work/fix");
+    assert_eq!(record["loop"]["check"], "make test");
+    assert_eq!(note["paused"][0], *record);
+    assert!(backend.get(&agent).await.is_err(), "the agent is gone");
+    assert!(backend.get(&shell).await.is_err(), "its shell is gone");
+    assert_eq!(
+        LOOPS.with(|l| l.borrow()[agent.as_str()].state.clone()),
+        "stopped"
+    );
+    assert!(
+        CLOSED.with(|c| c.borrow().is_empty()),
+        "no place is removed"
+    );
+    let listed = request(&mut client, json!({"type": "paused-tasks", "id": 5})).await;
+    assert_eq!(listed["paused"][0], *record);
+    let again = request(
+        &mut client,
+        json!({"type": "pause-task", "id": 6, "terminal": agent.as_str()}),
+    )
+    .await;
+    assert_eq!(again["paused"], *record, "pausing again changes nothing");
+
+    let (resumed, note) = request_paused(
+        &mut client,
+        json!({"type": "resume-task", "id": 7, "terminal": agent.as_str()}),
+    )
+    .await;
+    let new = resumed["terminal"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(resumed["existing"], false, "{resumed}");
+    assert_ne!(new, agent.as_str());
+    assert_eq!(note["paused"], json!([]));
+    let launch = backend.launches().last().cloned().unwrap();
+    assert_eq!(launch.argv, ["agent", "--again"]);
+    assert_eq!(launch.labels["muxa.dir"], "/work/fix");
+    let open = inbox.item(&item).unwrap();
+    assert_eq!(
+        open.terminal.as_deref(),
+        Some(new.as_str()),
+        "the item follows"
+    );
+    assert_eq!(LOOPS.with(|l| l.borrow()[&new].state.clone()), "armed");
+    assert!(
+        RESETS.with(|r| r.borrow().is_empty()),
+        "the attempts are kept"
+    );
+    assert!(
+        inbox
+            .view()
+            .items
+            .iter()
+            .all(|i| i.kind != ItemKind::Failed),
+        "a pause is no failure"
+    );
+    let gone = request(
+        &mut client,
+        json!({"type": "resume-task", "id": 8, "terminal": agent.as_str()}),
+    )
+    .await;
+    assert_eq!(gone["code"], "not-found");
+    watched.abort();
+}
+
+#[tokio::test]
+async fn close_task_closes_a_paused_task_unless_it_would_lose_work() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let dirty = task_agent(&backend, "/work/dirty-fix").await;
+    let agent = task_agent(&backend, "/work/fix").await;
+    let item = review_item(&mut client, &agent).await;
+    for (id, t) in [(1, &dirty), (2, &agent)] {
+        let paused = request(
+            &mut client,
+            json!({"type": "pause-task", "id": id, "terminal": t.as_str()}),
+        )
+        .await;
+        assert_eq!(paused["type"], "reply", "{paused}");
+    }
+
+    let refused = request(
+        &mut client,
+        json!({"type": "close-task", "id": 3, "terminal": dirty.as_str()}),
+    )
+    .await;
+    assert_eq!(refused["code"], "would-lose-work", "{refused}");
+    let closed = request(
+        &mut client,
+        json!({"type": "close-task", "id": 4, "terminal": agent.as_str()}),
+    )
+    .await;
+    assert_eq!(closed["inbox"]["done"][0]["id"], item.as_str(), "{closed}");
+    assert_eq!(
+        CLOSED.with(|c| c.borrow()[0].0[0].path.clone()),
+        "/work/fix"
+    );
+    let listed = request(&mut client, json!({"type": "paused-tasks", "id": 5})).await;
+    let ids: Vec<&str> = listed["paused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["terminal"]["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, [dirty.as_str()], "only the dirty one stays paused");
+}
+
+#[tokio::test]
+async fn a_task_started_in_a_paused_place_ends_the_pause() {
+    let backend = FakeBackend::new();
+    let inbox = Arc::new(Inbox::memory());
+    let sessions = Arc::new(Sessions::new());
+    let mut client = Client::connect_with(&backend, &sessions, &inbox, PARK, hello(None)).await;
+    client.welcome().await;
+    let agent = task_agent(&backend, "/work/fix").await;
+    let item = review_item(&mut client, &agent).await;
+    request(
+        &mut client,
+        json!({"type": "pause-task", "id": 1, "terminal": agent.as_str()}),
+    )
+    .await;
+
+    let started = request(
+        &mut client,
+        json!({"type": "start-task", "id": 2, "workspace": "Personal", "title": "fix",
+               "places": [{"kind": "existing", "path": "/work/fix"}]}),
+    )
+    .await;
+    let new = started["terminal"]["id"].as_str().unwrap();
+    assert_eq!(inbox.item(&item).unwrap().terminal.as_deref(), Some(new));
+    let listed = request(&mut client, json!({"type": "paused-tasks", "id": 3})).await;
+    assert_eq!(listed["paused"], json!([]));
+}
+
+#[tokio::test]
+async fn only_a_tasks_agent_pauses() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let other = terminal(&backend).await;
+    let wrong = request(
+        &mut client,
+        json!({"type": "pause-task", "id": 1, "terminal": other.as_str()}),
+    )
+    .await;
+    assert_eq!(wrong["code"], "bad-request", "{wrong}");
+    assert!(backend.get(&other).await.unwrap().live);
+    let gone = request(
+        &mut client,
+        json!({"type": "pause-task", "id": 2, "terminal": "t-none"}),
+    )
+    .await;
+    assert_eq!(gone["code"], "not-found");
 }

@@ -200,6 +200,18 @@ pub struct Terminal {
     pub rows: u16,
 }
 
+/// A paused Task (ADR 0102): its agent as it was when it paused, with
+/// `live: false` and no status. The id stays the Task's id while it is paused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Paused {
+    pub terminal: Terminal,
+    /// Unix seconds.
+    pub paused_at: u64,
+    /// The Task Loop that was active at pause; resume arms it again.
+    #[serde(rename = "loop", default, skip_serializing_if = "Option::is_none")]
+    pub task_loop: Option<LoopSpec>,
+}
+
 /// A place a client asks for (ADR 0068). A repo is absolute, or relative
 /// to the Workspace's root as in ADR 0031.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -390,6 +402,19 @@ pub enum ClientMsg {
         /// Absent: `remove`.
         #[serde(default)]
         worktree: Option<WorktreeMode>,
+    },
+    /// Stops the Task's agent and shells and keeps the Task (ADR 0102).
+    PauseTask {
+        id: u64,
+        terminal: String,
+    },
+    /// Runs a paused Task's agent again; `terminal` is the paused id.
+    ResumeTask {
+        id: u64,
+        terminal: String,
+    },
+    PausedTasks {
+        id: u64,
     },
     /// A file from the user's device into the Task's working place, under
     /// `.muxa/uploads/` (ADR 0081). `data` is base64.
@@ -1152,6 +1177,10 @@ pub enum ServerMsg {
     Loops {
         loops: Vec<LoopInfo>,
     },
+    /// After `watch`: a Task was paused, resumed or closed. Every paused Task.
+    Paused {
+        paused: Vec<Paused>,
+    },
     /// A followed conversation changed.
     Chat {
         chat: u32,
@@ -1224,6 +1253,12 @@ pub enum Reply {
     /// A Reader folder as a zip, in base64.
     Zipped {
         zip: String,
+    },
+    PausedList {
+        paused: Vec<Paused>,
+    },
+    PausedOne {
+        paused: Paused,
     },
     Empty {},
 }

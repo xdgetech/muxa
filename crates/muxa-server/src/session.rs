@@ -25,7 +25,7 @@ use crate::shells;
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::uploads;
 use crate::wire::{self, Incoming};
-use crate::{inbox, item_actions, migrate, task_actions, task_items, usage};
+use crate::{inbox, item_actions, migrate, paused, task_actions, task_items, usage};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -73,6 +73,7 @@ struct Session<'a, B: SessionBackend, H: Host> {
     inbox_watch: Option<watch::Receiver<u64>>,
     /// The host's Task Loop changes, after `watch`.
     loop_watch: Option<watch::Receiver<u64>>,
+    paused_watch: Option<watch::Receiver<u64>>,
     /// The backend's changes, after `watch`.
     changes: Option<B::Changes>,
     out: mpsc::UnboundedSender<Frame>,
@@ -132,6 +133,7 @@ where
         inbox,
         inbox_watch: None,
         loop_watch: None,
+        paused_watch: None,
         changes: None,
         out,
         ended,
@@ -183,6 +185,10 @@ where
             () = next_revision(&mut session.loop_watch) => {
                 let loops = session.host.loops().await;
                 send(&session.out, &ServerMsg::Loops { loops });
+            }
+            () = next_revision(&mut session.paused_watch) => {
+                let paused = session.host.paused().await;
+                send(&session.out, &ServerMsg::Paused { paused });
             }
             () = next_revision(&mut session.inbox_watch) => {
                 let inbox = session.inbox.view();
@@ -250,7 +256,7 @@ fn send(out: &mpsc::UnboundedSender<Frame>, msg: &ServerMsg) {
     }
 }
 
-fn to_wire(t: TerminalInfo) -> v2::Terminal {
+pub(crate) fn to_wire(t: TerminalInfo) -> v2::Terminal {
     v2::Terminal {
         id: t.id.as_str().to_owned(),
         name: t.name,
@@ -543,6 +549,28 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                         .await;
                 self.inbox_reply(id, done);
             }
+            ClientMsg::PauseTask { id, terminal } => {
+                match paused::pause(self.backend, self.host, &terminal).await {
+                    Ok(paused) => self.reply(id, Reply::PausedOne { paused }),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
+            ClientMsg::ResumeTask { id, terminal } => {
+                match paused::resume(self.backend, self.host, self.inbox, &terminal).await {
+                    Ok((terminal, existing)) => self.reply(
+                        id,
+                        Reply::Started {
+                            terminal: to_wire(terminal),
+                            existing,
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
+            ClientMsg::PausedTasks { id } => {
+                let paused = self.host.paused().await;
+                self.reply(id, Reply::PausedList { paused });
+            }
             ClientMsg::InboxRequestChanges { id, item, comment } => {
                 let done =
                     task_actions::request_changes(self.backend, self.inbox, &item, &comment).await;
@@ -788,6 +816,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     let message = format!("the Task started, but its loop did not: {e}");
                     return self.error(Some(id), task_code(&e), message);
                 }
+                paused::end_pauses(self.host, self.inbox, &terminal).await;
                 self.reply(
                     id,
                     Reply::Started {
@@ -809,6 +838,10 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 revisions.mark_unchanged();
                 self.inbox_watch = Some(revisions);
                 self.loop_watch = self.host.loop_changes().map(|mut r| {
+                    r.mark_unchanged();
+                    r
+                });
+                self.paused_watch = self.host.paused_changes().map(|mut r| {
                     r.mark_unchanged();
                     r
                 });

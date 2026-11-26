@@ -11,6 +11,7 @@ mod close;
 pub mod feed;
 mod git;
 mod mcp;
+mod paused;
 mod places;
 pub mod reader;
 mod reader_folder;

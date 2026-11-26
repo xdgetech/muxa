@@ -347,3 +347,90 @@ async fn migrate_adds_each_open_task_once_and_resume_adopts_its_place() {
     assert_eq!(found["existing"], true, "{found}");
     assert_eq!(backend.list().await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn a_paused_task_outlives_its_daemon_and_resumes_its_conversation() {
+    let f = Fixture::new("pause");
+    let place = f.root.join("tasks/fix-login-t-00000e");
+    std::fs::create_dir_all(&place).unwrap();
+    f.conversation(&place);
+    let (inbox, backend) = (Arc::new(Inbox::memory()), FakeBackend::new());
+    let mut c = connect(f.host(None), Arc::clone(&inbox), backend.clone()).await;
+    let started = request(
+        &mut c,
+        json!({"type": "start-task", "id": 1, "workspace": "w", "title": "Fix login",
+               "places": [{"kind": "existing", "path": place.to_string_lossy()}]}),
+    )
+    .await;
+    let agent = started["terminal"]["id"].as_str().unwrap().to_owned();
+    let paused = request(
+        &mut c,
+        json!({"type": "pause-task", "id": 2, "terminal": agent}),
+    )
+    .await;
+    assert_eq!(
+        paused["paused"]["terminal"]["id"],
+        agent.as_str(),
+        "{paused}"
+    );
+
+    // A new daemon reads the same state dir.
+    let mut c = connect(f.host(None), Arc::clone(&inbox), backend.clone()).await;
+    let listed = request(&mut c, json!({"type": "paused-tasks", "id": 3})).await;
+    assert_eq!(
+        listed["paused"][0]["terminal"]["id"],
+        agent.as_str(),
+        "{listed}"
+    );
+    let resumed = request(
+        &mut c,
+        json!({"type": "resume-task", "id": 4, "terminal": agent}),
+    )
+    .await;
+    assert_eq!(
+        resumed["terminal"]["labels"]["muxa.title"], "Fix login",
+        "{resumed}"
+    );
+    let launch = backend.launches().last().cloned().unwrap();
+    assert_eq!(
+        launch.argv[2],
+        "claude --continue -- 'Read .muxa/TASK.md and continue the Task.'"
+    );
+    let listed = request(&mut c, json!({"type": "paused-tasks", "id": 5})).await;
+    assert_eq!(listed["paused"], json!([]));
+}
+
+#[tokio::test]
+async fn resume_is_refused_while_another_agent_works_in_the_place() {
+    let f = Fixture::new("pause-busy");
+    let place = f.root.join("tasks/fix-login-t-00000f");
+    std::fs::create_dir_all(&place).unwrap();
+    let (inbox, backend) = (Arc::new(Inbox::memory()), FakeBackend::new());
+    let mut c = connect(f.host(None), Arc::clone(&inbox), backend.clone()).await;
+    let started = request(
+        &mut c,
+        json!({"type": "start-task", "id": 1, "workspace": "w", "title": "Fix login",
+               "places": [{"kind": "existing", "path": place.to_string_lossy()}]}),
+    )
+    .await;
+    let agent = started["terminal"]["id"].as_str().unwrap().to_owned();
+    request(
+        &mut c,
+        json!({"type": "pause-task", "id": 2, "terminal": agent}),
+    )
+    .await;
+
+    let mut c = connect(f.host(Some(&place)), Arc::clone(&inbox), backend.clone()).await;
+    let busy = request(
+        &mut c,
+        json!({"type": "resume-task", "id": 3, "terminal": agent}),
+    )
+    .await;
+    assert_eq!(busy["code"], "conflict", "{busy}");
+    let listed = request(&mut c, json!({"type": "paused-tasks", "id": 4})).await;
+    assert_eq!(
+        listed["paused"][0]["terminal"]["id"],
+        agent.as_str(),
+        "it stays paused"
+    );
+}

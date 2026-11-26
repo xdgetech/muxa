@@ -6,7 +6,8 @@
 //! has one fixed exchange and waits on a permission. `workspaces` lists one
 //! fixed Workspace, `Personal`, whose `github` connection the Routine
 //! `digest` uses and the live Tasks get by default. Approve closes a Task
-//! with no worktree check. `settings` starts as the fixed view of
+//! with no worktree check. Pause keeps paused Tasks in memory, and Resume
+//! runs `agent` again in the paused folder. `settings` starts as the fixed view of
 //! [`start_settings`], revision `1`, and `settings-update` applies ops in
 //! memory (`muxa_server::memory_settings`).
 //!
@@ -24,18 +25,19 @@ use muxa_protocol::settings::{
     SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine, SettingsWorkspace, WorkerSpec,
 };
 use muxa_protocol::v2::{
-    ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
-    UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
+    ChatUpdate, LoopChecks, LoopInfo, LoopSpec, Paused, ReaderContent, ReaderEntry, ReaderKind,
+    ReaderList, UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
 };
 use muxa_server::memory_settings::MemorySettings;
 use muxa_server::{
-    Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
-    TaskSpec, serve,
+    Config, Host, Inbox, MemoryPaused, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions,
+    TaskError, TaskSpec, serve,
 };
 use tokio::net::UnixListener;
 
 struct FakeHost {
     settings: MemorySettings,
+    paused: MemoryPaused,
 }
 
 impl Host for FakeHost {
@@ -71,6 +73,36 @@ impl Host for FakeHost {
             mcp: spec.mcp.clone(),
             bot: spec.bot.clone(),
         })
+    }
+
+    /// Runs `agent` again in the ended agent's folder, under its title.
+    async fn restart(&self, ended: &TerminalInfo) -> Result<Prepared, TaskError> {
+        let label = |k: &str| ended.labels.get(k).cloned();
+        Ok(Prepared {
+            dir: label("muxa.dir").unwrap_or_default().into(),
+            workspace: label("muxa.workspace").unwrap_or_default(),
+            title: label("muxa.title").unwrap_or_default(),
+            branch: label("muxa.branch"),
+            repo: label("muxa.repo").map(Into::into),
+            argv: vec!["agent".into()],
+            ..Prepared::default()
+        })
+    }
+
+    async fn paused(&self) -> Vec<Paused> {
+        self.paused.list()
+    }
+
+    async fn pause_keep(&self, paused: Paused) -> Result<(), TaskError> {
+        self.paused.keep(paused, |_| Ok(()))
+    }
+
+    async fn pause_drop(&self, id: &str) -> Result<(), TaskError> {
+        self.paused.remove(id, |_| Ok(()))
+    }
+
+    fn paused_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        Some(self.paused.changes())
     }
 
     async fn workspaces(&self) -> Vec<String> {
@@ -388,6 +420,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let inbox = Arc::new(Inbox::memory());
     let host = Arc::new(FakeHost {
         settings: MemorySettings::new(start_settings()),
+        paused: MemoryPaused::default(),
     });
     println!("ready");
     loop {
