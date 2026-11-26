@@ -40,6 +40,7 @@ Status: proposed (2026-11-26).
    - A place is held while a live terminal names it in `muxa.places` or `muxa.dir`, or while an ended agent names it and an open Inbox item names that agent (its Review or Failed item). herdr-core lists only live terminals, and Retry and Approve need an ended agent's places until the user decides.
    - A place made in the last 10 minutes is left alone: a starting Task has its worktree before its agent terminal, and a new branch counts as merged.
    - An unheld branch worktree that is clean and merged goes, with its branch (`git branch -d`) and its build folders. The checks are those of Close Task (ADR 0072).
+   - A worktree's submodules count too: uncommitted changes in one, or a commit in one that no remote has, keep the worktree. git refuses to remove a worktree with submodules without `--force`, so muxa forces it only after this check passes again.
    - An unheld worktree that is dirty or unmerged stays. The Inbox gets one Decide item that says why and how big it is. muxa never removes it without the user.
    - An unheld Task folder stays (it holds the user's files). Its build folders go.
    - The build folders of a place held only by an ended agent are emptied after `drop_after`. They stay as empty folders, so the links still work. Build output can be made again, so no work is lost.

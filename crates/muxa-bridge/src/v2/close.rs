@@ -118,7 +118,7 @@ pub(crate) async fn losses_of(t: &Tree) -> Result<Vec<String>, TaskError> {
 
 pub(crate) async fn work_state(t: &Tree) -> Result<WorkState, TaskError> {
     let status = git::run(
-        git::git(&t.path).args(["status", "--porcelain"]),
+        git::git(&t.path).args(["status", "--porcelain", "--ignore-submodules=none"]),
         "git status",
     )
     .await
@@ -129,10 +129,40 @@ pub(crate) async fn work_state(t: &Tree) -> Result<WorkState, TaskError> {
             t.path.display()
         )));
     }
+    let unmerged = match unmerged(t).await? {
+        Some(base) => Some(base),
+        None => unpushed_submodule(t).await?,
+    };
     Ok(WorkState {
         clean: status.stdout.is_empty(),
-        unmerged: unmerged(t).await?,
+        unmerged,
     })
+}
+
+/// A submodule of the worktree with commits on no remote, which removing
+/// the worktree would lose: its modules live in the worktree's git dir.
+async fn unpushed_submodule(t: &Tree) -> Result<Option<String>, TaskError> {
+    // `$sm_path` is git's, set per submodule; nothing here comes from input.
+    // A failed `git log` fails the whole check, so the worktree stays.
+    let script = "c=$(git log -1 --format=%H HEAD --branches --not --remotes) || exit 1; \
+                  test -z \"$c\" || echo \"$sm_path\"";
+    let out = git::run(
+        git::git(&t.path).args(["submodule", "foreach", "--quiet", "--recursive", script]),
+        "git submodule foreach",
+    )
+    .await
+    .map_err(failed)?;
+    if !out.status.success() {
+        return Err(TaskError::Failed(format!(
+            "cannot read the submodules of {}",
+            t.path.display()
+        )));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    Ok(text
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .map(|sub| format!("the remote of submodule {}", sub.trim())))
 }
 
 /// None when the branch is in the default base or the main checkout's
@@ -159,17 +189,18 @@ async fn unmerged(t: &Tree) -> Result<Option<String>, TaskError> {
 }
 
 pub(crate) async fn remove_tree(t: &Tree, mode: WorktreeMode) -> Result<(), String> {
-    let mut rm = git::git(&t.main);
-    rm.args(["worktree", "remove"]);
-    if mode == WorktreeMode::Force {
-        rm.arg("--force");
+    match remove_worktree(t, mode == WorktreeMode::Force).await {
+        // git refuses any worktree with submodules without `--force`, even a
+        // clean one. Check it again, submodules too, before forcing.
+        Err(e) if mode == WorktreeMode::Remove && e.contains("containing submodules") => {
+            let state = work_state(t).await.map_err(|e| e.to_string())?;
+            if !state.clean || state.unmerged.is_some() {
+                return Err(e);
+            }
+            remove_worktree(t, true).await?;
+        }
+        other => other?,
     }
-    rm.arg(&t.path);
-    expect_ok(
-        &mut rm,
-        &format!("remove the worktree {}", t.path.display()),
-    )
-    .await?;
     let flag = match mode {
         WorktreeMode::Remove => "-d",
         WorktreeMode::Force => "-D",
@@ -183,6 +214,20 @@ pub(crate) async fn remove_tree(t: &Tree, mode: WorktreeMode) -> Result<(), Stri
         }
         other => other,
     }
+}
+
+async fn remove_worktree(t: &Tree, force: bool) -> Result<(), String> {
+    let mut rm = git::git(&t.main);
+    rm.args(["worktree", "remove"]);
+    if force {
+        rm.arg("--force");
+    }
+    rm.arg(&t.path);
+    expect_ok(
+        &mut rm,
+        &format!("remove the worktree {}", t.path.display()),
+    )
+    .await
 }
 
 async fn expect_ok(cmd: &mut tokio::process::Command, what: &str) -> Result<(), String> {

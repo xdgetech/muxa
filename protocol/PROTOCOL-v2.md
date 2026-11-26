@@ -352,7 +352,7 @@ ADR 0102. `disk` lists, with sizes in bytes (`du -sk`, links not followed):
 - every other worktree of the Workspaces' repos: `claude-worktree` under `<repo>/.claude/worktrees`, else `worktree`;
 - folders under `<root>/tasks` with no record (`task-folder`), and folders on the build disk no record names (`build-folder`).
 
-`DiskRow`: `{"path","kind","workspace"?,"branch"?,"bytes"?,"build_bytes"?,"held"?,"clean"?,"merged"?,"cleanable"}`. `held` is `live` (a live terminal names the place in `muxa.places` or `muxa.dir`) or `ended` (only an ended agent with an open Inbox item does). `cleanable` is true for an unheld row with nothing to lose: a worktree that is clean and merged (one muxa did not make must also be unchanged for a day; a Task worktree must be older than 10 minutes), or a build folder. A Task folder is never cleanable: it holds the user's files.
+`DiskRow`: `{"path","kind","workspace"?,"branch"?,"bytes"?,"build_bytes"?,"held"?,"clean"?,"merged"?,"cleanable"}`. `held` is `live` (a live terminal names the place in `muxa.places` or `muxa.dir`) or `ended` (only an ended agent with an open Inbox item does). `cleanable` is true for an unheld row with nothing to lose: a worktree that is clean and merged, its submodules too (no change, no commit that no remote has), (one muxa did not make must also be unchanged for a day; a Task worktree must be older than 10 minutes), or a build folder. A Task folder is never cleanable: it holds the user's files.
 
 `disk-clean` scans again and acts on that scan:
 1. `dry_run` defaults to true: the reply says what it would remove, and nothing changes.

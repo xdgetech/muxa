@@ -195,3 +195,69 @@ fn du_lines_are_kib() {
         vec![(PathBuf::from("/a"), 12 * 1024), (PathBuf::from("/b c"), 0)]
     );
 }
+
+const ID: [&str; 4] = ["-c", "user.name=t", "-c", "user.email=t@t"];
+
+fn commit(dir: &Path, msg: &str) {
+    let mut args = ID.to_vec();
+    args.extend(["commit", "-q", "--allow-empty", "-m", msg]);
+    git(dir, &args);
+}
+
+#[tokio::test]
+async fn a_worktree_with_submodules_goes_only_when_they_hold_nothing() {
+    let h = host("submodule");
+    let lib = h.root.join("lib");
+    repo(&lib);
+    git(
+        &h.main,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            lib.to_str().unwrap(),
+            "lib",
+        ],
+    );
+    commit(&h.main, "lib");
+    let init = |at: &Path| {
+        git(
+            at,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "update",
+                "--init",
+                "-q",
+            ],
+        )
+    };
+    let clean = h.task_worktree("clean");
+    init(&clean);
+    let held = h.task_worktree("held");
+    init(&held);
+    // A commit on a local branch of the submodule only, then back: the
+    // worktree looks clean, but removing it would lose that commit.
+    let sub = held.join("lib");
+    let at = String::from_utf8(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&sub)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    git(&sub, &["checkout", "-q", "-b", "mine"]);
+    commit(&sub, "mine");
+    git(&sub, &["checkout", "-q", "--detach", at.trim()]);
+    let done = h.clean(&[], false, false).await.unwrap();
+    assert_eq!(done.removed, vec![clean.display().to_string()]);
+    assert!(!clean.exists() && held.exists());
+    let kept = h.clean(&[&held], false, false).await.unwrap();
+    assert!(kept.kept[0].why.contains("submodule lib"), "{kept:?}");
+}
