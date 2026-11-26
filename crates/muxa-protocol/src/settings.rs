@@ -39,6 +39,64 @@ pub struct Settings {
     /// The Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant: Option<SettingsAssistant>,
+    /// `[[subscription]]`: named agent logins (ADR 0103).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<SubscriptionSpec>,
+    /// Logins on the host that are no subscription yet, for onboarding
+    /// (ADR 0103 §7).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub found_logins: Vec<FoundLogin>,
+    /// The build disk (ADR 0102): `[build]` in `workspaces.toml`. Absent
+    /// from an older server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<SettingsBuild>,
+}
+
+/// A login muxa found without opening a file: a default folder that exists,
+/// or a Workspace's env variable. An env value never crosses the wire, so a
+/// Workspace's login has no `home`; `subscription-adopt` makes it one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoundLogin {
+    /// `claude-code` or `codex`.
+    pub agent: String,
+    /// `~/.claude` or `~/.codex`; absent for a Workspace's env login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
+    /// The Workspace whose env names this login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+}
+
+/// `[[subscription]]` (ADR 0103): an agent login muxa names. The login
+/// itself stays with the agent; muxa keeps the name and the folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubscriptionSpec {
+    pub name: String,
+    /// `claude-code` or `codex`.
+    pub agent: String,
+    /// As written, `~/` included.
+    pub home: String,
+    /// A label only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+}
+
+/// `[build]`: where Task worktrees put their build output (ADR 0102).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsBuild {
+    /// As written, `~/` included; None turns the build disk off.
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// As written (`3d`); None means three days.
+    #[serde(default)]
+    pub drop_after: Option<String>,
+    /// `dir` is a folder on the host now. A disk that is not mounted is not.
+    #[serde(default)]
+    pub dir_found: bool,
+    /// Paths every worktree links too, beside the ones found from each
+    /// repo's build files, when the repo ignores them.
+    #[serde(default)]
+    pub extra_paths: Vec<String>,
 }
 
 /// The Capture assistant: no Workspace, no connections (ADR 0084).
@@ -55,6 +113,9 @@ pub struct SettingsAssistant {
     /// `assistant/memory.md`, read only: the assistant writes it.
     #[serde(default)]
     pub memory_text: Option<String>,
+    /// The Claude subscriptions it runs on, in order (ADR 0103).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +148,13 @@ pub struct SettingsWorkspace {
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     #[serde(default, skip_serializing_if = "BotRules::is_empty")]
     pub bot_rules: BotRules,
+    /// The subscriptions its agents use, in order (ADR 0103).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<String>,
+    /// False: its agents keep the first login of their kind, also when it
+    /// is full; the user switches by the order (ADR 0103 §4).
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub switch_subscriptions: bool,
     #[serde(default)]
     pub connections: Vec<SettingsConnection>,
     #[serde(default)]
@@ -235,6 +303,10 @@ pub struct BotSpec {
     /// without the wrapper, e.g. `/path/collect.sh delivery:*` (ADR 0088).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,
+    /// Its own order of its Workspace's subscriptions (ADR 0103). Empty:
+    /// the Workspace's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscriptions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -353,6 +425,10 @@ pub enum SettingsOp {
         claude_connectors: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bot_rules: Option<BotRules>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subscriptions: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        switch_subscriptions: Option<bool>,
     },
     WorkspaceRemove {
         workspace: String,
@@ -463,6 +539,48 @@ pub enum SettingsOp {
         worker: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         soul_text: Option<String>,
+        /// Absent keeps the list; present replaces it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subscriptions: Option<Vec<String>>,
+    },
+    /// A named agent login (ADR 0103).
+    SubscriptionAdd {
+        subscription: SubscriptionSpec,
+    },
+    SubscriptionUpdate {
+        subscription: SubscriptionSpec,
+    },
+    /// Refused while a Workspace lists it.
+    SubscriptionRemove {
+        name: String,
+    },
+    /// Makes the login a Workspace's env names a subscription called `name`
+    /// (one with that folder already is reused), takes the variable out of
+    /// the env, and puts the subscription first in the Workspace's list.
+    SubscriptionAdopt {
+        workspace: String,
+        /// `claude-code` or `codex`: which variable.
+        agent: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plan: Option<String>,
+    },
+    /// `[build]` (ADR 0102); `null` removes a field.
+    BuildUpdate {
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        dir: Option<Option<String>>,
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        drop_after: Option<Option<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extra_paths: Option<Vec<String>>,
     },
     WorkerAdd {
         worker: WorkerSpec,
@@ -502,6 +620,11 @@ impl SettingsOp {
             Self::BotRename { .. } => "bot-rename",
             Self::BotMemoryRestore { .. } => "bot-memory-restore",
             Self::AssistantUpdate { .. } => "assistant-update",
+            Self::SubscriptionAdd { .. } => "subscription-add",
+            Self::SubscriptionUpdate { .. } => "subscription-update",
+            Self::SubscriptionRemove { .. } => "subscription-remove",
+            Self::SubscriptionAdopt { .. } => "subscription-adopt",
+            Self::BuildUpdate { .. } => "build-update",
             Self::WorkerAdd { .. } => "worker-add",
             Self::WorkerUpdate { .. } => "worker-update",
             Self::WorkerRemove { .. } => "worker-remove",
@@ -532,13 +655,26 @@ impl SettingsOp {
             | Self::BotUpdate { workspace, .. }
             | Self::BotRemove { workspace, .. }
             | Self::BotRename { workspace, .. }
-            | Self::BotMemoryRestore { workspace, .. } => Some(workspace),
+            | Self::BotMemoryRestore { workspace, .. }
+            | Self::SubscriptionAdopt { workspace, .. } => Some(workspace),
             Self::AssistantUpdate { .. }
+            | Self::SubscriptionAdd { .. }
+            | Self::SubscriptionUpdate { .. }
+            | Self::SubscriptionRemove { .. }
+            | Self::BuildUpdate { .. }
             | Self::WorkerAdd { .. }
             | Self::WorkerUpdate { .. }
             | Self::WorkerRemove { .. } => None,
         }
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(v: &bool) -> bool {
+    *v
 }
 
 #[cfg(test)]
@@ -612,5 +748,29 @@ mod tests {
             json!({"name": "gh", "env": "GH_TOKEN", "account": null, "access": "read",
                 "secret": "missing"})
         );
+    }
+
+    #[test]
+    fn build_update_keeps_absent_fields_and_null_clears() {
+        let op: SettingsOp =
+            serde_json::from_value(json!({"op": "build-update", "dir": null})).unwrap();
+        assert_eq!(
+            op,
+            SettingsOp::BuildUpdate {
+                dir: Some(None),
+                drop_after: None,
+                extra_paths: None,
+            }
+        );
+        let set = SettingsOp::BuildUpdate {
+            dir: Some(Some("/ssd/build".into())),
+            drop_after: None,
+            extra_paths: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&set).unwrap(),
+            json!({"op": "build-update", "dir": "/ssd/build"})
+        );
+        assert_eq!(set.workspace(), None);
     }
 }

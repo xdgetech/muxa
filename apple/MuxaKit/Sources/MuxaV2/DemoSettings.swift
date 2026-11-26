@@ -32,8 +32,14 @@ extension Settings {
         case let .workspaceAdd(name, root, repos):
             guard !workspaces.contains(where: { $0.name == name }) else { throw refusal("\(name) exists") }
             workspaces.append(SettingsWorkspace(name: name, root: root, repos: repos))
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
+                                  subscriptions, switchSubscriptions):
+            if let missing = subscriptions?.first(where: { name in !self.subscriptions.contains { $0.name == name } }) {
+                throw refusal("subscriptions: \(missing) is not a [[subscription]]")
+            }
             try edit(workspace) { w in
+                if let subscriptions { w.subscriptions = subscriptions }
+                if let switchSubscriptions { w.switchSubscriptions = switchSubscriptions }
                 if let botRules { w.botRules = botRules }
                 if let claudeConnectors { w.claudeConnectors = claudeConnectors }
                 if let root { w.root = root }
@@ -136,10 +142,43 @@ extension Settings {
                 let at = try find(w.bots, name, \.name)
                 guard version >= 1, version <= w.bots[at].memoryVersions else { throw refusal("no kept memory \(version)") }
             }
-        case let .assistantUpdate(enabled, worker, text):
+        case let .assistantUpdate(enabled, worker, text, subscriptions):
             let old = assistant ?? SettingsAssistant()
             assistant = SettingsAssistant(enabled: enabled, worker: worker, soulText: text ?? old.soulText,
-                                          memoryText: old.memoryText)
+                                          memoryText: old.memoryText, subscriptions: subscriptions ?? old.subscriptions)
+        case let .subscriptionAdd(subscription):
+            try checkAgent(subscription)
+            guard !subscriptions.contains(where: { $0.name == subscription.name }) else {
+                throw refusal("\(subscription.name) exists")
+            }
+            subscriptions.append(subscription)
+        case let .subscriptionUpdate(subscription):
+            try checkAgent(subscription)
+            subscriptions[try find(subscriptions, subscription.name, \.name)] = subscription
+        case let .subscriptionAdopt(workspace, agent, name, plan):
+            let key = agent == "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
+            try edit(workspace) { w in
+                guard w.agent.env.contains(where: { $0.key == key }) else { throw refusal("no env \(key)") }
+                w.agent.env.removeAll { $0.key == key }
+                w.subscriptions.removeAll { $0 == name }
+                w.subscriptions.insert(name, at: 0)
+            }
+            foundLogins.removeAll { $0.workspace == workspace }
+            if !subscriptions.contains(where: { $0.name == name }) {
+                // The demo keeps no env value, so the folder is a stand-in.
+                subscriptions.append(SubscriptionSpec(name: name, agent: agent, home: "~/.\(name)", plan: plan))
+            }
+        case let .subscriptionRemove(name):
+            if let w = workspaces.first(where: { $0.subscriptions.contains(name) }) {
+                throw refusal("\(w.name) still lists \(name)")
+            }
+            subscriptions.remove(at: try find(subscriptions, name, \.name))
+        case let .buildUpdate(dir, dropAfter, extraPaths):
+            let old = build ?? SettingsBuild()
+            let newDir = dir.applied(to: old.dir)
+            // The demo host has every folder it is given.
+            build = SettingsBuild(dir: newDir, dropAfter: dropAfter.applied(to: old.dropAfter), dirFound: newDir != nil,
+                                  extraPaths: extraPaths ?? old.extraPaths)
         case let .workerAdd(worker):
             guard !workers.contains(where: { $0.name == worker.name }) else { throw refusal("\(worker.name) exists") }
             workers.append(worker)
@@ -161,6 +200,11 @@ extension Settings {
         let at = try index(workspace)
         try f(&workspaces[at])
     }
+}
+
+/// A subscription is a Claude Code or a Codex login (ADR 0103).
+private func checkAgent(_ s: SubscriptionSpec) throws {
+    guard s.agent == "claude-code" || s.agent == "codex" else { throw refusal("agent is claude-code or codex") }
 }
 
 /// `on` is only `review`, and such a Routine has no time (ADR 0084).

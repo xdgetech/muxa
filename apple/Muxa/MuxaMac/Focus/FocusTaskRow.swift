@@ -110,7 +110,7 @@ struct FocusTaskRow: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// Only what the program reported (OSC 7501), or `paused` (ADR 0102); a
+    /// Only what the program reported (OSC 7501), or `paused` (ADR 0104); a
     /// Needs-you row keeps its own word, `waiting` or `blocked`.
     private var state: String? {
         if taskState == .paused { return TaskState.paused.title.lowercased() }

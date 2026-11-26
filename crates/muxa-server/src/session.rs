@@ -21,11 +21,11 @@ use tokio::sync::{mpsc, oneshot, watch};
 use crate::attachment::{Attachment, Checked, Cmd, Link};
 use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
-use crate::shells;
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::uploads;
 use crate::wire::{self, Incoming};
 use crate::{inbox, item_actions, migrate, paused, task_actions, task_items, usage};
+use crate::{logins, shells};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -315,7 +315,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
             Ok(msg) => msg,
             Err(e) => {
                 // A request this server does not know still gets its reply, so a
-                // newer client does not wait for ever (ADR 0102).
+                // newer client does not wait for ever (ADR 0104).
                 self.error(
                     request_id(payload),
                     ErrorCode::BadRequest,
@@ -437,6 +437,18 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Ok(()) => self.reply(id, Reply::Empty {}),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
+            ClientMsg::LoginStart { id, subscription } => {
+                match logins::start(self.backend, self.host, &subscription).await {
+                    Ok((t, existing)) => self.reply(
+                        id,
+                        Reply::Started {
+                            terminal: to_wire(t),
+                            existing,
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
             ClientMsg::TaskShell { id, terminal } => {
                 match shells::start(self.backend, self.host, &terminal).await {
                     Ok(t) => self.reply(
@@ -538,6 +550,28 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
             },
             ClientMsg::Workspaces { id } => self.workspaces(id).await,
+            ClientMsg::Subscriptions { id } => match self.host.subscriptions().await {
+                Ok(subscriptions) => self.reply(id, Reply::Subscriptions { subscriptions }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
+            ClientMsg::TokenUsage { id, day } => match self.host.token_usage(day).await {
+                Ok(token_usage) => self.reply(id, Reply::TokenUsage { token_usage }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
+            ClientMsg::Disk { id } => self.disk(id).await,
+            ClientMsg::DiskClean {
+                id,
+                paths,
+                force,
+                dry_run,
+            } => {
+                let clean = crate::tasks::DiskClean {
+                    paths,
+                    force,
+                    dry_run,
+                };
+                self.disk_clean(id, clean).await
+            }
             ClientMsg::InboxApprove { id, item, worktree } => {
                 let mode = worktree.unwrap_or_default();
                 let done =
@@ -583,7 +617,12 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.inbox_reply(id, done);
             }
             ClientMsg::Settings { id } => match self.host.settings().await {
-                Ok(settings) => self.reply(id, Reply::Settings { settings }),
+                Ok(settings) => self.reply(
+                    id,
+                    Reply::Settings {
+                        settings: Box::new(settings),
+                    },
+                ),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
             ClientMsg::SettingsUpdate { id, revision, ops } => {
@@ -612,7 +651,12 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                                 tracing::warn!(error = %e, "a renamed Bot's items keep the old name");
                             }
                         }
-                        self.reply(id, Reply::Settings { settings })
+                        self.reply(
+                            id,
+                            Reply::Settings {
+                                settings: Box::new(settings),
+                            },
+                        )
                     }
                     Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
                 }
@@ -750,6 +794,44 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.reply(id, Reply::Workspaces { workspaces });
             }
             Err(e) => self.error(Some(id), code_of(&e), e.to_string()),
+        }
+    }
+
+    async fn disk(&mut self, id: u64) {
+        let holds = match crate::holds::holds(self.backend, self.inbox).await {
+            Ok(h) => h,
+            Err(e) => return self.error(Some(id), ErrorCode::Backend, e),
+        };
+        match self.host.disk(&holds).await {
+            Ok(rows) => self.reply(id, Reply::Disk { rows }),
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+        }
+    }
+
+    /// Never without the terminals: a place that cannot be shown free stays.
+    async fn disk_clean(&mut self, id: u64, clean: crate::tasks::DiskClean) {
+        if clean.force && clean.paths.is_empty() {
+            return self.error(
+                Some(id),
+                ErrorCode::BadRequest,
+                "force needs the paths to remove".into(),
+            );
+        }
+        let holds = match crate::holds::holds(self.backend, self.inbox).await {
+            Ok(h) => h,
+            Err(e) => return self.error(Some(id), ErrorCode::Backend, e),
+        };
+        let dry_run = clean.dry_run;
+        match self.host.disk_clean(&holds, clean).await {
+            Ok(done) => self.reply(
+                id,
+                Reply::DiskCleaned {
+                    dry_run,
+                    removed: done.removed,
+                    kept: done.kept,
+                },
+            ),
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
         }
     }
 

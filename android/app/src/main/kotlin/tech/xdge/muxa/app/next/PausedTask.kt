@@ -41,7 +41,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-/** What a Task row's long press offers (ADR 0102): Pause Task while it runs, Resume Task while it is paused. */
+/** What a Task row's long press offers (ADR 0104): Pause Task while it runs, Resume Task while it is paused. */
 class RowMenu(val paused: Boolean, val pause: () -> Unit, val resume: () -> Unit)
 
 /** The row menu of [t] in [groups]; null for a terminal that is not a Task's agent. [resumed] gets the new agent. */

@@ -254,7 +254,7 @@ impl Book {
     }
 
     /// Points the open items of the agent `from` at `to`: a resumed Task's
-    /// new agent (ADR 0102). Done items keep the old one.
+    /// new agent (ADR 0104). Done items keep the old one.
     pub fn retarget(&mut self, from: &str, to: &str) {
         let mut changed = false;
         for s in &mut self.items {

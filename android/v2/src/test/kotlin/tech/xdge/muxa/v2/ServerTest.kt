@@ -186,6 +186,21 @@ class ServerTest {
     }
 
     @Test
+    fun diskAsksTheHostAndForceNeedsPaths() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(emptyList<DiskRow>(), c.disk())
+            try {
+                c.diskClean(force = true)
+                fail("force without paths was accepted")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
     fun workspacesListTheHostsWorkspace() = runBlocking {
         withTimeout(10_000) {
             val c = connect()
@@ -264,6 +279,8 @@ class ServerTest {
             val (routines, problems, off) = c.routines()
             assertEquals(listOf("digest", "audit"), routines.map { it.name })
             assertEquals("09:00", routines[0].at)
+            assertEquals(1_700_003_600L, routines[0].waitingUntil)
+            assertEquals(null, routines[1].waitingUntil)
             assertTrue(problems.isEmpty())
             assertEquals(listOf(RoutinesOff("lab", 2)), off)
             c.runRoutine("Personal", "audit")
@@ -273,6 +290,40 @@ class ServerTest {
             } catch (e: V2Error.Refused) {
                 assertEquals("conflict", e.code)
             }
+            c.close()
+        }
+    }
+
+    @Test
+    fun subscriptionsComeWithTheirLimits() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(
+                listOf(
+                    SubscriptionUsage(
+                        "claude-work", "claude-code", "Max 20x",
+                        listOf(UsageWindow(300, 82, 1_764_014_400), UsageWindow(10_080, 31, 1_764_320_400)),
+                        1_764_000_120,
+                    ),
+                ),
+                c.subscriptions(),
+            )
+            c.close()
+        }
+    }
+
+    @Test
+    fun tokenUsageComesByWorkspaceAndTask() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(
+                TokenUsage(
+                    "2026-11-24",
+                    listOf(WorkspaceTokens("Personal", 1_200_000, 9_000_000, 84_000)),
+                    listOf(TaskTokens("Personal", "/work/demo", "demo", 800_000, 6_000_000, 60_000)),
+                ),
+                c.tokenUsage("2026-11-24"),
+            )
             c.close()
         }
     }
@@ -301,6 +352,9 @@ class ServerTest {
                     ),
                 ),
                 workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
+                subscriptions = listOf(SubscriptionSpec("claude-work", "claude-code", "~/.claude-work", plan = "Max 20x")),
+                foundLogins = listOf(FoundLogin("claude-code", workspace = "Personal")),
+                build = SettingsBuild(dir = "/ssd/build", dropAfter = null, dirFound = true),
             )
             assertEquals(expected, c.settings())
             val ops = listOf(
@@ -312,6 +366,14 @@ class ServerTest {
             val ws = after.workspaces.single()
             assertEquals(listOf("CLAUDE_CONFIG_DIR", "FOO"), ws.agent.env.map { it.key })
             assertEquals(SecretState.SET, ws.connections.single { it.name == "linear" }.secret)
+            val build = c.settingsUpdate(
+                after.revision,
+                listOf(
+                    SettingsOp.BuildUpdate(dir = Patch.Clear, dropAfter = Patch.Set("12h")),
+                    SettingsOp.BuildUpdate(extraPaths = listOf("out")),
+                ),
+            )
+            assertEquals(SettingsBuild(dir = null, dropAfter = "12h", dirFound = false, extraPaths = listOf("out")), build.build)
             val text = json.encodeToString(Settings.serializer(), after)
             assertTrue(text, "s3cret" !in text && "bar" !in text)
             try {

@@ -3,8 +3,10 @@
 //! [`muxa_backend::SessionBackend`]. It never logs terminal bytes.
 
 mod attachment;
+pub mod holds;
 mod inbox;
 mod item_actions;
+pub mod logins;
 pub mod memory_settings;
 mod migrate;
 pub mod paused;
@@ -21,10 +23,11 @@ mod uploads;
 mod usage;
 mod wire;
 
+pub use logins::LoginLaunch;
 pub use muxa_inbox::Inbox;
 pub use paused::MemoryPaused;
 pub use reader::ReaderOpen;
 pub use session::{Config, PARK, ServeError, Services, serve};
 pub use sessions::Sessions;
 pub use task_items::watch_tasks;
-pub use tasks::{Host, Prepared, RoutineList, TaskError, TaskSpec};
+pub use tasks::{DiskClean, DiskCleaned, Host, Prepared, RoutineList, TaskError, TaskSpec};

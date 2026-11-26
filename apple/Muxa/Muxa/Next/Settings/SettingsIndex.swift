@@ -7,6 +7,12 @@ enum SettingsPlace: Hashable {
     case workers
     /// The Capture assistant (ADR 0084).
     case assistant
+    /// Agent logins and onboarding (ADR 0103).
+    case subscriptions
+    /// The plan limits of each subscription.
+    case usage
+    /// The build disk (ADR 0102).
+    case build
     /// How terminals look on this device.
     case terminal
 }
@@ -70,12 +76,28 @@ struct SettingsIndex: View {
             Text("The host's workspaces.toml and each .muxa/routines.toml. Edits by hand on the host still work.")
         }
         .listRowBackground(Palette.card)
+        Section {
+            row(.subscriptions, id: "settings.subscriptions") {
+                LabeledContent("Subscriptions", value: Self.subscriptionsSummary(s.settings))
+            }
+            row(.usage, id: "settings.usage") {
+                LabeledContent("Usage", value: PlanWindow.line(s.planUsage.first))
+            }
+        } header: {
+            Text("Subscriptions")
+        }
+        .listRowBackground(Palette.card)
         Section("Workers") {
             row(.workers, id: "settings.workers") {
                 LabeledContent("Workers", value: "\(s.settings?.workers.count ?? 0)")
             }
             row(.assistant, id: "settings.assistant") {
                 LabeledContent("Capture assistant", value: s.settings?.assistant?.enabled == true ? "on" : "off")
+            }
+            if let build = s.settings?.build {
+                row(.build, id: "settings.build") {
+                    LabeledContent("Build disk", value: Self.summary(build))
+                }
             }
         }
         .listRowBackground(Palette.card)
@@ -93,6 +115,18 @@ struct SettingsIndex: View {
         .buttonStyle(.plain)
         .listRowBackground(picked == place ? Palette.rowSelected : Palette.card)
         .accessibilityIdentifier(id)
+    }
+
+    /// `2`, or `1 login found` while onboarding has something to add.
+    static func subscriptionsSummary(_ s: MuxaV2.Settings?) -> String {
+        let found = s?.foundLogins.count ?? 0
+        if found > 0 { return found == 1 ? "1 login found" : "\(found) logins found" }
+        return "\(s?.subscriptions.count ?? 0)"
+    }
+
+    static func summary(_ b: SettingsBuild) -> String {
+        guard b.dir != nil else { return "off" }
+        return b.dirFound ? "on" : "not found"
     }
 
     static func summary(_ w: SettingsWorkspace) -> String {
@@ -113,6 +147,9 @@ struct SettingsDetail: View {
         case .workspace(let name): WorkspaceSettings(name: name)
         case .workers: WorkersSettings()
         case .assistant: AssistantSettings()
+        case .subscriptions: SubscriptionsSettings()
+        case .usage: PlanUsageView()
+        case .build: BuildSettings()
         case .terminal: TerminalSettingsForm().navigationTitle("Appearance")
         }
     }

@@ -746,3 +746,242 @@ fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
 
 #[path = "tests_bots.rs"]
 mod bots;
+
+#[test]
+fn the_build_disk_is_edited_and_checked() {
+    let h = host("build");
+    let s = h.store.view().unwrap();
+    let build = s.build.clone().unwrap();
+    assert_eq!((build.dir, build.dir_found), (None, false));
+    let ssd = h.dir.join("ssd");
+    fs::create_dir_all(&ssd).unwrap();
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "build-update", "dir": ssd, "drop_after": "12h", "extra_paths": ["out"]}),
+            )],
+        )
+        .unwrap();
+    let build = s.build.clone().unwrap();
+    assert!(build.dir_found);
+    assert_eq!(build.drop_after.as_deref(), Some("12h"));
+    assert_eq!(build.extra_paths, ["out"]);
+    let after = text(&h);
+    assert!(after.contains("[build]\n"), "{after}");
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert_eq!(loaded.host_build().drop_after, 12 * 3600);
+    assert_eq!(loaded.host_build().extra_paths, [PathBuf::from("out")]);
+    for bad in [
+        json!({"dir": "relative/dir"}),
+        json!({"extra_paths": ["../up"]}),
+    ] {
+        let mut o = bad.clone();
+        o["op"] = json!("build-update");
+        let refused = h.store.update(&s.revision, vec![op(o)]);
+        assert!(
+            matches!(refused, Err(SettingsError::Invalid(_))),
+            "{bad}: {refused:?}"
+        );
+    }
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "build-update", "dir": null, "drop_after": null, "extra_paths": []}),
+            )],
+        )
+        .unwrap();
+    assert_eq!(s.build.unwrap().dir, None);
+    assert!(!text(&h).contains("[build]\n"));
+}
+
+#[test]
+fn a_build_disk_muxa_may_not_write_to_is_not_saved() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = host("build-denied");
+    let s = h.store.view().unwrap();
+    let ssd = h.dir.join("ssd");
+    fs::create_dir_all(&ssd).unwrap();
+    fs::set_permissions(&ssd, fs::Permissions::from_mode(0o500)).unwrap();
+    let refused = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "build-update", "dir": ssd}))],
+    );
+    fs::set_permissions(&ssd, fs::Permissions::from_mode(0o700)).unwrap();
+    let Err(SettingsError::Invalid(why)) = refused else {
+        panic!("{refused:?}");
+    };
+    assert!(why.contains(&ssd.display().to_string()), "{why}");
+    assert!(why.contains("Privacy & Security"), "{why}");
+    assert!(!text(&h).contains("[build]\n"));
+}
+
+/// ADR 0103: the onboarding's "Add all" in one update. The Workspace's env
+/// login becomes a subscription it lists, and the loader still accepts it.
+#[test]
+fn a_login_becomes_a_subscription_that_workspaces_bots_and_the_assistant_use() {
+    let h = host("subscriptions");
+    let rev = h.store.view().unwrap().revision;
+    let add = json!({"op": "subscription-add", "subscription":
+        {"name": "work", "agent": "claude-code", "home": "~/.claude-work", "plan": "Max 20x"}});
+    // Both the env and the list would pick a login: refused, nothing written.
+    let before = text(&h);
+    let refused = h.store.update(
+        &rev,
+        vec![
+            op(add.clone()),
+            op(json!({"op": "workspace-update", "workspace": "Work", "subscriptions": ["work"]})),
+        ],
+    );
+    assert!(
+        matches!(&refused, Err(SettingsError::Invalid(m)) if m.contains("env CLAUDE_CONFIG_DIR and subscriptions")),
+        "{refused:?}"
+    );
+    assert_eq!(text(&h), before);
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![
+                op(add),
+                op(json!({"op": "env-unset", "workspace": "Work", "key": "CLAUDE_CONFIG_DIR"})),
+                op(json!({"op": "workspace-update", "workspace": "Work", "subscriptions": ["work"]})),
+                op(json!({"op": "bot-add", "workspace": "Work",
+                    "bot": {"name": "triage", "enabled": true, "subscriptions": ["work"]}})),
+                op(json!({"op": "assistant-update", "enabled": false, "subscriptions": ["work"]})),
+            ],
+        )
+        .unwrap();
+    assert_eq!(s.subscriptions.len(), 1);
+    assert_eq!(s.subscriptions[0].plan.as_deref(), Some("Max 20x"));
+    let work = &s.workspaces[0];
+    assert_eq!(work.subscriptions, ["work"]);
+    assert_eq!(work.bots[0].spec.subscriptions, ["work"]);
+    assert_eq!(s.assistant.as_ref().unwrap().subscriptions, ["work"]);
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert_eq!(loaded.subscriptions()[0].home, h.dir.join(".claude-work"));
+    assert_eq!(
+        loaded.bot("Work", "triage").unwrap().subscriptions,
+        ["work"]
+    );
+    assert!(text(&h).contains("# My workspaces."), "comments stay");
+
+    // Listed by a Workspace: it stays. Unlisted: it goes.
+    let removed = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "subscription-remove", "name": "work"}))],
+    );
+    assert!(
+        matches!(removed, Err(SettingsError::Invalid(_))),
+        "{removed:?}"
+    );
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![
+                op(json!({"op": "workspace-update", "workspace": "Work", "subscriptions": []})),
+                op(json!({"op": "subscription-remove", "name": "work"})),
+            ],
+        )
+        .unwrap();
+    assert!(s.subscriptions.is_empty() && s.workspaces[0].subscriptions.is_empty());
+    assert!(!text(&h).contains("[[subscription]]"));
+}
+
+/// ADR 0103 §7: onboarding finds Work's env login without showing its path,
+/// and one op makes it a subscription Work lists.
+#[test]
+fn a_workspaces_env_login_is_found_and_adopted_without_its_path_crossing_the_wire() {
+    let h = host("adopt");
+    let s = h.store.view().unwrap();
+    assert_eq!(
+        s.found_logins,
+        [muxa_protocol::settings::FoundLogin {
+            agent: "claude-code".into(),
+            home: None,
+            workspace: Some("Work".into()),
+        }]
+    );
+    fs::create_dir_all(h.dir.join(".codex")).unwrap();
+    let found = h.store.view().unwrap().found_logins;
+    assert_eq!(
+        found[0].home.as_deref(),
+        Some("~/.codex"),
+        "a default folder that exists"
+    );
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(json!({"op": "subscription-adopt", "workspace": "Work",
+                "agent": "claude-code", "name": "work", "plan": "Max 20x"}))],
+        )
+        .unwrap();
+    assert_eq!(s.subscriptions[0].home, "~/.claude-work");
+    assert_eq!(s.workspaces[0].subscriptions, ["work"]);
+    assert!(
+        !s.workspaces[0]
+            .agent
+            .env
+            .iter()
+            .any(|e| e.key == "CLAUDE_CONFIG_DIR")
+    );
+    assert!(
+        s.workspaces[0]
+            .agent
+            .env
+            .iter()
+            .any(|e| e.key == "API_TOKEN"),
+        "other env stays"
+    );
+    assert!(s.found_logins.iter().all(|f| f.workspace.is_none()));
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert_eq!(loaded.subscriptions()[0].home, h.dir.join(".claude-work"));
+    let refused = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "subscription-adopt", "workspace": "Home",
+            "agent": "claude-code", "name": "home"}))],
+    );
+    assert!(
+        matches!(refused, Err(SettingsError::Invalid(m)) if m.contains("has no CLAUDE_CONFIG_DIR"))
+    );
+}
+
+/// ADR 0103 §4: only switching off is written; on is the default again.
+#[test]
+fn a_workspaces_switching_is_written_only_when_off() {
+    let h = host("switching");
+    let rev = h.store.view().unwrap().revision;
+    assert!(h.store.view().unwrap().workspaces[1].switch_subscriptions);
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![op(
+                json!({"op": "workspace-update", "workspace": "Home", "switch_subscriptions": false}),
+            )],
+        )
+        .unwrap();
+    assert!(!s.workspaces[1].switch_subscriptions);
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert!(!loaded.get("Home").unwrap().switch_subscriptions);
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "workspace-update", "workspace": "Home", "switch_subscriptions": true}),
+            )],
+        )
+        .unwrap();
+    assert!(s.workspaces[1].switch_subscriptions);
+    assert!(
+        !fs::read_to_string(&h.file)
+            .unwrap()
+            .contains("switch_subscriptions")
+    );
+}

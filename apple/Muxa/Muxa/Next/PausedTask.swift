@@ -1,7 +1,7 @@
 import MuxaV2
 import SwiftUI
 
-/// A paused Task in place of its panes (ADR 0102): what it was, when it
+/// A paused Task in place of its panes (ADR 0104): what it was, when it
 /// paused, Resume and Close Task. Each platform asks before the close.
 struct PausedTaskView: View {
     @Environment(NextModel.self) private var model

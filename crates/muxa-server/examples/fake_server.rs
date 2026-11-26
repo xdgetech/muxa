@@ -22,7 +22,8 @@ use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
 use muxa_protocol::settings::{
     Access, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SecretState, Settings, SettingsAgent,
-    SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine, SettingsWorkspace, WorkerSpec,
+    SettingsBuild, SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine,
+    SettingsWorkspace, SubscriptionSpec, WorkerSpec,
 };
 use muxa_protocol::v2::{
     ChatUpdate, LoopChecks, LoopInfo, LoopSpec, Paused, ReaderContent, ReaderEntry, ReaderKind,
@@ -72,6 +73,7 @@ impl Host for FakeHost {
             connections: spec.connections.clone(),
             mcp: spec.mcp.clone(),
             bot: spec.bot.clone(),
+            subscription: None,
         })
     }
 
@@ -107,6 +109,71 @@ impl Host for FakeHost {
 
     async fn workspaces(&self) -> Vec<String> {
         vec!["Personal".into()]
+    }
+
+    async fn login_launch(
+        &self,
+        subscription: &str,
+    ) -> Result<muxa_server::LoginLaunch, TaskError> {
+        if subscription != "claude-work" {
+            return Err(TaskError::Invalid(format!(
+                "no subscription named {subscription:?}"
+            )));
+        }
+        Ok(muxa_server::LoginLaunch {
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "echo log in; sleep 600".into(),
+            ],
+            ..Default::default()
+        })
+    }
+
+    async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
+        Ok(vec![muxa_protocol::v2::SubscriptionUsage {
+            name: "claude-work".into(),
+            agent: "claude-code".into(),
+            plan: Some("Max 20x".into()),
+            windows: vec![
+                muxa_protocol::v2::UsageWindow {
+                    minutes: 300,
+                    used_percent: 82,
+                    resets_at: 1_764_014_400,
+                },
+                muxa_protocol::v2::UsageWindow {
+                    minutes: 10_080,
+                    used_percent: 31,
+                    resets_at: 1_764_320_400,
+                },
+            ],
+            as_of: Some(1_764_000_120),
+        }])
+    }
+
+    async fn token_usage(
+        &self,
+        day: Option<String>,
+    ) -> Result<muxa_protocol::v2::TokenUsage, TaskError> {
+        use muxa_protocol::v2::{TaskTokens, TokenUsage, Tokens, WorkspaceTokens};
+        let tokens = |input, cached, output| Tokens {
+            input,
+            cached,
+            output,
+        };
+        Ok(TokenUsage {
+            day: day.unwrap_or_else(|| "2026-11-25".into()),
+            workspaces: vec![WorkspaceTokens {
+                workspace: "Personal".into(),
+                tokens: tokens(1_200_000, 9_000_000, 84_000),
+            }],
+            tasks: vec![TaskTokens {
+                workspace: "Personal".into(),
+                dir: "/work/demo".into(),
+                title: "demo".into(),
+                tokens: tokens(800_000, 6_000_000, 60_000),
+            }],
+        })
     }
 
     async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
@@ -150,9 +217,17 @@ impl Host for FakeHost {
             last: None,
             bot: None,
             on: None,
+            waiting_until: None,
         };
         Ok(RoutineList {
-            routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
+            routines: vec![
+                // Its logins are full: the due run waits for the reset (ADR 0103 §9).
+                muxa_protocol::v2::Routine {
+                    waiting_until: Some(1_700_003_600),
+                    ..routine("digest", Some("09:00"))
+                },
+                routine("audit", None),
+            ],
             problems: vec![],
             off: vec![muxa_protocol::v2::RoutinesOff {
                 workspace: "lab".into(),
@@ -320,6 +395,7 @@ fn fake_loop(terminal: &str, state: &str, reason: Option<&str>) -> LoopInfo {
         since: 1,
         reason: reason.map(str::to_owned),
         last_check: None,
+        resumes_at: None,
     }
 }
 
@@ -329,6 +405,18 @@ fn start_settings() -> Settings {
         revision: "1".into(),
         read_only: false,
         problem: None,
+        // Personal's env names its login (`CLAUDE_CONFIG_DIR`); onboarding offers it.
+        found_logins: vec![muxa_protocol::settings::FoundLogin {
+            agent: "claude-code".into(),
+            home: None,
+            workspace: Some("Personal".into()),
+        }],
+        subscriptions: vec![SubscriptionSpec {
+            name: "claude-work".into(),
+            agent: "claude-code".into(),
+            home: "~/.claude-work".into(),
+            plan: Some("Max 20x".into()),
+        }],
         workers: vec![WorkerSpec {
             name: "reviewer".into(),
             description: Some("Reviews diffs".into()),
@@ -359,6 +447,8 @@ fn start_settings() -> Settings {
             direct_writes: false,
             claude_connectors: false,
             bot_rules: Default::default(),
+            subscriptions: Vec::new(),
+            switch_subscriptions: true,
             connections: vec![SettingsConnection {
                 spec: ConnectionSpec {
                     name: "github".into(),
@@ -400,6 +490,12 @@ fn start_settings() -> Settings {
             routines_problem: None,
         }],
         assistant: None,
+        build: Some(SettingsBuild {
+            dir: Some("/ssd/build".into()),
+            drop_after: None,
+            dir_found: true,
+            extra_paths: Vec::new(),
+        }),
     }
 }
 

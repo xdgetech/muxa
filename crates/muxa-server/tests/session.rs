@@ -39,6 +39,26 @@ impl Host for FakeTasks {
         Ok(format!(".muxa/uploads/{name}"))
     }
 
+    async fn login_launch(
+        &self,
+        subscription: &str,
+    ) -> Result<muxa_server::LoginLaunch, TaskError> {
+        if subscription != "work" {
+            return Err(TaskError::Invalid(format!(
+                "no subscription named {subscription:?}"
+            )));
+        }
+        Ok(muxa_server::LoginLaunch {
+            argv: vec!["/bin/sh".into(), "-l".into(), "-c".into(), "claude".into()],
+            cwd: Some("/home/me".into()),
+            env: [(
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                "/home/me/.claude-work".to_owned(),
+            )]
+            .into(),
+        })
+    }
+
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         if spec.branch().is_some_and(|(_, b)| b == "bad") {
             return Err(TaskError::Invalid("bad is not a branch".into()));
@@ -65,6 +85,7 @@ impl Host for FakeTasks {
             connections: vec!["github".into()],
             mcp: vec!["docs".into()],
             bot: None,
+            subscription: None,
         })
     }
 
@@ -160,6 +181,7 @@ impl Host for FakeTasks {
             last: None,
             bot: None,
             on: None,
+            waiting_until: None,
         };
         Ok(RoutineList {
             routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
@@ -349,6 +371,7 @@ fn loop_info(terminal: &str, state: &str) -> LoopInfo {
         since: 1,
         reason: None,
         last_check: None,
+        resumes_at: None,
     }
 }
 
@@ -1513,6 +1536,26 @@ async fn a_chat_opens_with_the_conversation_and_ends_with_the_agent() {
 }
 
 #[tokio::test]
+async fn disk_asks_the_host_and_force_needs_named_paths() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let reply = request(&mut client, json!({"type": "disk", "id": 1})).await;
+    assert_eq!(reply["rows"], json!([]));
+    let forced = request(
+        &mut client,
+        json!({"type": "disk-clean", "id": 2, "force": true}),
+    )
+    .await;
+    assert_eq!(
+        (forced["type"].as_str(), forced["code"].as_str()),
+        (Some("error"), Some("bad-request"))
+    );
+    let refused = request(&mut client, json!({"type": "disk-clean", "id": 3})).await;
+    assert_eq!(refused["code"], "bad-request");
+}
+
+#[tokio::test]
 async fn workspaces_list_what_a_task_may_use() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;
@@ -2298,4 +2341,41 @@ async fn a_request_the_server_does_not_know_gets_its_id_back() {
         (Some("error"), Some(7), Some("bad-request")),
         "{unknown}"
     );
+}
+
+/// ADR 0103 §7: one login terminal per subscription, labelled so clients
+/// find it; asking again opens the same one.
+#[tokio::test]
+async fn a_subscriptions_login_runs_once_in_its_own_terminal() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let started = request(
+        &mut client,
+        json!({"type": "login-start", "id": 1, "subscription": "work"}),
+    )
+    .await;
+    let t = started["terminal"].clone();
+    assert_eq!(t["labels"]["muxa.kind"], "login", "{started}");
+    assert_eq!(t["labels"]["muxa.subscription"], "work");
+    assert_eq!(started["existing"], false);
+    let launch = backend.launches().pop().unwrap();
+    assert_eq!(launch.argv, ["/bin/sh", "-l", "-c", "claude"]);
+    assert_eq!(launch.env["CLAUDE_CONFIG_DIR"], "/home/me/.claude-work");
+    let again = request(
+        &mut client,
+        json!({"type": "login-start", "id": 2, "subscription": "work"}),
+    )
+    .await;
+    assert_eq!(
+        (again["existing"].clone(), again["terminal"]["id"].clone()),
+        (json!(true), t["id"].clone())
+    );
+    assert_eq!(backend.launches().len(), 1);
+    let unknown = request(
+        &mut client,
+        json!({"type": "login-start", "id": 3, "subscription": "nope"}),
+    )
+    .await;
+    assert_eq!(unknown["code"], "bad-request", "{unknown}");
 }

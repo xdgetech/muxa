@@ -7,6 +7,9 @@ enum MacSettingsPlace: Hashable {
     case workspace(String)
     case workers
     case assistant
+    case subscriptions
+    case usage
+    case build
     case connection
     case keyboard
     case terminal
@@ -48,6 +51,9 @@ struct MacSettingsView: View {
         case .workspace(let name) where workspaces.contains(where: { $0.name == name }): return .workspace(name)
         case .workers where model.settings.settings != nil: return .workers
         case .assistant where model.settings.settings != nil: return .assistant
+        case .subscriptions where model.settings.settings != nil: return .subscriptions
+        case .usage where model.settings.settings != nil: return .usage
+        case .build where model.settings.settings?.build != nil: return .build
         case .connection: return .connection
         case .keyboard: return .keyboard
         case .terminal: return .terminal
@@ -87,6 +93,21 @@ struct MacSettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 MacPaneTitle(title: "Capture assistant", subtitle: "Suggests where each capture goes, on this host.")
                 AssistantSettings().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
+            }
+        case .subscriptions:
+            VStack(alignment: .leading, spacing: 0) {
+                MacPaneTitle(title: "Subscriptions", subtitle: "Agent logins on this host, and who runs on which.")
+                SubscriptionsSettings().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
+            }
+        case .usage:
+            VStack(alignment: .leading, spacing: 0) {
+                MacPaneTitle(title: "Usage", subtitle: "How much of each plan's limits its agents last reported.")
+                PlanUsageView().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
+            }
+        case .build:
+            VStack(alignment: .leading, spacing: 0) {
+                MacPaneTitle(title: "Build disk", subtitle: "Where Task worktrees put their build output, on this host.")
+                BuildSettings().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
             }
         case .connection: MacConnectionPane()
         case .keyboard: MacKeyboardPane()

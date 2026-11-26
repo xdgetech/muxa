@@ -5,7 +5,7 @@ import tech.xdge.muxa.v2.Terminal
 
 /**
  * The live terminals as the Tasks lists show them: muxa's Tasks, then the paused
- * Tasks (ADR 0102), and the other terminals apart. Any other terminal that is not
+ * Tasks (ADR 0104), and the other terminals apart. Any other terminal that is not
  * live is left out; a failed agent already has a Failed Inbox item.
  */
 data class TerminalGroups(val tasks: List<Terminal>, val others: List<Terminal>, val paused: Set<String> = emptySet()) {

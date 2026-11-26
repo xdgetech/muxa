@@ -48,6 +48,20 @@ struct SettingsOpTests {
             (.workerAdd(worker: WorkerSpec(name: "x", agent: "codex", loop: WorkerLoop(check: "make test", maxAttempts: 2))),
              #"{"op":"worker-add","worker":{"agent":"codex","args":[],"loop":{"check":"make test","max_attempts":2},"name":"x"}}"#),
             (.workerRemove(name: "x"), #"{"name":"x","op":"worker-remove"}"#),
+            (.subscriptionAdd(subscription: SubscriptionSpec(name: "work", agent: "claude-code", home: "~/.claude-work",
+                                                             plan: "Max 20x")),
+             #"{"op":"subscription-add","subscription":{"agent":"claude-code","home":"~\/.claude-work","name":"work","plan":"Max 20x"}}"#),
+            (.subscriptionRemove(name: "work"), #"{"name":"work","op":"subscription-remove"}"#),
+            (.subscriptionAdopt(workspace: "w", agent: "claude-code", name: "work", plan: "Max 20x"),
+             #"{"agent":"claude-code","name":"work","op":"subscription-adopt","plan":"Max 20x","workspace":"w"}"#),
+            (.workspaceUpdate(workspace: "w", subscriptions: ["work", "spare"]),
+             #"{"op":"workspace-update","subscriptions":["work","spare"],"workspace":"w"}"#),
+            (.workspaceUpdate(workspace: "w", subscriptions: ["spare", "work"], switchSubscriptions: false),
+             #"{"op":"workspace-update","subscriptions":["spare","work"],"switch_subscriptions":false,"workspace":"w"}"#),
+            (.assistantUpdate(enabled: true, subscriptions: ["work"]),
+             #"{"enabled":true,"op":"assistant-update","subscriptions":["work"]}"#),
+            (.botUpdate(workspace: "w", bot: BotSpec(name: "b", subscriptions: ["spare"])),
+             #"{"bot":{"enabled":true,"name":"b","subscriptions":["spare"]},"op":"bot-update","workspace":"w"}"#),
         ]
         for (op, json) in cases {
             #expect(try wire(op) == json, "\(op.name)")

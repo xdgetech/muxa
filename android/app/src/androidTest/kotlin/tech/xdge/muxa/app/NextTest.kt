@@ -14,8 +14,11 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isOff
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -505,6 +508,64 @@ class NextTest {
     }
 
     @Test
+    fun aFoundLoginBecomesASubscription() {
+        launch()
+        compose.openSettings()
+        compose.onNodeWithTag("settings.found.add.claude-app").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.sub.claude-app"), TIMEOUT)
+        compose.onNodeWithTag("settings.found.add.claude-app").assertDoesNotExist()
+        compose.onNodeWithTag("settings.sub.claude-personal").performScrollTo().assert(hasText("82% of 5 h", substring = true))
+    }
+
+    @Test
+    fun usageShowsEachSubscriptionsLastReport() {
+        launch()
+        compose.openSettings()
+        compose.onNodeWithTag("usage.claude-personal").performScrollTo()
+        // Each window's meter is its own element inside the card.
+        compose.onNode(hasContentDescription("82% of 5 h", substring = true) and hasAnyAncestor(hasTestTag("usage.claude-personal"))).assertExists()
+        compose.onNodeWithTag("usage.claude-spare").performScrollTo()
+            .assert(hasText("No data yet. It shows after the first agent on this login answers."))
+        // Today's tokens: a Task whose agent still runs goes by its name.
+        compose.onNodeWithTag("usage.workspaces").performScrollTo().assert(hasText("1.2M in · 84k out · 9.4M cached", substring = true))
+        compose.onNodeWithTag("usage.task.app-fix-login").performScrollTo().assert(hasText("fix-login"))
+        // Its row opens the Task.
+        compose.onNodeWithTag("usage.task.app-fix-login").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.terminal.t1"), TIMEOUT)
+    }
+
+    /** ADR 0103 §4: Use makes a login Current for the next Tasks; switching when full is the Workspace's choice. */
+    @Test
+    fun useMakesASubscriptionCurrentForNextTasks() {
+        launch()
+        compose.openWorkspaceSettings("Personal")
+        compose.onNodeWithTag("settings.subs.current.claude-personal").performScrollTo()
+        compose.onNodeWithTag("settings.subs.use.claude-spare").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.subs.current.claude-spare"), TIMEOUT)
+        compose.onNodeWithTag("settings.subs.use.claude-personal").assertExists()
+        compose.onNodeWithTag("settings.subs.switch").performScrollTo().assertIsOn().performClick()
+        compose.waitUntil(TIMEOUT) {
+            compose.onAllNodes(hasTestTag("settings.subs.switch") and isOff()).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun startTaskNamesTheSubscriptionItRunsOn() {
+        launch()
+        // app lists no subscription until its env login is adopted.
+        compose.openSettings()
+        compose.onNodeWithTag("settings.found.add.claude-app").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.sub.claude-app"), TIMEOUT)
+        // A tablet's Settings is a sheet over Home.
+        if (compose.onAllNodesWithTag("settings.close").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("settings.close").performClick()
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("home.newtask"), TIMEOUT)
+        compose.onNodeWithTag("home.newtask").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.subscription"), TIMEOUT)
+        compose.onNodeWithTag("task.subscription").performScrollTo().assert(hasText("Runs on claude-app · no data yet"))
+    }
+
+    @Test
     fun aTaskStartsFromTheSheetWithALoop() {
         launch()
         // New Task sits with the Tasks: the phone's Workspaces tab, the tablet's sidebar.
@@ -814,7 +875,7 @@ class NextTest {
 private val isItem = SemanticsMatcher("an Inbox item") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item.") == true }
 
 /** The terminal's screen, which the pane reports as its state. */
-/** A Task row the list marks Paused (ADR 0102). */
+/** A Task row the list marks Paused (ADR 0104). */
 private val isPaused = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Paused")
 
 private val hasTerminalTag = SemanticsMatcher("a terminal's row") { node ->

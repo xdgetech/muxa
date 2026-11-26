@@ -37,6 +37,14 @@ impl Chats {
         }
     }
 
+    /// Reads the adapters' folders again after a settings change (ADR 0103).
+    pub async fn reload_agents(&self) {
+        let registry = Arc::clone(&self.registry);
+        if let Err(e) = tokio::task::spawn_blocking(move || registry.reload()).await {
+            tracing::warn!(error = %e, "agent folders not read again");
+        }
+    }
+
     pub async fn open(&self, dir: &Path) -> Result<(u64, ChatUpdate), TaskError> {
         let (registry, dir) = (Arc::clone(&self.registry), dir.to_path_buf());
         let (source, update) = tokio::task::spawn_blocking(move || {

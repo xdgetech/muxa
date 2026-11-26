@@ -39,6 +39,9 @@ pub const MCP: &str = "muxa.mcp";
 pub const CHECKOUT: &str = "muxa.checkout";
 /// The Bot a talk Task talks with (ADR 0083).
 pub const BOT: &str = "muxa.bot";
+/// The subscription, a named login, the agent runs on (ADR 0103). A restart
+/// keeps it: the conversation lives in that login's folder.
+pub const SUBSCRIPTION: &str = "muxa.subscription";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
@@ -104,6 +107,8 @@ pub struct Prepared {
     pub env: BTreeMap<String, String>,
     /// The Bot of a talk Task (ADR 0083).
     pub bot: Option<String>,
+    /// The subscription the agent runs on (ADR 0103).
+    pub subscription: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -125,6 +130,21 @@ pub enum TaskError {
     /// The host locked its settings.
     #[error("{0}")]
     ReadOnly(String),
+}
+
+/// A `disk-clean` request.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DiskClean {
+    pub paths: Vec<String>,
+    pub force: bool,
+    pub dry_run: bool,
+}
+
+/// What `disk-clean` removed, or would remove on a dry run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DiskCleaned {
+    pub removed: Vec<String>,
+    pub kept: Vec<muxa_protocol::v2::DiskKept>,
 }
 
 /// The host's Routines, and the Workspaces whose Routines cannot be read.
@@ -167,6 +187,49 @@ pub trait Host: Send + Sync {
         async { Ok(Vec::new()) }
     }
 
+    /// What runs for `subscription`'s login terminal (ADR 0103 §7).
+    fn login_launch(
+        &self,
+        _subscription: &str,
+    ) -> impl Future<Output = Result<crate::logins::LoginLaunch, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no subscriptions".into())) }
+    }
+
+    /// Each subscription and the limits its agents last reported (ADR 0103).
+    fn subscriptions(
+        &self,
+    ) -> impl Future<Output = Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError>> + Send
+    {
+        async { Ok(Vec::new()) }
+    }
+
+    /// The tokens agents used on `day` (`YYYY-MM-DD`, else today), by
+    /// Workspace and by Task (ADR 0103 §6).
+    fn token_usage(
+        &self,
+        _day: Option<String>,
+    ) -> impl Future<Output = Result<muxa_protocol::v2::TokenUsage, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host counts no tokens".into())) }
+    }
+
+    /// The disk use of Task places and leftovers (ADR 0102). `holds` says
+    /// which places terminals hold.
+    fn disk(
+        &self,
+        _holds: &crate::holds::Holds,
+    ) -> impl Future<Output = Result<Vec<muxa_protocol::v2::DiskRow>, TaskError>> + Send {
+        async { Ok(Vec::new()) }
+    }
+
+    /// Removes rows of [`Host::disk`]; see `disk-clean`.
+    fn disk_clean(
+        &self,
+        _holds: &crate::holds::Holds,
+        _clean: DiskClean,
+    ) -> impl Future<Output = Result<DiskCleaned, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host cannot clean its disk".into())) }
+    }
+
     /// Whether closing a Task with `places` may go on: with
     /// [`WorktreeMode::Remove`], [`TaskError::WouldLoseWork`] when a branch
     /// worktree has uncommitted or unmerged work. Changes nothing.
@@ -203,7 +266,7 @@ pub trait Host: Send + Sync {
         async { Err(TaskError::Invalid("this host cannot restart Tasks".into())) }
     }
 
-    /// The paused Tasks (ADR 0102), oldest first.
+    /// The paused Tasks (ADR 0104), oldest first.
     fn paused(&self) -> impl Future<Output = Vec<Paused>> + Send {
         async { Vec::new() }
     }
@@ -408,6 +471,9 @@ fn labels(p: &Prepared) -> Labels {
     }
     if let Some(bot) = &p.bot {
         labels.insert(BOT.to_owned(), bot.clone());
+    }
+    if let Some(name) = &p.subscription {
+        labels.insert(SUBSCRIPTION.to_owned(), name.clone());
     }
     if let Ok(places) = serde_json::to_string(&p.places) {
         labels.insert(PLACES.to_owned(), places);

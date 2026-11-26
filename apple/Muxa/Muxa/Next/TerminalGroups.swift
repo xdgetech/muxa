@@ -3,12 +3,12 @@ import SwiftUI
 
 /// Which terminals the Task lists show, and where. Ended terminals are left
 /// out: a failed agent already has a Failed item in the Inbox. Paused Tasks
-/// are listed (ADR 0102).
+/// are listed (ADR 0104).
 extension NextModel {
     /// The live Tasks' agents.
     var liveTasks: [Terminal] { terminals.filter { $0.live && $0.isTaskAgent } }
 
-    /// The paused Tasks' agents as they were (ADR 0102); the lists show them
+    /// The paused Tasks' agents as they were (ADR 0104); the lists show them
     /// after the live ones.
     var pausedTasks: [Terminal] { paused.map(\.terminal) }
 

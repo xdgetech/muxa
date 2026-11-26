@@ -4,6 +4,7 @@
 
 mod chat;
 pub mod client;
+mod disk;
 mod inbox;
 mod reader;
 mod settings;
@@ -48,6 +49,10 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] close-shell TERMINAL
        muxa-cli v2 [--bridge CMD] upload TERMINAL FILE
        muxa-cli v2 [--bridge CMD] workspaces [--json]
+       muxa-cli v2 [--bridge CMD] subscriptions [--json]
+       muxa-cli v2 [--bridge CMD] token-usage [--day YYYY-MM-DD] [--json]
+       muxa-cli v2 [--bridge CMD] disk [--json]
+       muxa-cli v2 [--bridge CMD] disk clean [PATH]... [--force] [--yes] [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
        muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
@@ -96,6 +101,10 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                  again adds nothing twice. It never changes the old records
   --loop         a Task Loop: after each finished turn the host runs the check;
                  without --check, the Workspace's only allowed one
+  subscriptions  each agent login muxa names, with the plan limits its agents last
+                 reported: used percent and reset time per window (ADR 0103)
+  token-usage    the tokens agents used today, or on --day, by Workspace and by
+                 Task folder, from their transcripts: input, cached input, output
   settings       the host's workspaces.toml and routines files as the apps edit them;
                  env values and secrets never show
   settings-set   applies settings ops (protocol/PROTOCOL-v2.md, Settings) from FILE
@@ -127,6 +136,14 @@ enum Cmd {
     Workspaces {
         json: bool,
     },
+    Subscriptions {
+        json: bool,
+    },
+    TokenUsage {
+        day: Option<String>,
+        json: bool,
+    },
+    Disk(disk::Disk),
     Inbox {
         action: inbox::Action,
         json: bool,
@@ -248,8 +265,9 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut chose = false;
     let mut words = Vec::new();
     let mut note: Option<String> = None;
-    let (mut force, mut dry_run) = (false, false);
+    let (mut force, mut dry_run, mut yes) = (false, false, false);
     let mut revision: Option<String> = None;
+    let mut day: Option<String> = None;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -299,6 +317,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("note") => note = Some(p.value()?.string()?),
             Long("force") => force = true,
             Long("dry-run") => dry_run = true,
+            Long("yes") => yes = true,
             Long("existing") => places.push(PlaceSpec::Existing {
                 path: p.value()?.string()?,
             }),
@@ -307,6 +326,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             }),
             Long("all-read") => places.push(PlaceSpec::AllRead),
             Long("revision") => revision = Some(p.value()?.string()?),
+            Long("day") => day = Some(p.value()?.string()?),
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
@@ -316,6 +336,18 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let cmd = match words.as_slice() {
         ["terminals"] => Cmd::Terminals { json },
         ["workspaces"] => Cmd::Workspaces { json },
+        ["subscriptions"] => Cmd::Subscriptions { json },
+        ["token-usage"] => Cmd::TokenUsage {
+            day: day.clone(),
+            json,
+        },
+        ["disk"] => Cmd::Disk(disk::Disk::Report { json }),
+        ["disk", "clean", paths @ ..] => Cmd::Disk(disk::Disk::Clean {
+            paths: paths.iter().map(|p| (*p).to_owned()).collect(),
+            yes,
+            force,
+            json,
+        }),
         ["approve", i] => Cmd::Inbox {
             action: inbox::Action::Approve {
                 item: (*i).to_owned(),
@@ -647,6 +679,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             folder,
             out,
         } => reader::folder(bridge, &terminal, &folder, &out).await,
+        Cmd::Disk(d) => disk::run(bridge, &d).await,
         Cmd::Workspaces { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "workspaces"})).await?;
@@ -656,6 +689,44 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
                 for w in reply["workspaces"].as_array().into_iter().flatten() {
                     println!("{}", workspace_row(w));
                 }
+            }
+            Ok(())
+        }
+        Cmd::Subscriptions { json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c.request(json!({"type": "subscriptions"})).await?;
+            if json {
+                println!("{}", reply["subscriptions"]);
+            } else {
+                for s in reply["subscriptions"].as_array().into_iter().flatten() {
+                    println!("{}", subscription_row(s));
+                }
+            }
+            Ok(())
+        }
+        Cmd::TokenUsage { day, json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let mut req = json!({"type": "token-usage"});
+            if let Some(d) = day {
+                req["day"] = json!(d);
+            }
+            let reply = c.request(req).await?;
+            let usage = &reply["token_usage"];
+            if json {
+                println!("{usage}");
+                return Ok(());
+            }
+            println!("{}", usage["day"].as_str().unwrap_or("?"));
+            for w in usage["workspaces"].as_array().into_iter().flatten() {
+                println!("{}", token_row(w["workspace"].as_str().unwrap_or("?"), w));
+            }
+            for t in usage["tasks"].as_array().into_iter().flatten() {
+                let name = format!(
+                    "  {}/{}",
+                    t["workspace"].as_str().unwrap_or("?"),
+                    t["title"].as_str().unwrap_or("?")
+                );
+                println!("{}", token_row(&name, t));
             }
             Ok(())
         }
@@ -983,6 +1054,44 @@ fn v1_row(t: &Value) -> String {
     )
 }
 
+/// `name agent plan 300m:42%@<resets_at> ...`, or `no report yet`.
+/// `name\tin 1200\tcached 9000\tout 84`.
+fn token_row(name: &str, t: &Value) -> String {
+    let n = |k: &str| t[k].as_u64().unwrap_or(0);
+    format!(
+        "{name}\tin {}\tcached {}\tout {}",
+        n("input"),
+        n("cached"),
+        n("output")
+    )
+}
+
+fn subscription_row(s: &Value) -> String {
+    let text = |v: &Value| v.as_str().unwrap_or("").to_owned();
+    let windows: Vec<String> = s["windows"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|w| {
+            format!(
+                "{}m:{}%@{}",
+                w["minutes"], w["used_percent"], w["resets_at"]
+            )
+        })
+        .collect();
+    let limits = if windows.is_empty() {
+        "no report yet".to_owned()
+    } else {
+        format!("{} as of {}", windows.join(" "), s["as_of"])
+    };
+    format!(
+        "{}\t{}\t{}\t{limits}",
+        text(&s["name"]),
+        text(&s["agent"]),
+        text(&s["plan"])
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1054,6 +1163,18 @@ mod tests {
         assert_eq!(
             parse(args(&["workspaces", "--json"])).unwrap(),
             Some(("muxa-bridge connect".into(), Cmd::Workspaces { json: true }))
+        );
+        assert_eq!(
+            parse(args(&["disk", "clean", "/w/r-x", "--force", "--yes"])).unwrap(),
+            Some((
+                "muxa-bridge connect".into(),
+                Cmd::Disk(disk::Disk::Clean {
+                    paths: vec!["/w/r-x".into()],
+                    yes: true,
+                    force: true,
+                    json: false,
+                })
+            ))
         );
     }
 

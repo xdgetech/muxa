@@ -20,6 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.ui.LinkButton
 import tech.xdge.muxa.app.ui.PrimaryButton
@@ -49,6 +53,7 @@ fun LoopDialog(model: NextModel, terminal: Terminal, close: () -> Unit) {
                         Text(LoopText.state(lp), style = MaterialTheme.typography.titleSmall)
                         Text("Failed checks: ${lp.attempts} of ${lp.maxAttempts}")
                         lp.lastCheck?.let { Text("Last check: ${LoopText.last(it)}") }
+                        lp.resumesAt?.let { Text("Fix prompt at ${LoopText.time(it)}", Modifier.testTag("loop.resumes")) }
                     }
                 }
                 OutlinedTextField(
@@ -92,6 +97,7 @@ object LoopText {
     fun state(lp: LoopInfo): String = when {
         lp.state == "armed" -> "Waits for the turn's end"
         lp.state == "checking" -> "Checking"
+        lp.state == "paused" && lp.reason == "limit-reset" -> "Paused: its subscription is at its limit"
         lp.state == "paused" -> "Paused: the agent waits for you"
         lp.state == "passed" -> "Passed"
         lp.state == "stopped" && lp.reason == "limit" -> "Stopped: too many failed checks"
@@ -100,6 +106,10 @@ object LoopText {
         lp.state == "stopped" -> "Stopped"
         else -> lp.state
     }
+
+    fun time(unix: Long): String =
+        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+            .format(Instant.ofEpochSecond(unix).atZone(ZoneId.systemDefault()))
 
     /** `loop armed 1/3`, short for a list row. */
     fun badge(lp: LoopInfo) = "loop ${lp.state} ${lp.attempts}/${lp.maxAttempts}"

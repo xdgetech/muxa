@@ -67,8 +67,12 @@ data class DemoContent(
     val settings: Settings = Settings("1"),
     /** How the Bots' items ended before; Done and Delete add to them. */
     val botCounts: List<BotCount> = emptyList(),
-    /** Paused Tasks (ADR 0102), oldest first; their ids are not among [terminals]. */
+    /** Paused Tasks (ADR 0104), oldest first; their ids are not among [terminals]. */
     val paused: List<Paused> = emptyList(),
+    /** What `subscriptions` answers (ADR 0103). */
+    val subscriptions: List<SubscriptionUsage> = emptyList(),
+    /** What `token-usage` answers, for any day (ADR 0103 §6). */
+    val tokenUsage: TokenUsage = TokenUsage(""),
 ) {
     companion object {
         /**
@@ -96,6 +100,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private val losesWork = content.losesWork
     private var nextChat = 1
     private val settings = DemoSettings(content.settings)
+    private val subscriptions = content.subscriptions
+    private val tokenUsage = content.tokenUsage
     private var inbox = Inbox(1, content.inbox, emptyList(), content.botCounts)
     private val paused = content.paused.toMutableList()
 
@@ -231,6 +237,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             }
             "inbox-approve" -> approve(id, item, force = m.str("worktree") == "force")
             "task-shell" -> taskShell(id, m.str("terminal"))
+            "login-start" -> loginStart(id, m.str("subscription"))
             "close-terminal" -> {
                 val t = terminals.firstOrNull { it.id == m.str("terminal") }
                 if (t == null || !t.isTaskShell) return send(error(id, "bad-request", "only a Task's shell closes this way"))
@@ -247,6 +254,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             "inbox-apply" -> applyProposal(id, item)
             "inbox-suggestion" -> suggestion(id, item, (m["accept"] as? JsonPrimitive)?.booleanOrNull == true)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
+            "subscriptions" -> reply(id, "subscriptions" to enc(subscriptions))
+            "token-usage" -> reply(id, "token_usage" to enc(tokenUsage.copy(day = m.str("day") ?: tokenUsage.day)))
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {}, "off" to enc(routinesOff()))
             "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
             "reader-list" -> {
@@ -368,7 +377,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         screens[t.id] = "Starting the agent for $title…\r\n"
         reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
-        // An agent in a paused Task's place ends the pause (ADR 0102).
+        // An agent in a paused Task's place ends the pause (ADR 0104).
         paused.firstOrNull { it.terminal.taskDir == dir }?.let { unpause(it.terminal.id, t.id) }
         loop?.let { armLoop(t.id, json.decodeFromJsonElement<LoopSpec>(it), null) }
     }
@@ -428,6 +437,21 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
     }
 
+    /** A subscription's login terminal (ADR 0103 §7): one per subscription; its screen shows where the agent asks to log in. */
+    private fun loginStart(id: Long, name: String?) {
+        val sub = settings.current.subscriptions.firstOrNull { it.name == name }
+            ?: return send(error(id, "bad-request", "no subscription named ${name.orEmpty()}"))
+        val open = terminals.firstOrNull { it.live && it.labels["muxa.kind"] == "login" && it.labels["muxa.subscription"] == sub.name }
+        if (open != null) return reply(id, "terminal" to enc(open), "existing" to JsonPrimitive(true))
+        val labels = mapOf("muxa.kind" to "login", "muxa.subscription" to sub.name)
+        val t = Terminal(newTerminalId(), "login-${sub.name}", live = true, labels = labels, cols = 80, rows = 24)
+        terminals += t
+        screens[t.id] = if (sub.agent == "codex") "$ codex login\r\nOpen this link to sign in with ChatGPT.\r\n"
+        else "$ claude\r\nSelect login method:\r\n › 1. Claude account with subscription\r\n"
+        reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
+        if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+    }
+
     /** Keeps an upload's name, as the host would write it (ADR 0081); nothing is saved. */
     private fun upload(id: Long, m: JsonObject) {
         val t = terminals.firstOrNull { it.id == m.str("terminal") && it.labels["muxa.kind"] == "task" }
@@ -467,7 +491,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         change(id) { i -> i.copy(items = i.items.filter { it.id !in ids }, done = open + i.done) }
     }
 
-    /** Keeps a Task's agent as a record, then stops its loop and removes it with its shells (ADR 0102). */
+    /** Keeps a Task's agent as a record, then stops its loop and removes it with its shells (ADR 0104). */
     private fun pauseTask(id: Long, terminal: String) {
         paused.firstOrNull { it.terminal.id == terminal }?.let { return reply(id, "paused" to enc(it)) }
         val agent = terminals.firstOrNull { it.id == terminal } ?: return send(error(id, "not-found", "no terminal $terminal"))
@@ -923,8 +947,23 @@ private fun standardContent(): DemoContent {
                 pausedAt = 1_764_000_000,
             ),
         ),
+        subscriptions = demoUsage(System.currentTimeMillis() / 1000),
+        tokenUsage = demoTokens(LocalDate.now().toString()),
     )
 }
+
+/** Today's tokens: the Tasks' folders are the demo agents' `muxa.dir`. */
+private fun demoTokens(day: String) = TokenUsage(
+    day,
+    workspaces = listOf(
+        WorkspaceTokens("app", input = 1_200_000, cached = 9_400_000, output = 84_000),
+        WorkspaceTokens("Personal", input = 310_000, cached = 1_900_000, output = 22_000),
+    ),
+    tasks = listOf(
+        TaskTokens("app", "/demo/app-fix-login", "app-fix-login", input = 640_000, cached = 5_100_000, output = 41_000),
+        TaskTokens("app", "/demo/runs/dependency-digest", "dependency-digest", input = 220_000, cached = 1_300_000, output = 9_000),
+    ),
+)
 
 private const val SCAN_SCHEDULE = "*/30 9-18 * * 1-5"
 
@@ -979,6 +1018,22 @@ private val DEMO_DIFF = """
 /** A 1×1 PNG. */
 private const val DEMO_PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
+/** The limits the demo's agents last reported (ADR 0103): one near its 5-hour limit, one never used yet. */
+private fun demoUsage(now: Long): List<SubscriptionUsage> {
+    val hours = { h: Double -> now + (h * 3600).toLong() }
+    return listOf(
+        SubscriptionUsage(
+            "claude-personal", "claude-code", "Max 20x",
+            listOf(UsageWindow(300, 82, hours(3.0)), UsageWindow(10_080, 31, hours(60.0))), now - 240,
+        ),
+        SubscriptionUsage("claude-spare", "claude-code", "Max 5x"),
+        SubscriptionUsage(
+            "chatgpt", "codex", "Plus",
+            listOf(UsageWindow(300, 18, hours(1.5)), UsageWindow(10_080, 41, hours(90.0))), now - 720,
+        ),
+    )
+}
+
 /** The demo's `workspaces.toml` and `routines.toml`, as `settings` shows them; the secret is only "set". */
 private val DEMO_SETTINGS = Settings(
     revision = "1",
@@ -1022,6 +1077,7 @@ private val DEMO_SETTINGS = Settings(
                     instructionsText = "Sum up the week's Done items.\n",
                 ),
             ),
+            subscriptions = listOf("claude-personal", "claude-spare"),
         ),
     ),
     workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
@@ -1030,5 +1086,13 @@ private val DEMO_SETTINGS = Settings(
         soulText = "Sort what I capture. Name the Workspace and a due date only when the item says so.\n",
         memoryText = "- Items about the login go to app.\n",
     ),
+    subscriptions = listOf(
+        SubscriptionSpec("claude-personal", "claude-code", "~/.claude", plan = "Max 20x"),
+        SubscriptionSpec("claude-spare", "claude-code", "~/.claude-spare", plan = "Max 5x"),
+        SubscriptionSpec("chatgpt", "codex", "~/.codex", plan = "Plus"),
+    ),
+    // app's env names its own Claude login: onboarding offers to adopt it.
+    foundLogins = listOf(FoundLogin("claude-code", workspace = "app")),
+    build = SettingsBuild(dir = "/Volumes/Build/muxa", dirFound = true, extraPaths = listOf("out")),
 )
 private const val MAX_SHELLS = 3

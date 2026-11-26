@@ -44,7 +44,7 @@ public enum V2Request: Sendable {
     case upload(terminal: String, name: String, data: Data)
     /// Closes the Task of the agent `terminal` as Approve does, and its open items.
     case closeTask(terminal: String, worktree: WorktreeChoice? = nil)
-    /// Stops the Task's agent and shells and keeps the Task (ADR 0102).
+    /// Stops the Task's agent and shells and keeps the Task (ADR 0104).
     case pauseTask(terminal: String)
     /// Runs the paused Task `terminal` again, in its places.
     case resumeTask(terminal: String)
@@ -62,6 +62,18 @@ public enum V2Request: Sendable {
     case chatOpen(terminal: String)
     case chatClose(chat: UInt32)
     case workspaces
+    /// Each subscription and its agents' last report of the plan limits (ADR 0103).
+    case subscriptions
+    /// Opens the agent's own login for `subscription` in a host terminal, or
+    /// the one already open (ADR 0103 §7).
+    case loginStart(subscription: String)
+    /// The tokens agents used on `day` (`YYYY-MM-DD`, nil for today), by
+    /// Workspace and by Task (ADR 0103 §6).
+    case tokenUsage(day: String?)
+    /// The disk use of Task places and leftovers (ADR 0102).
+    case disk
+    /// A dry run unless `dryRun` is false; `force` needs `paths`.
+    case diskClean(paths: [String] = [], force: Bool = false, dryRun: Bool = true)
     /// The host's editable settings (ADR 0074).
     case settings
     /// `revision` must be the current one; the ops apply all or none.
@@ -127,6 +139,12 @@ public enum V2Request: Sendable {
         case let .chatOpen(terminal): set("chat-open", ["terminal": terminal])
         case let .chatClose(chat): set("chat-close", ["chat": chat])
         case .workspaces: set("workspaces", [:])
+        case .subscriptions: set("subscriptions", [:])
+        case let .loginStart(subscription): set("login-start", ["subscription": subscription])
+        case let .tokenUsage(day): set("token-usage", ["day": day])
+        case .disk: set("disk", [:])
+        case let .diskClean(paths, force, dryRun):
+            set("disk-clean", ["paths": paths, "force": force, "dry_run": dryRun])
         case .settings: set("settings", [:])
         case let .settingsUpdate(revision, ops):
             set("settings-update", ["revision": revision, "ops": try ops.map { try $0.jsonObject() }])

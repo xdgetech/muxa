@@ -52,9 +52,64 @@ internal class DemoSettings(initial: Settings) {
         }
         is SettingsOp.AssistantUpdate -> {
             val old = s.assistant ?: SettingsAssistant(soulText = "", memoryText = "")
-            s.copy(assistant = old.copy(enabled = op.enabled, worker = op.worker, soulText = op.soulText ?: old.soulText))
+            s.copy(
+                assistant = old.copy(
+                    enabled = op.enabled, worker = op.worker, soulText = op.soulText ?: old.soulText,
+                    subscriptions = op.subscriptions ?: old.subscriptions,
+                ),
+            )
+        }
+        is SettingsOp.SubscriptionAdd -> {
+            requireAgent(op.subscription)
+            require(s.subscriptions.none { it.name == op.subscription.name }) { "${op.subscription.name} exists" }
+            s.copy(subscriptions = s.subscriptions + op.subscription)
+        }
+        is SettingsOp.SubscriptionUpdate -> {
+            requireAgent(op.subscription)
+            require(s.subscriptions.any { it.name == op.subscription.name }) { "no subscription ${op.subscription.name}" }
+            s.copy(subscriptions = s.subscriptions.map { if (it.name == op.subscription.name) op.subscription else it })
+        }
+        is SettingsOp.SubscriptionAdopt -> {
+            val key = if (op.agent == "codex") "CODEX_HOME" else "CLAUDE_CONFIG_DIR"
+            val w = workspace(s, op.workspace)
+            require(w.agent.env.any { it.key == key }) { "no env $key" }
+            val adopted = w.copy(
+                agent = w.agent.copy(env = w.agent.env.filter { it.key != key }),
+                subscriptions = listOf(op.name) + w.subscriptions.filter { it != op.name },
+            )
+            // The demo keeps no env value, so the folder is a stand-in.
+            val subs = if (s.subscriptions.any { it.name == op.name }) s.subscriptions
+            else s.subscriptions + SubscriptionSpec(op.name, op.agent, "~/.${op.name}", op.plan)
+            s.copy(
+                workspaces = s.workspaces.map { if (it.name == w.name) adopted else it },
+                subscriptions = subs,
+                foundLogins = s.foundLogins.filter { it.workspace != op.workspace },
+            )
+        }
+        is SettingsOp.SubscriptionRemove -> {
+            s.workspaces.firstOrNull { op.name in it.subscriptions }?.let {
+                throw IllegalArgumentException("${it.name} still lists ${op.name}")
+            }
+            require(s.subscriptions.any { it.name == op.name }) { "no subscription ${op.name}" }
+            s.copy(subscriptions = s.subscriptions.filter { it.name != op.name })
+        }
+        is SettingsOp.BuildUpdate -> {
+            val old = s.build ?: SettingsBuild()
+            val dir = patched(old.dir, op.dir)
+            // The demo has no disks: a folder it was given is found.
+            s.copy(
+                build = old.copy(
+                    dir = dir, dropAfter = patched(old.dropAfter, op.dropAfter),
+                dirFound = dir != null, extraPaths = op.extraPaths ?: old.extraPaths,
+            ),
+        )
         }
         else -> {
+            if (op is SettingsOp.WorkspaceUpdate) {
+                op.subscriptions?.firstOrNull { n -> s.subscriptions.none { it.name == n } }?.let {
+                    throw IllegalArgumentException("subscriptions: $it is not a [[subscription]]")
+                }
+            }
             val ws = workspace(s, op.workspaceName ?: "")
             s.copy(workspaces = s.workspaces.map { if (it.name == ws.name) change(it, op) else it })
         }
@@ -72,6 +127,8 @@ internal class DemoSettings(initial: Settings) {
             agent = w.agent.copy(command = patched(w.agent.command, op.agentCommand)),
             claudeConnectors = op.claudeConnectors ?: w.claudeConnectors,
             botRules = op.botRules ?: w.botRules,
+            subscriptions = op.subscriptions ?: w.subscriptions,
+            switchSubscriptions = op.switchSubscriptions ?: w.switchSubscriptions,
         )
         is SettingsOp.EnvSet -> w.copy(
             agent = w.agent.copy(env = (w.agent.env.filter { it.key != op.key } + EnvKey(op.key, true)).sortedBy { it.key }),
@@ -181,6 +238,11 @@ internal class DemoSettings(initial: Settings) {
         }
         require(bot.handoffsPerDay == null || bot.handoffsPerDay in 1..MAX_HANDOFFS) { "handoffs_per_day is 1 to $MAX_HANDOFFS" }
         requireCommands(bot.commands)
+    }
+
+    /** A subscription is a Claude Code or a Codex login (ADR 0103). */
+    private fun requireAgent(sub: SubscriptionSpec) {
+        require(sub.agent == "claude-code" || sub.agent == "codex") { "agent is claude-code or codex" }
     }
 
     /** As the server checks a Bot's commands (ADR 0088): the inside of a `Bash(...)` rule, one line each. */

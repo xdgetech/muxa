@@ -1,4 +1,4 @@
-//! Paused Tasks (ADR 0102): pause keeps a record of the agent, then ends it
+//! Paused Tasks (ADR 0104): pause keeps a record of the agent, then ends it
 //! and its shells; resume runs it again from the record. The host keeps the
 //! records; [`MemoryPaused`] holds them in memory for every host.
 

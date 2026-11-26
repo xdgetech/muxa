@@ -39,12 +39,19 @@ public struct DemoContent: Sendable {
     public var losesWork: [String: String]
     /// What `settings` answers first; `settings-update` changes it in memory.
     public var settings: Settings
-    /// The paused Tasks (ADR 0102).
+    /// The paused Tasks (ADR 0104).
     public var paused: [Paused]
+    /// What `subscriptions` answers (ADR 0103).
+    public var subscriptions: [SubscriptionUsage]
+    /// What `token-usage` answers, for any day (ADR 0103 §6).
+    public var tokenUsage: TokenUsage
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
                 taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:],
-                losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1"), paused: [Paused] = []) {
+                losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1"),
+                subscriptions: [SubscriptionUsage] = [], tokenUsage: TokenUsage = TokenUsage(day: ""), paused: [Paused] = []) {
+        self.subscriptions = subscriptions
+        self.tokenUsage = tokenUsage
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
@@ -227,6 +234,8 @@ actor DemoServer {
             resolve(id, item)
         case "task-shell":
             taskShell(id, m["terminal"] as? String)
+        case "login-start":
+            loginStart(id, m["subscription"] as? String)
         case "close-terminal":
             guard let t = content.terminals.first(where: { $0.id == m["terminal"] as? String }), t.isTaskShell else {
                 return send(["type": "error", "id": id, "code": "bad-request", "message": "only a Task's shell closes this way"])
@@ -259,6 +268,12 @@ actor DemoServer {
             answerSuggestion(id, item, accept: m["accept"] as? Bool ?? false)
         case "workspaces":
             reply(id, ["workspaces": json(content.taskWorkspaces.map(withTasks))])
+        case "subscriptions":
+            reply(id, ["subscriptions": plain(content.subscriptions)])
+        case "token-usage":
+            var usage = content.tokenUsage
+            usage.day = m["day"] as? String ?? usage.day
+            reply(id, ["token_usage": plain(usage)])
         case "settings":
             reply(id, ["settings": plain(content.settings)])
         case "settings-update":
@@ -512,6 +527,27 @@ actor DemoServer {
         if watching { send(["type": "changed", "terminal": json(t)]) }
     }
 
+    /// A subscription's login terminal (ADR 0103 §7): one per subscription; the
+    /// demo's screen shows where the agent asks to log in.
+    private func loginStart(_ id: UInt64, _ name: String?) {
+        guard let name, let sub = content.settings.subscriptions.first(where: { $0.name == name }) else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "no subscription named \(name ?? "")"])
+        }
+        if let live = content.terminals.first(where: {
+            $0.live && $0.labels["muxa.kind"] == "login" && $0.labels["muxa.subscription"] == name
+        }) {
+            return reply(id, ["terminal": json(live), "existing": true])
+        }
+        let t = Terminal(id: newTerminalID(), name: "login-\(name)", live: true, status: nil,
+                         labels: ["muxa.kind": "login", "muxa.subscription": name], cols: 80, rows: 24)
+        content.terminals.append(t)
+        content.screens[t.id] = sub.agent == "codex"
+            ? "$ codex login\r\nOpen this link to sign in with ChatGPT.\r\n"
+            : "$ claude\r\nSelect login method:\r\n › 1. Claude account with subscription\r\n"
+        reply(id, ["terminal": json(t), "existing": false])
+        if watching { send(["type": "changed", "terminal": json(t)]) }
+    }
+
     /// Keeps an upload's name, as the host would write it (ADR 0081); nothing is saved.
     private func upload(_ id: UInt64, _ m: [String: Any]) {
         func refuse(_ message: String) { send(["type": "error", "id": id, "code": "bad-request", "message": message]) }
@@ -563,7 +599,7 @@ actor DemoServer {
     }
 
     /// Keeps the Task's agent as it was, stops its loop, then ends the agent and
-    /// its shells (ADR 0102). Its places and items stay.
+    /// its shells (ADR 0104). Its places and items stay.
     private func pauseTask(_ id: UInt64, _ terminal: String) {
         guard let agent = content.terminals.first(where: { $0.id == terminal }) else {
             return send(["type": "error", "id": id, "code": "not-found", "message": "no terminal \(terminal)"])
@@ -753,7 +789,7 @@ actor DemoServer {
         if let loopSpec { setLoop(newLoop(t.id, loopSpec, previous: nil)) }
         reply(id, ["terminal": json(t), "existing": false])
         if watching { send(["type": "changed", "terminal": json(t)]) }
-        // An agent in a paused Task's working place ends the pause (ADR 0102).
+        // An agent in a paused Task's working place ends the pause (ADR 0104).
         if let record = paused.first(where: { $0.terminal.taskDir == dir }) { endPause(record.id, movingTo: t.id) }
     }
 

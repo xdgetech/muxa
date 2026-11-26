@@ -35,6 +35,7 @@ pub fn to_v2(r: RoutineInfo) -> v2::Routine {
         last,
         bot: r.bot,
         on: r.on,
+        waiting_until: None,
     }
 }
 

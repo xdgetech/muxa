@@ -102,7 +102,7 @@ extension Color {
 
 /// What a Task's agent reports about itself (OSC 7501), as the mocks color it.
 /// No report is idle: muxa invents no state. `paused` is muxa's own: the Task
-/// has no agent (ADR 0102), and no report maps to it.
+/// has no agent (ADR 0104), and no report maps to it.
 enum TaskState: CaseIterable {
     case needsYou, done, working, idle, paused
 

@@ -110,14 +110,27 @@ fn print(settings: &Value, json: bool) {
             .flatten()
             .map(|c| format!("{}({})", text(&c["name"]), text(&c["secret"])))
             .collect();
+        let subscriptions: Vec<String> = w["subscriptions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(text)
+            .collect();
+        // Off: the first login of each kind only (ADR 0103 §4).
+        let fixed = if w["switch_subscriptions"] == false {
+            " (no switching)"
+        } else {
+            ""
+        };
         println!(
-            "{}\t{}\tenv:{}\tconnections:{}\tmcp:{}\troutines:{}",
+            "{}\t{}\tenv:{}\tconnections:{}\tmcp:{}\troutines:{}\tsubscriptions:{}{fixed}",
             text(&w["name"]),
             text(&w["root"]),
             names(&w["agent"]["env"], "key"),
             connections.join(","),
             names(&w["mcp"], "name"),
             names(&w["routines"], "name"),
+            subscriptions.join(","),
         );
         if let Some(p) = w["routines_problem"].as_str() {
             println!("  routines: {p}");
@@ -128,6 +141,15 @@ fn print(settings: &Value, json: bool) {
             "worker {}\t{}",
             text(&worker["name"]),
             text(&worker["agent"])
+        );
+    }
+    for sub in settings["subscriptions"].as_array().into_iter().flatten() {
+        println!(
+            "subscription {}\t{}\t{}\t{}",
+            text(&sub["name"]),
+            text(&sub["agent"]),
+            text(&sub["home"]),
+            text(&sub["plan"])
         );
     }
 }

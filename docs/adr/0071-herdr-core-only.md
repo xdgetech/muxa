@@ -32,4 +32,4 @@ The user decided (2026-11-22) what moves before the removal: Routine runs, the R
 ## Not decided
 
 1. Whether Codex gets a folder lookup for Chat, and a Routine path without owned threads.
-2. Whether a Task needs a record again, for example for its history after its agent ended. ADR 0102 adds one for a paused Task only.
+2. Whether a Task needs a record again, for example for its history after its agent ended. ADR 0104 adds one for a paused Task only.

@@ -64,7 +64,7 @@ private enum class View { CHAT, TERMINAL, READER }
 fun Focus(model: NextModel, nav: Nav, selected: String?, select: (String?) -> Unit) {
     val phone = LocalPhoneLayout.current
     val terminal = model.terminals.firstOrNull { it.id == selected }
-    // A paused Task keeps its agent's id (ADR 0102); it shows a Paused view in place of the terminal.
+    // A paused Task keeps its agent's id (ADR 0104); it shows a Paused view in place of the terminal.
     val paused = if (terminal == null) model.paused.firstOrNull { it.terminal.id == selected } else null
     // Here, not in the list: the phone's list leaves the screen while a terminal is open.
     val othersOpen = rememberSaveable { mutableStateOf(false) }

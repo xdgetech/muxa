@@ -1,4 +1,4 @@
-# 0102: Pause and resume a Task
+# 0104: Pause and resume a Task
 
 Status: accepted (2026-11-26). It answers ADR 0071 "Not decided" 2 for paused Tasks only.
 

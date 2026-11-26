@@ -27,10 +27,11 @@ import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.Patch
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsWorkspace
+import tech.xdge.muxa.v2.SubscriptionUsage
 
 /** A Workspace's folders, agent command, Task Loop checks and Routines gate. Each saves on its own. */
 @Composable
-fun WorkspaceGeneral(editor: SettingsEditor, ws: SettingsWorkspace) {
+fun WorkspaceGeneral(editor: SettingsEditor, ws: SettingsWorkspace, plans: List<SubscriptionUsage>) {
     val save = rememberInlineSave(editor)
     val on = !editor.readOnly
     SettingsHeader("Folders")
@@ -53,6 +54,7 @@ fun WorkspaceGeneral(editor: SettingsEditor, ws: SettingsWorkspace) {
             }
         }
     }
+    WorkspaceLogins(editor, ws, plans) { save.run(it) }
     SettingsHeader("Task Loop checks")
     SettingsCard { LoopChecksEditor(ws, on) { save.run(listOf(SettingsOp.SetLoopChecks(ws.name, it))) } }
     SettingsHeader("Routines")
@@ -66,9 +68,49 @@ fun WorkspaceGeneral(editor: SettingsEditor, ws: SettingsWorkspace) {
     save.Error()
 }
 
+/**
+ * The subscriptions its agents use, in order (ADR 0103): each agent takes the first of its kind.
+ * A login its env names is adopted from here.
+ */
+@Composable
+private fun WorkspaceLogins(editor: SettingsEditor, ws: SettingsWorkspace, plans: List<SubscriptionUsage>, save: (List<SettingsOp>) -> Unit) {
+    val on = !editor.readOnly
+    var names by remember(ws.subscriptions) { mutableStateOf(ws.subscriptions) }
+    val envLogins = editor.settings?.foundLogins.orEmpty().filter { it.workspace == ws.name }
+    SettingsHeader("Subscriptions")
+    SettingsCard {
+        Column(Modifier.padding(14.dp).testTag("settings.subs"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val current = editor.settings?.currentOf(names).orEmpty()
+            SubscriptionOrder(
+                names, editor.settings?.subscriptionNames().orEmpty(), plans, "settings.subs", on, current,
+                use = { save(listOf(SettingsOp.WorkspaceUpdate(ws.name, subscriptions = firstIn(names, it)))) },
+            ) { names = it }
+            if (names.size > 1) {
+                SwitchField("Switch when full", "settings.subs.switch", ws.switchSubscriptions, on) {
+                    save(listOf(SettingsOp.WorkspaceUpdate(ws.name, switchSubscriptions = it)))
+                }
+            }
+            if (names != ws.subscriptions) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton("Save", { save(listOf(SettingsOp.WorkspaceUpdate(ws.name, subscriptions = names))) },
+                        Modifier.testTag("settings.subs.save"), enabled = on)
+                    LinkButton("Undo", { names = ws.subscriptions })
+                }
+            }
+            for (f in envLogins) {
+                LinkButton("Make its env login a subscription", { save(listOf(Found.op(f))) }, Modifier.testTag("settings.subs.adopt"), enabled = on)
+            }
+        }
+    }
+    SettingsNote(
+        if (envLogins.isEmpty()) switchNote(ws)
+        else "Its env names a login. As a subscription, it shows its usage and the Workspace can list a second one.",
+    )
+}
+
 /** A text the host keeps, with Save once it differs. */
 @Composable
-private fun SavedField(value: String, label: String, tag: String, enabled: Boolean, placeholder: String? = null, save: (String) -> Unit) {
+fun SavedField(value: String, label: String, tag: String, enabled: Boolean, placeholder: String? = null, save: (String) -> Unit) {
     var text by remember(value) { mutableStateOf(value) }
     Field(text, { text = it }, label, tag, enabled = enabled, mono = true, placeholder = placeholder)
     if (text != value) {

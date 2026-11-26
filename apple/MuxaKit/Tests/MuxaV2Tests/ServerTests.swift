@@ -108,6 +108,15 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func diskAsksTheHostAndForceNeedsPaths() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.disk() == [])
+        await #expect(throws: V2Error.self) { try await c.diskClean(force: true) }
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func workspacesListTheHostsWorkspaces() async throws {
         let server = try Server()
         let c = try await server.connect()
@@ -124,6 +133,44 @@ struct ServerTests {
         let after = try #require(try await c.workspaces().first)
         #expect(after.connections[0].usedBy.tasks.contains(agent.id))
         #expect(after.mcp[0].usedBy.tasks.contains(agent.id))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aRoutineSaysItWaitsForALimitReset() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let routines = try await c.routines().routines
+        #expect(routines.map(\.name) == ["digest", "audit"])
+        #expect(routines[0].waitingUntil == 1_700_003_600)
+        #expect(routines[1].waitingUntil == nil)
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func subscriptionsComeWithTheirLimits() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.subscriptions() == [SubscriptionUsage(
+            name: "claude-work", agent: "claude-code", plan: "Max 20x",
+            windows: [
+                UsageWindow(minutes: 300, usedPercent: 82, resetsAt: Date(timeIntervalSince1970: 1_764_014_400)),
+                UsageWindow(minutes: 10_080, usedPercent: 31, resetsAt: Date(timeIntervalSince1970: 1_764_320_400)),
+            ],
+            asOf: Date(timeIntervalSince1970: 1_764_000_120))])
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func tokenUsageComesByWorkspaceAndTask() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let usage = try await c.tokenUsage(day: "2026-11-24")
+        #expect(usage == TokenUsage(day: "2026-11-24", workspaces: [
+            WorkspaceTokens(workspace: "Personal", input: 1_200_000, cached: 9_000_000, output: 84_000),
+        ], tasks: [
+            TaskTokens(workspace: "Personal", dir: "/work/demo", title: "demo", input: 800_000, cached: 6_000_000, output: 60_000),
+        ]))
         await c.close()
     }
 
@@ -148,7 +195,24 @@ struct ServerTests {
                         instructionsText: "Summarize the day.\n")],
                     foundRepos: ["app", "docs"], hiddenRepos: ["docs"]),
             ],
-            workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")]))
+            workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
+            subscriptions: [SubscriptionSpec(name: "claude-work", agent: "claude-code", home: "~/.claude-work",
+                                             plan: "Max 20x")],
+            foundLogins: [FoundLogin(agent: "claude-code", workspace: "Personal")],
+            build: SettingsBuild(dir: "/ssd/build", dirFound: true)))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func buildUpdateKeepsAbsentFieldsAndClearsNullOnes() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let after = try await c.settingsUpdate(revision: "1", ops: [
+            .buildUpdate(dropAfter: .set("12h"), extraPaths: ["out", "dist"]),
+        ])
+        #expect(after.build == SettingsBuild(dir: "/ssd/build", dropAfter: "12h", dirFound: true, extraPaths: ["out", "dist"]))
+        let off = try await c.settingsUpdate(revision: after.revision, ops: [.buildUpdate(dir: .clear, extraPaths: [])])
+        #expect(off.build == SettingsBuild(dir: nil, dropAfter: "12h", dirFound: false))
         await c.close()
     }
 

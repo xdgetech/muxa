@@ -52,7 +52,7 @@ import tech.xdge.muxa.v2.Terminal
 /**
  * A terminal's state as its program reports it (OSC 7501). [UNKNOWN] when it
  * reports none: muxa never guesses one (invariant 6). [PAUSED] is muxa's own:
- * the Task has no agent (ADR 0102).
+ * the Task has no agent (ADR 0104).
  */
 enum class TaskState(val title: String, val color: Color) {
     NEEDS_YOU("Needs you", StateColors.needsYou),

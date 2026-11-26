@@ -409,6 +409,9 @@ public struct Routine: Codable, Equatable, Sendable, Identifiable {
     public var bot: String? = nil
     /// The event that runs it: `review` (ADR 0084).
     public var on: String? = nil
+    /// Unix seconds: a due run waits until then, while every subscription
+    /// it may use is at its limit (ADR 0103 §9).
+    public var waitingUntil: Int64? = nil
 
     public var id: String { "\(workspace)/\(name)" }
 }
@@ -514,7 +517,7 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// A paused Task (ADR 0102): its agent as it was at pause, with `live`
+/// A paused Task (ADR 0104): its agent as it was at pause, with `live`
 /// false and no status. Its `id` stays the Task's id, and open Inbox items
 /// keep pointing at it.
 public struct Paused: Codable, Equatable, Sendable, Identifiable {
@@ -661,16 +664,18 @@ public struct LoopInfo: Codable, Equatable, Sendable, Identifiable {
     public var attempts: UInt32
     public var armedAt: Int64
     public var since: Int64
-    /// `waiting`, `limit`, `error`, `no-agent`, `not-sent`, `user`…
+    /// `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `not-sent`, `user`…
     public var reason: String?
     public var lastCheck: LastCheck?
+    /// Paused for `limit-reset`: when the fix prompt is typed (ADR 0103 §9).
+    public var resumesAt: Int64?
 
     public var id: String { terminal }
     /// It still works on the Task.
     public var isActive: Bool { ["armed", "checking", "paused"].contains(state) }
 
     public init(terminal: String, check: String, maxAttempts: UInt32, timeout: UInt64, state: String, attempts: UInt32,
-                armedAt: Int64, since: Int64, reason: String? = nil, lastCheck: LastCheck? = nil) {
+                armedAt: Int64, since: Int64, reason: String? = nil, lastCheck: LastCheck? = nil, resumesAt: Int64? = nil) {
         self.terminal = terminal
         self.check = check
         self.maxAttempts = maxAttempts
@@ -681,6 +686,7 @@ public struct LoopInfo: Codable, Equatable, Sendable, Identifiable {
         self.since = since
         self.reason = reason
         self.lastCheck = lastCheck
+        self.resumesAt = resumesAt
     }
 }
 

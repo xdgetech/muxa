@@ -154,6 +154,8 @@ data class Routine(
     val bot: String? = null,
     /** The event that runs it, e.g. `review` (ADR 0084). */
     val on: String? = null,
+    /** Unix seconds: a due run waits until then, while every subscription it may use is at its limit (ADR 0103 §9). */
+    @SerialName("waiting_until") val waitingUntil: Long? = null,
 ) {
     val id: String get() = "$workspace/$name"
 }
@@ -326,7 +328,7 @@ data class Terminal(
 }
 
 /**
- * A paused Task (ADR 0102): its agent as it was at pause, not live, with its labels. The id stays the
+ * A paused Task (ADR 0104): its agent as it was at pause, not live, with its labels. The id stays the
  * Task's, and its open items keep pointing at it. [pausedAt] is Unix seconds.
  */
 @Serializable
@@ -472,9 +474,11 @@ data class LoopInfo(
     val attempts: Int,
     @SerialName("armed_at") val armedAt: Long,
     val since: Long,
-    /** `waiting`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
+    /** `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
     val reason: String? = null,
     @SerialName("last_check") val lastCheck: LastCheck? = null,
+    /** Paused for `limit-reset`: when the fix prompt is typed (ADR 0103 §9). */
+    @SerialName("resumes_at") val resumesAt: Long? = null,
 ) {
     /** It still works on the Task. */
     val isActive: Boolean get() = state in setOf("armed", "checking", "paused")

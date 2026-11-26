@@ -1,0 +1,164 @@
+package tech.xdge.muxa.app.next
+
+import tech.xdge.muxa.v2.FoundLogin
+import tech.xdge.muxa.v2.Settings
+import tech.xdge.muxa.v2.SettingsWorkspace
+import tech.xdge.muxa.v2.SettingsOp
+import tech.xdge.muxa.v2.SubscriptionSpec
+import tech.xdge.muxa.v2.SubscriptionUsage
+import tech.xdge.muxa.v2.TaskTokens
+import tech.xdge.muxa.v2.Terminal
+import java.util.Locale
+
+// Subscriptions (ADR 0103) as the Settings screens show and save them. The host checks the rest.
+
+/** How a plan window reads: `5 h`, `7 d`, `45 min`, and the thresholds it is colored by. */
+object PlanWindow {
+    const val WARN = 80
+    const val SWITCH = 95
+
+    fun label(minutes: Int): String = when {
+        minutes % MINUTES_A_DAY == 0 -> "${minutes / MINUTES_A_DAY} d"
+        minutes % MINUTES_AN_HOUR == 0 -> "${minutes / MINUTES_AN_HOUR} h"
+        else -> "$minutes min"
+    }
+
+    /** `82% of 5 h`, `5 h reset`, or `no data yet`, from the shortest window. */
+    fun line(usage: SubscriptionUsage?, nowSeconds: Long = System.currentTimeMillis() / 1000): String {
+        val w = usage?.windows?.firstOrNull() ?: return "no data yet"
+        if (w.hasReset(nowSeconds)) return "${label(w.minutes)} reset"
+        return "${w.usedPercent}% of ${label(w.minutes)}"
+    }
+
+    private const val MINUTES_AN_HOUR = 60
+    private const val MINUTES_A_DAY = 1440
+}
+
+/** How onboarding names and adds a login the host found (ADR 0103 §7). */
+object Found {
+    /** `claude`, `codex`, or `claude-<workspace>` for a Workspace's env login. */
+    fun name(f: FoundLogin): String {
+        val agent = if (f.agent == CODEX) "codex" else "claude"
+        val w = f.workspace ?: return agent
+        val slug = w.lowercase().map { if (it.isLetterOrDigit()) it else '-' }.joinToString("")
+        return "$agent-$slug"
+    }
+
+    fun origin(f: FoundLogin): String {
+        val agent = agentTitle(f.agent)
+        return f.workspace?.let { "$agent · from $it's env" } ?: "$agent · ${f.home.orEmpty()} (the default login)"
+    }
+
+    fun op(f: FoundLogin): SettingsOp = f.workspace?.let { SettingsOp.SubscriptionAdopt(it, f.agent, name(f)) }
+        ?: SettingsOp.SubscriptionAdd(SubscriptionSpec(name(f), f.agent, f.home.orEmpty()))
+}
+
+fun agentTitle(agent: String): String = if (agent == CODEX) "Codex" else "Claude Code"
+
+/** A subscription's fields. A blank [home] is `~/.claude-<name>` or `~/.codex-<name>`. */
+data class SubscriptionDraft(
+    val existing: String? = null,
+    val name: String = "",
+    val agent: String = CLAUDE_CODE,
+    val home: String = "",
+    val plan: String = "",
+) {
+    val folder: String get() = home.trim().ifEmpty { "~/.${if (agent == CODEX) "codex" else "claude"}-${name.trim()}" }
+    val isValid: Boolean get() = BotDraft.isValidName(name.trim())
+
+    fun op(): SettingsOp {
+        val spec = SubscriptionSpec(name.trim(), agent, folder, plan.trim().ifEmpty { null })
+        return if (existing == null) SettingsOp.SubscriptionAdd(spec) else SettingsOp.SubscriptionUpdate(spec)
+    }
+
+    /** The command that logs in to this folder from a shell on the host. */
+    val command: String
+        get() {
+            val isDefault = folder == if (agent == CODEX) "~/.codex" else "~/.claude"
+            return when {
+                agent == CODEX && isDefault -> "codex login"
+                agent == CODEX -> "CODEX_HOME=$folder codex login"
+                isDefault -> "claude"
+                else -> "CLAUDE_CONFIG_DIR=$folder claude"
+            }
+        }
+
+    companion object {
+        fun of(s: SubscriptionSpec) = SubscriptionDraft(s.name, s.name, s.agent, s.home, s.plan.orEmpty())
+    }
+}
+
+/** The host's subscriptions of [agent], or all, by name. */
+fun Settings.subscriptionNames(agent: String? = null): List<String> =
+    subscriptions.filter { agent == null || it.agent == agent }.map { it.name }
+
+/** Who lists [name]: Workspaces, Bots and the Capture assistant. */
+fun Settings.usersOf(name: String): List<String> =
+    workspaces.filter { name in it.subscriptions }.map { it.name } +
+        workspaces.flatMap { w -> w.bots.filter { name in it.subscriptions }.map { "${it.name} in ${w.name}" } } +
+        listOfNotNull("Capture assistant".takeIf { assistant?.subscriptions?.contains(name) == true })
+
+/**
+ * "Runs on claude-work · 82% of 5 h": the first of [workspace]'s subscriptions for its [agent] command,
+ * as the host picks it. Null when the Workspace lists none of that kind.
+ */
+fun Settings.runsOn(workspace: String, agent: String?, usage: List<SubscriptionUsage>): String? {
+    val name = loginsFor(workspace, agent).firstOrNull() ?: return null
+    return "Runs on $name · ${PlanWindow.line(usage.firstOrNull { it.name == name })}"
+}
+
+/** [workspace]'s subscriptions of its [agent] command's kind, in order. */
+fun Settings.loginsFor(workspace: String, agent: String?): List<String> {
+    val names = workspaces.firstOrNull { it.name == workspace }?.subscriptions.orEmpty()
+    val kind = if (agent?.endsWith("codex") == true) CODEX else CLAUDE_CODE
+    return names.filter { n -> subscriptions.any { it.name == n && it.agent == kind } }
+}
+
+/** The first of each agent kind in [names]: Current, the login the next agent of that kind takes (ADR 0103 §4). */
+fun Settings.currentOf(names: List<String>): Set<String> {
+    val kinds = mutableSetOf<String>()
+    return names.filter { n -> subscriptions.firstOrNull { it.name == n }?.let { kinds.add(it.agent) } == true }.toSet()
+}
+
+/** [names] with [name] first: Use for next Tasks. */
+fun firstIn(names: List<String>, name: String): List<String> = listOf(name) + (names - name)
+
+/** What a Workspace's Subscriptions list says under it. */
+fun switchNote(ws: SettingsWorkspace): String = when {
+    ws.subscriptions.isEmpty() -> "Each agent takes the first subscription of its kind. Empty: the agent's default login."
+    ws.switchSubscriptions -> "New agents take the Current login of their kind. At 95% of a limit they take the next one."
+    else -> "New agents take the Current login of their kind, also when it is full. Use another to switch."
+}
+
+/** How token counts read (ADR 0103 §6): `84`, `84k`, `1.2M`. */
+object TokenText {
+    /** How many Tasks Usage lists. */
+    const val TASKS = 10
+
+    fun short(n: Long): String = when {
+        n < THOUSAND -> "$n"
+        n < MILLION -> rounded(n.toDouble() / THOUSAND) + "k"
+        else -> rounded(n.toDouble() / MILLION) + "M"
+    }
+
+    /** `1.2M in · 84k out · 9.4M cached`. */
+    fun line(input: Long, cached: Long, output: Long): String =
+        listOfNotNull("${short(input)} in", "${short(output)} out", "${short(cached)} cached".takeIf { cached > 0 }).joinToString(" · ")
+
+    /** The Task agent that still runs in [t]'s folder: its row goes by its name and opens it. */
+    fun agentOf(t: TaskTokens, terminals: List<Terminal>): Terminal? =
+        terminals.firstOrNull { it.labels["muxa.dir"] == t.dir && it.labels["muxa.role"] == "agent" }
+
+    /** The name of the Task agent that still runs in [t]'s folder, else the folder's name. */
+    fun taskName(t: TaskTokens, terminals: List<Terminal>): String = agentOf(t, terminals)?.name ?: t.title
+
+    /** One decimal below 10, none from 10: `1.2`, `84`. */
+    private fun rounded(x: Double): String = if (x < ONE_DECIMAL_BELOW) String.format(Locale.ROOT, "%.1f", x) else String.format(Locale.ROOT, "%.0f", x)
+
+    private const val THOUSAND = 1_000L
+    private const val MILLION = 1_000_000L
+    private const val ONE_DECIMAL_BELOW = 9.95
+}
+
+private const val CLAUDE_CODE = WorkerDraft.CLAUDE_CODE
+private const val CODEX = WorkerDraft.CODEX

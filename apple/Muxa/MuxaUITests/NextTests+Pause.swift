@@ -1,6 +1,6 @@
 import XCTest
 
-/// Pause and resume a Task (ADR 0102), against the demo: `t10` ships paused.
+/// Pause and resume a Task (ADR 0104), against the demo: `t10` ships paused.
 extension NextTests {
     @MainActor
     func testATaskPausesAndResumesFromItsRowMenu() throws {

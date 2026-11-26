@@ -94,6 +94,55 @@ impl Host for WorkTasks {
             connections: spec.connections.clone(),
             mcp: spec.mcp.clone(),
             bot: None,
+            subscription: None,
+        })
+    }
+
+    async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
+        Ok(vec![
+            muxa_protocol::v2::SubscriptionUsage {
+                name: "work".into(),
+                agent: "claude-code".into(),
+                plan: Some("Max 20x".into()),
+                windows: vec![muxa_protocol::v2::UsageWindow {
+                    minutes: 300,
+                    used_percent: 82,
+                    resets_at: 1_700_018_000,
+                }],
+                as_of: Some(1_700_000_000),
+            },
+            muxa_protocol::v2::SubscriptionUsage {
+                name: "spare".into(),
+                agent: "claude-code".into(),
+                plan: None,
+                windows: Vec::new(),
+                as_of: None,
+            },
+        ])
+    }
+
+    async fn token_usage(
+        &self,
+        day: Option<String>,
+    ) -> Result<muxa_protocol::v2::TokenUsage, TaskError> {
+        use muxa_protocol::v2::{TaskTokens, TokenUsage, Tokens, WorkspaceTokens};
+        let tokens = Tokens {
+            input: 1200,
+            cached: 9000,
+            output: 84,
+        };
+        Ok(TokenUsage {
+            day: day.unwrap_or_else(|| "2026-11-25".into()),
+            workspaces: vec![WorkspaceTokens {
+                workspace: "w".into(),
+                tokens,
+            }],
+            tasks: vec![TaskTokens {
+                workspace: "w".into(),
+                dir: "/work/fix".into(),
+                title: "fix".into(),
+                tokens,
+            }],
         })
     }
 
@@ -512,6 +561,38 @@ async fn chat_prints_a_tasks_conversation() {
     let agent = started["terminal"]["id"].as_str().unwrap();
     let out = stdout(&host.cli(&["chat", agent]).await);
     assert_eq!(out, "user: Clean it\nassistant: Done.\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn subscriptions_list_each_login_and_its_last_report() {
+    let host = TestHost::start("subscriptions").await;
+    assert_eq!(
+        stdout(&host.cli(&["subscriptions"]).await),
+        "work\tclaude-code\tMax 20x\t300m:82%@1700018000 as of 1700000000\n\
+         spare\tclaude-code\t\tno report yet\n"
+    );
+    let listed: Value =
+        serde_json::from_str(&stdout(&host.cli(&["subscriptions", "--json"]).await)).unwrap();
+    assert_eq!(
+        listed[0]["windows"][0],
+        serde_json::json!({"minutes": 300, "used_percent": 82, "resets_at": 1_700_018_000u64})
+    );
+    assert_eq!(listed[1]["as_of"], Value::Null);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn token_usage_lists_workspaces_then_their_tasks() {
+    let host = TestHost::start("tokens").await;
+    assert_eq!(
+        stdout(&host.cli(&["token-usage", "--day", "2026-11-24"]).await),
+        "2026-11-24\nw\tin 1200\tcached 9000\tout 84\n  w/fix\tin 1200\tcached 9000\tout 84\n"
+    );
+    let listed: Value =
+        serde_json::from_str(&stdout(&host.cli(&["token-usage", "--json"]).await)).unwrap();
+    assert_eq!(
+        listed["tasks"][0],
+        serde_json::json!({"workspace": "w", "dir": "/work/fix", "title": "fix", "input": 1200, "cached": 9000, "output": 84})
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

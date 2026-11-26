@@ -4,7 +4,7 @@ import Testing
 
 @testable import MuxaV2
 
-/// Pause and resume a Task (ADR 0102): the wire, and the demo server.
+/// Pause and resume a Task (ADR 0104): the wire, and the demo server.
 struct PausedTaskTests {
     func open() async throws -> V2Client {
         try await V2Client.open(DemoChannel(), name: "test")
@@ -103,7 +103,7 @@ struct PausedTaskTests {
     }
 }
 
-/// A server before ADR 0102: welcome, then an error without an id for every
+/// A server before ADR 0104: welcome, then an error without an id for every
 /// request it does not know, as the daemon answers one.
 private final class OlderServer: ByteChannel, @unchecked Sendable {
     let bytes: AsyncThrowingStream<Data, any Error>

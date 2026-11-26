@@ -389,6 +389,74 @@ struct DemoTests {
         #expect(s.workers.map(\.name) == ["reviewer"])
     }
 
+    /// ADR 0103: each subscription with its last report; one never used has none.
+    @Test(.timeLimit(.minutes(1)))
+    func subscriptionsShowTheirLastReport() async throws {
+        let c = try await open()
+        let usage = try await c.subscriptions()
+        #expect(usage.map(\.name) == ["claude-personal", "claude-spare", "chatgpt"])
+        #expect(usage[0].windows.map(\.usedPercent) == [82, 31])
+        #expect(usage[0].windows.allSatisfy { !$0.hasReset() })
+        #expect(usage[1].windows.isEmpty && usage[1].asOf == nil)
+    }
+
+    /// ADR 0103 §6: today's tokens, whose Task folders are the demo agents'.
+    @Test(.timeLimit(.minutes(1)))
+    func tokenUsageNamesTheTasksFolders() async throws {
+        let c = try await open()
+        let usage = try await c.tokenUsage()
+        #expect(usage.workspaces.map(\.workspace) == ["app", "Personal"])
+        #expect(usage.tasks.first?.dir == "/demo/app-fix-login")
+        #expect(try await c.tokenUsage(day: "2026-11-01").day == "2026-11-01")
+        #expect(TokenText.line(input: 1_200_000, cached: 0, output: 84_000) == "1.2M in · 84k out")
+        #expect(TokenText.line(input: 950, cached: 12_400_000, output: 9_960) == "950 in · 10k out · 12M cached")
+    }
+
+    /// ADR 0103 §7: onboarding adopts app's env login, and a login terminal
+    /// opens once per subscription.
+    @Test(.timeLimit(.minutes(1)))
+    func aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() async throws {
+        let c = try await open()
+        #expect(try await c.settings().foundLogins == [FoundLogin(agent: "claude-code", workspace: "app")])
+        let s = try await c.settingsUpdate(revision: "1", ops: [
+            .subscriptionAdopt(workspace: "app", agent: "claude-code", name: "claude-app"),
+        ])
+        #expect(s.workspaces[0].subscriptions == ["claude-app"])
+        #expect(!s.workspaces[0].agent.env.contains { $0.key == "CLAUDE_CONFIG_DIR" })
+        #expect(s.foundLogins.isEmpty)
+        let (t, existing) = try await c.loginStart("claude-app")
+        #expect(!existing && t.labels["muxa.kind"] == "login" && t.labels["muxa.subscription"] == "claude-app")
+        let (again, open) = try await c.loginStart("claude-app")
+        #expect(open && again.id == t.id)
+        await #expect(throws: V2Error.self) { _ = try await c.loginStart("nope") }
+    }
+
+    /// ADR 0103: a login is named once and Workspaces list it; one that a
+    /// Workspace lists cannot go.
+    @Test(.timeLimit(.minutes(1)))
+    func subscriptionsAreAddedListedAndKeptWhileListed() async throws {
+        let c = try await open()
+        let before = try await c.settings()
+        #expect(before.subscriptions.map(\.name) == ["claude-personal", "claude-spare", "chatgpt"])
+        #expect(before.workspaces[1].subscriptions == ["claude-personal", "claude-spare"])
+        let after = try await c.settingsUpdate(revision: "1", ops: [
+            .subscriptionAdd(subscription: SubscriptionSpec(name: "claude-work", agent: "claude-code",
+                                                            home: "~/.claude-work")),
+            .envUnset(workspace: "app", key: "CLAUDE_CONFIG_DIR"),
+            .workspaceUpdate(workspace: "app", subscriptions: ["claude-work"]),
+            .assistantUpdate(enabled: true, subscriptions: ["claude-spare"]),
+        ])
+        #expect(after.workspaces[0].subscriptions == ["claude-work"])
+        #expect(after.assistant?.subscriptions == ["claude-spare"])
+        await #expect(throws: V2Error.self) {
+            _ = try await c.settingsUpdate(revision: after.revision, ops: [.subscriptionRemove(name: "claude-work")])
+        }
+        await #expect(throws: V2Error.self) {
+            _ = try await c.settingsUpdate(revision: after.revision,
+                                           ops: [.workspaceUpdate(workspace: "app", subscriptions: ["nope"])])
+        }
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func settingsUpdateAppliesTheOpsInOrder() async throws {
         let c = try await open()

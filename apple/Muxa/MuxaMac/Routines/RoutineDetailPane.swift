@@ -53,6 +53,7 @@ struct RoutineDetailPane: View {
         var parts = [routine.workspace, routine.timing]
         if let next = routine.nextDue { parts.append("next \(routineStamp(next))") }
         if let since = routine.runningSince { parts.append("running since \(routineStamp(since))") }
+        if let until = routine.waitingUntil { parts.append("waiting for a limit reset until \(routineStamp(until))") }
         return parts.joined(separator: " · ")
     }
 

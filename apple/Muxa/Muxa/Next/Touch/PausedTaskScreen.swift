@@ -1,7 +1,7 @@
 import MuxaV2
 import SwiftUI
 
-/// A paused Task in place of its Task screen (ADR 0102): back on a phone, the
+/// A paused Task in place of its Task screen (ADR 0104): back on a phone, the
 /// Paused view, and Close Task's confirm, then the host's reason when its
 /// worktree holds work, as the Mac asks.
 struct PausedTaskScreen: View {

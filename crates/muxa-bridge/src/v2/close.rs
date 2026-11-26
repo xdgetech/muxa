@@ -12,10 +12,10 @@ use super::git::{self, GitError};
 
 /// A Task's branch worktree that is still there.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Tree {
-    main: PathBuf,
-    path: PathBuf,
-    branch: String,
+pub(crate) struct Tree {
+    pub main: PathBuf,
+    pub path: PathBuf,
+    pub branch: String,
 }
 
 /// With `remove`, refuses when a worktree would lose work and says which.
@@ -57,25 +57,33 @@ pub async fn remove(places: &[Place], mode: WorktreeMode) -> Result<(), TaskErro
 async fn trees(places: &[Place]) -> Result<Vec<Tree>, TaskError> {
     let mut out = Vec::new();
     for p in places.iter().filter(|p| p.kind == PlaceKind::Branch) {
-        let path = PathBuf::from(&p.path);
-        let (Some(branch), true) = (&p.branch, path.is_dir()) else {
-            continue;
-        };
-        let main = git::main_checkout(&path).await.map_err(failed)?;
-        let found = git::existing_worktree(&main, branch)
-            .await
-            .map_err(failed)?;
-        if !same(found.as_deref(), &path) || same(Some(&main), &path) {
-            tracing::warn!(path = %path.display(), "a Task place no longer holds its branch; kept");
-            continue;
+        let Some(branch) = &p.branch else { continue };
+        if let Some(t) = tree(Path::new(&p.path), branch).await? {
+            out.push(t);
         }
-        out.push(Tree {
-            main,
-            path,
-            branch: branch.clone(),
-        });
     }
     Ok(out)
+}
+
+/// The worktree at `path` if it still holds `branch` and is not a main
+/// checkout.
+pub(crate) async fn tree(path: &Path, branch: &str) -> Result<Option<Tree>, TaskError> {
+    if !path.is_dir() {
+        return Ok(None);
+    }
+    let main = git::main_checkout(path).await.map_err(failed)?;
+    let found = git::existing_worktree(&main, branch)
+        .await
+        .map_err(failed)?;
+    if !same(found.as_deref(), path) || same(Some(&main), path) {
+        tracing::warn!(path = %path.display(), "a Task place no longer holds its branch; kept");
+        return Ok(None);
+    }
+    Ok(Some(Tree {
+        main,
+        path: path.to_owned(),
+        branch: branch.to_owned(),
+    }))
 }
 
 fn same(a: Option<&Path>, b: &Path) -> bool {
@@ -83,11 +91,34 @@ fn same(a: Option<&Path>, b: &Path) -> bool {
     a.is_some_and(|a| canon(a) == canon(b))
 }
 
+/// Whether a worktree holds work that removing it would lose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkState {
+    pub clean: bool,
+    /// The base the branch is not in; None when merged.
+    pub unmerged: Option<String>,
+}
+
 /// What closing `t` would lose: uncommitted changes, commits not merged.
-async fn losses_of(t: &Tree) -> Result<Vec<String>, TaskError> {
+pub(crate) async fn losses_of(t: &Tree) -> Result<Vec<String>, TaskError> {
+    let state = work_state(t).await?;
     let mut out = Vec::new();
+    if !state.clean {
+        out.push(format!(
+            "{} has uncommitted changes in {}",
+            t.branch,
+            t.path.display()
+        ));
+    }
+    if let Some(base) = state.unmerged {
+        out.push(format!("{} has commits that are not in {base}", t.branch));
+    }
+    Ok(out)
+}
+
+pub(crate) async fn work_state(t: &Tree) -> Result<WorkState, TaskError> {
     let status = git::run(
-        git::git(&t.path).args(["status", "--porcelain"]),
+        git::git(&t.path).args(["status", "--porcelain", "--ignore-submodules=none"]),
         "git status",
     )
     .await
@@ -98,17 +129,40 @@ async fn losses_of(t: &Tree) -> Result<Vec<String>, TaskError> {
             t.path.display()
         )));
     }
-    if !status.stdout.is_empty() {
-        out.push(format!(
-            "{} has uncommitted changes in {}",
-            t.branch,
+    let unmerged = match unmerged(t).await? {
+        Some(base) => Some(base),
+        None => unpushed_submodule(t).await?,
+    };
+    Ok(WorkState {
+        clean: status.stdout.is_empty(),
+        unmerged,
+    })
+}
+
+/// A submodule of the worktree with commits on no remote, which removing
+/// the worktree would lose: its modules live in the worktree's git dir.
+async fn unpushed_submodule(t: &Tree) -> Result<Option<String>, TaskError> {
+    // `$sm_path` is git's, set per submodule; nothing here comes from input.
+    // A failed `git log` fails the whole check, so the worktree stays.
+    let script = "c=$(git log -1 --format=%H HEAD --branches --not --remotes) || exit 1; \
+                  test -z \"$c\" || echo \"$sm_path\"";
+    let out = git::run(
+        git::git(&t.path).args(["submodule", "foreach", "--quiet", "--recursive", script]),
+        "git submodule foreach",
+    )
+    .await
+    .map_err(failed)?;
+    if !out.status.success() {
+        return Err(TaskError::Failed(format!(
+            "cannot read the submodules of {}",
             t.path.display()
-        ));
+        )));
     }
-    if let Some(base) = unmerged(t).await? {
-        out.push(format!("{} has commits that are not in {base}", t.branch));
-    }
-    Ok(out)
+    let text = String::from_utf8_lossy(&out.stdout);
+    Ok(text
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .map(|sub| format!("the remote of submodule {}", sub.trim())))
 }
 
 /// None when the branch is in the default base or the main checkout's
@@ -134,18 +188,19 @@ async fn unmerged(t: &Tree) -> Result<Option<String>, TaskError> {
     Ok(bases.into_iter().next())
 }
 
-async fn remove_tree(t: &Tree, mode: WorktreeMode) -> Result<(), String> {
-    let mut rm = git::git(&t.main);
-    rm.args(["worktree", "remove"]);
-    if mode == WorktreeMode::Force {
-        rm.arg("--force");
+pub(crate) async fn remove_tree(t: &Tree, mode: WorktreeMode) -> Result<(), String> {
+    match remove_worktree(t, mode == WorktreeMode::Force).await {
+        // git refuses any worktree with submodules without `--force`, even a
+        // clean one. Check it again, submodules too, before forcing.
+        Err(e) if mode == WorktreeMode::Remove && e.contains("containing submodules") => {
+            let state = work_state(t).await.map_err(|e| e.to_string())?;
+            if !state.clean || state.unmerged.is_some() {
+                return Err(e);
+            }
+            remove_worktree(t, true).await?;
+        }
+        other => other?,
     }
-    rm.arg(&t.path);
-    expect_ok(
-        &mut rm,
-        &format!("remove the worktree {}", t.path.display()),
-    )
-    .await?;
     let flag = match mode {
         WorktreeMode::Remove => "-d",
         WorktreeMode::Force => "-D",
@@ -159,6 +214,20 @@ async fn remove_tree(t: &Tree, mode: WorktreeMode) -> Result<(), String> {
         }
         other => other,
     }
+}
+
+async fn remove_worktree(t: &Tree, force: bool) -> Result<(), String> {
+    let mut rm = git::git(&t.main);
+    rm.args(["worktree", "remove"]);
+    if force {
+        rm.arg("--force");
+    }
+    rm.arg(&t.path);
+    expect_ok(
+        &mut rm,
+        &format!("remove the worktree {}", t.path.display()),
+    )
+    .await
 }
 
 async fn expect_ok(cmd: &mut tokio::process::Command, what: &str) -> Result<(), String> {

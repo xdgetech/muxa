@@ -26,6 +26,52 @@ data class Settings(
     val workers: List<WorkerSpec> = emptyList(),
     /** The Capture assistant (ADR 0084); null from an older server. */
     val assistant: SettingsAssistant? = null,
+    /** `[[subscription]]`: named agent logins (ADR 0103). */
+    val subscriptions: List<SubscriptionSpec> = emptyList(),
+    /** Logins on the host that are no subscription yet, for onboarding (ADR 0103 §7). */
+    @SerialName("found_logins") val foundLogins: List<FoundLogin> = emptyList(),
+    /** The build disk (ADR 0102); null from an older server. */
+    val build: SettingsBuild? = null,
+)
+
+/**
+ * A login the host found without opening a file: a default folder, or a Workspace's env variable. An env value
+ * never crosses the wire, so a Workspace's login has no [home]; `subscription-adopt` makes it one.
+ */
+@Serializable
+data class FoundLogin(
+    /** `claude-code` or `codex`. */
+    val agent: String,
+    /** `~/.claude` or `~/.codex`; null for a Workspace's env login. */
+    val home: String? = null,
+    /** The Workspace whose env names this login. */
+    val workspace: String? = null,
+)
+
+/** `[[subscription]]` (ADR 0103): an agent login muxa names. The login stays with the agent; muxa keeps the name and the folder. */
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+data class SubscriptionSpec(
+    val name: String,
+    /** `claude-code` or `codex`. */
+    val agent: String,
+    /** As written, `~/` included. */
+    val home: String,
+    /** A label only. Absent when null, as the server writes it. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val plan: String? = null,
+)
+
+/** `[build]` in `workspaces.toml`: where Task worktrees put their build output (ADR 0102). */
+@Serializable
+data class SettingsBuild(
+    /** As written, `~/` included; null: the build disk is off. */
+    val dir: String? = null,
+    /** `3d`, `12h`; null: three days. */
+    @SerialName("drop_after") val dropAfter: String? = null,
+    /** [dir] is a folder on the host now. A disk that is not mounted is not. */
+    @SerialName("dir_found") val dirFound: Boolean = false,
+    /** Paths every Task worktree sends to the build disk too, beside the build folders muxa finds from each repo's build files. */
+    @SerialName("extra_paths") val extraPaths: List<String> = emptyList(),
 )
 
 /** `[assistant]` in `workspaces.toml`, and its `soul.md` and `memory.md` beside it. A text is null when it cannot be read. */
@@ -37,6 +83,8 @@ data class SettingsAssistant(
     @SerialName("soul_text") val soulText: String? = null,
     /** Read only: the assistant writes it. */
     @SerialName("memory_text") val memoryText: String? = null,
+    /** The Claude subscriptions it runs on, in order (ADR 0103). */
+    val subscriptions: List<String> = emptyList(),
 )
 
 /** A `[[workspace]]`. Paths are as written, `~/` included. */
@@ -60,6 +108,10 @@ data class SettingsWorkspace(
     @SerialName("claude_connectors") val claudeConnectors: Boolean = false,
     /** `[workspace.bots]`: Claude Code permission rules for the Workspace's Bots only (ADR 0087). */
     @SerialName("bot_rules") val botRules: BotRules = BotRules(),
+    /** The subscriptions its agents use, in order (ADR 0103). */
+    val subscriptions: List<String> = emptyList(),
+    /** False: each agent keeps the first of its kind, full or not; the user switches by the order (ADR 0103 §4). */
+    @SerialName("switch_subscriptions") val switchSubscriptions: Boolean = true,
     val connections: List<SettingsConnection> = emptyList(),
     val mcp: List<McpSpec> = emptyList(),
     /** Listed also while [routinesEnabled] is false. */
@@ -188,6 +240,8 @@ data class BotSpec(
     @SerialName("handoffs_per_day") val handoffsPerDay: Int? = null,
     /** Shell command patterns only this Bot may run, each the inside of a `Bash(...)` rule (ADR 0088). Absent when empty. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val commands: List<String> = emptyList(),
+    /** Its own order of its Workspace's subscriptions (ADR 0103); empty: the Workspace's. Absent when empty. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val subscriptions: List<String> = emptyList(),
 )
 
 /** A Bot with its `soul.md`, its `memory.md` (which its runs write), and how many earlier memories can come back. */
@@ -205,13 +259,14 @@ data class SettingsBot(
     val commands: List<String> = emptyList(),
     /** When each earlier memory was replaced, newest first; empty from servers before ADR 0086. */
     @SerialName("memory_history") val memoryHistory: List<MemoryVersion> = emptyList(),
+    val subscriptions: List<String> = emptyList(),
 ) {
     val spec: BotSpec
-        get() = BotSpec(name, description, worker, enabled, members, handoffsPerDay, commands)
+        get() = BotSpec(name, description, worker, enabled, members, handoffsPerDay, commands, subscriptions = subscriptions)
 
     companion object {
         fun of(spec: BotSpec, soulText: String?) = with(spec) {
-            SettingsBot(name, description, worker, enabled, soulText, "", 0, members, handoffsPerDay, commands)
+            SettingsBot(name, description, worker, enabled, soulText, "", 0, members, handoffsPerDay, commands, subscriptions = subscriptions)
         }
     }
 }

@@ -684,6 +684,98 @@ class DemoTest {
         }
     }
 
+    /** ADR 0103: each subscription with its last report; one never used has none. */
+    @Test
+    fun subscriptionsShowTheirLastReport() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val usage = c.subscriptions()
+            assertEquals(listOf("claude-personal", "claude-spare", "chatgpt"), usage.map { it.name })
+            assertEquals(listOf(82, 31), usage[0].windows.map { it.usedPercent })
+            assertEquals(false, usage[0].windows.any { it.hasReset() })
+            assertEquals(Pair(emptyList<UsageWindow>(), null), Pair(usage[1].windows, usage[1].asOf))
+            c.close()
+        }
+    }
+
+    /** ADR 0103 §6: today's tokens, whose Task folders are the demo agents'. */
+    @Test
+    fun tokenUsageNamesTheTasksFolders() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val usage = c.tokenUsage()
+            assertEquals(listOf("app", "Personal"), usage.workspaces.map { it.workspace })
+            assertEquals("/demo/app-fix-login", usage.tasks.first().dir)
+            assertEquals("2026-11-01", c.tokenUsage("2026-11-01").day)
+            c.close()
+        }
+    }
+
+    /** ADR 0103 §7: onboarding adopts app's env login, and a login terminal opens once per subscription. */
+    @Test
+    fun aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            assertEquals(listOf(FoundLogin("claude-code", workspace = "app")), c.settings().foundLogins)
+            val s = c.settingsUpdate("1", listOf(SettingsOp.SubscriptionAdopt("app", "claude-code", "claude-app")))
+            assertEquals(listOf("claude-app"), s.workspaces[0].subscriptions)
+            assertEquals(false, s.workspaces[0].agent.env.any { it.key == "CLAUDE_CONFIG_DIR" })
+            assertEquals(emptyList<FoundLogin>(), s.foundLogins)
+            val (t, existing) = c.loginStart("claude-app")
+            assertEquals(Triple(false, "login", "claude-app"), Triple(existing, t.labels["muxa.kind"], t.labels["muxa.subscription"]))
+            val (again, open) = c.loginStart("claude-app")
+            assertEquals(true to t.id, open to again.id)
+            assertEquals("bad-request", refusal { c.loginStart("nope") }.code)
+            c.close()
+        }
+    }
+
+    /** ADR 0103: a login is named once and Workspaces list it; one a Workspace lists cannot go. */
+    @Test
+    fun subscriptionsAreAddedListedAndKeptWhileListed() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings()
+            assertEquals(listOf("claude-personal", "claude-spare", "chatgpt"), before.subscriptions.map { it.name })
+            assertEquals(listOf("claude-personal", "claude-spare"), before.workspaces[1].subscriptions)
+            val s = c.settingsUpdate(
+                "1",
+                listOf(
+                    SettingsOp.SubscriptionAdd(SubscriptionSpec("claude-work", "claude-code", "~/.claude-work")),
+                    SettingsOp.EnvUnset("app", "CLAUDE_CONFIG_DIR"),
+                    SettingsOp.WorkspaceUpdate("app", subscriptions = listOf("claude-work")),
+                    SettingsOp.AssistantUpdate(true, subscriptions = listOf("claude-spare")),
+                ),
+            )
+            assertEquals(listOf("claude-work"), s.workspaces[0].subscriptions)
+            assertEquals(listOf("claude-spare"), s.assistant?.subscriptions)
+            assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.SubscriptionRemove("claude-work"))) }.code)
+            assertEquals(
+                "bad-request",
+                refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", subscriptions = listOf("nope")))) }.code,
+            )
+            c.close()
+        }
+    }
+
+    @Test
+    fun theBuildDiskIsSaved() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings()
+            assertEquals(SettingsBuild("/Volumes/Build/muxa", dirFound = true, extraPaths = listOf("out")), before.build)
+            val moved = c.settingsUpdate("1", listOf(SettingsOp.BuildUpdate(dir = Patch.Set("~/build"), dropAfter = Patch.Set("12h"))))
+            assertEquals(SettingsBuild("~/build", "12h", dirFound = true, extraPaths = listOf("out")), moved.build)
+            val extra = c.settingsUpdate(moved.revision, listOf(SettingsOp.BuildUpdate(extraPaths = listOf("out", "web/dist"))))
+            assertEquals(listOf("out", "web/dist"), extra.build?.extraPaths)
+            val kept = c.settingsUpdate(extra.revision, listOf(SettingsOp.BuildUpdate(dropAfter = Patch.Clear)))
+            assertEquals(SettingsBuild("~/build", null, dirFound = true, extraPaths = listOf("out", "web/dist")), kept.build)
+            val off = c.settingsUpdate(kept.revision, listOf(SettingsOp.BuildUpdate(dir = Patch.Clear, extraPaths = emptyList())))
+            assertEquals(SettingsBuild(), off.build)
+            c.close()
+        }
+    }
+
     @Test
     fun aTeamLeadsOnlyBotsThatLeadNone() = runBlocking {
         withTimeout(10_000) {

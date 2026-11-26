@@ -166,6 +166,12 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 
+    /** The login terminal of [subscription] (ADR 0103 §7), and whether it was open already. */
+    suspend fun loginStart(subscription: String): Pair<Terminal, Boolean> {
+        val reply = request(V2Request.LoginStart(subscription))
+        return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
+    }
+
     /** A new shell beside the Task's agent [terminal]; refused with `conflict` when it has 3. */
     suspend fun taskShell(terminal: String): Terminal = field("terminal", request(V2Request.TaskShell(terminal)))
 
@@ -178,7 +184,7 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         request(V2Request.CloseTerminal(terminal))
     }
 
-    // Paused Tasks (ADR 0102)
+    // Paused Tasks (ADR 0104)
 
     /** Pauses the Task of the agent [terminal]; pausing a paused Task again changes nothing. */
     suspend fun pauseTask(terminal: String): Paused = field("paused", request(V2Request.PauseTask(terminal)))
@@ -193,7 +199,7 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     suspend fun pausedTasks(): List<Paused> = field("paused", request(V2Request.PausedTasks))
 
     /**
-     * As [pausedTasks], or null when no reply came [within]: a host before ADR 0102
+     * As [pausedTasks], or null when no reply came [within]: a host before ADR 0104
      * answers the unknown request with an error that carries no id.
      */
     suspend fun pausedTasks(within: Duration): List<Paused>? =
@@ -211,6 +217,21 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
 
     /** The host's Workspaces, with what starting a Task in each may use. */
     suspend fun workspaces(): List<Workspace> = field("workspaces", request(V2Request.Workspaces))
+
+    /** Each subscription with the limits its agents last reported (ADR 0103). An older server refuses the request. */
+    suspend fun subscriptions(): List<SubscriptionUsage> = field("subscriptions", request(V2Request.Subscriptions))
+
+    /** The tokens agents used on [day] (`YYYY-MM-DD`; null for today on the host's clock). An older server refuses it. */
+    suspend fun tokenUsage(day: String? = null): TokenUsage = field("token_usage", request(V2Request.TokenUsage(day)))
+
+    /** The host's Task places, other worktrees and build folders (ADR 0102). */
+    suspend fun disk(): List<DiskRow> = field("rows", request(V2Request.Disk))
+
+    /** Removes rows of [disk]; a dry run unless [dryRun] is false. */
+    suspend fun diskClean(paths: List<String> = emptyList(), force: Boolean = false, dryRun: Boolean = true): DiskCleaned {
+        val reply = request(V2Request.DiskClean(paths, force, dryRun))
+        return DiskCleaned(field("dry_run", reply), field("removed", reply), field("kept", reply))
+    }
 
     /** The Routines, the Workspaces whose Routines could not be read, and those that turn them off. */
     suspend fun routines(): Triple<List<Routine>, List<RoutineProblem>, List<RoutinesOff>> {

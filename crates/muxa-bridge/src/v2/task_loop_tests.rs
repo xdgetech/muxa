@@ -49,12 +49,20 @@ impl Host {
     }
 
     async fn agent(&self) -> TerminalInfo {
-        let labels = Labels::from([
+        self.agent_on(None).await
+    }
+
+    /// A Task agent on `subscription`, as its `muxa.subscription` label says.
+    async fn agent_on(&self, subscription: Option<&str>) -> TerminalInfo {
+        let mut labels = Labels::from([
             (KIND.to_owned(), "task".to_owned()),
             (ROLE.to_owned(), "agent".to_owned()),
             (DIR.to_owned(), self.task.display().to_string()),
             (WORKSPACE.to_owned(), "w".to_owned()),
         ]);
+        if let Some(s) = subscription {
+            labels.insert(SUBSCRIPTION.to_owned(), s.to_owned());
+        }
         let launch = Launch {
             name: Some("fix".into()),
             labels,
@@ -221,4 +229,43 @@ async fn a_restarted_daemon_finds_the_loop_in_the_folder() {
     let found = again.list().await;
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].terminal, t.id.as_str());
+}
+
+#[tokio::test]
+async fn the_fail_prompt_waits_while_the_agents_login_is_full() {
+    let h = Host::new("full").await;
+    std::fs::write(
+        h.base.join("workspaces.toml"),
+        format!(
+            "[[subscription]]\nname = \"work\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[workspace]]\nname = \"w\"\nroot = \"{}\"\nsubscriptions = [\"work\"]\n\
+             [workspace.loop]\nchecks = [\"{CHECK}\"]\n",
+            h.base.join(".claude-work").display(),
+            h.base.join("root").display()
+        ),
+    )
+    .unwrap();
+    let resets = now() + 2;
+    let w = crate::limits::Window {
+        minutes: 300,
+        used_percent: 97.0,
+        resets_at: resets,
+    };
+    crate::limits::record(&h.base.join("state"), "work", &[w], now()).unwrap();
+    let t = h.agent_on(Some("work")).await;
+    h.loops
+        .start(&t, &v2::LoopSpec::default(), false)
+        .await
+        .unwrap();
+
+    h.backend.set_status(&t.id, "done");
+    let held = h.until("paused", 1).await;
+    assert_eq!(held.reason.as_deref(), Some("limit-reset"));
+    assert_eq!(held.resumes_at, Some(resets));
+    assert!(h.backend.inputs(&t.id).is_empty(), "nothing typed yet");
+
+    let armed = h.until("armed", 1).await;
+    assert_eq!(armed.resumes_at, None);
+    let typed = String::from_utf8(h.backend.inputs(&t.id).concat()).unwrap();
+    assert_eq!(typed, format!("{}\r", fail_prompt(1)));
 }

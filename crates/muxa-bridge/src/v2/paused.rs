@@ -1,4 +1,4 @@
-//! `<state dir>/paused.json`: the paused Tasks (ADR 0102). The file is
+//! `<state dir>/paused.json`: the paused Tasks (ADR 0104). The file is
 //! written before memory changes, so a restarted daemon lists the same ones.
 
 use std::fs::DirBuilder;

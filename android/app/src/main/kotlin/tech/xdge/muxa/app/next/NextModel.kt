@@ -35,7 +35,9 @@ import tech.xdge.muxa.v2.ReaderList
 import tech.xdge.muxa.v2.Routine
 import tech.xdge.muxa.v2.RoutineProblem
 import tech.xdge.muxa.v2.SettingsOp
+import tech.xdge.muxa.v2.SubscriptionUsage
 import tech.xdge.muxa.v2.Terminal
+import tech.xdge.muxa.v2.TokenUsage
 import tech.xdge.muxa.v2.V2Client
 import tech.xdge.muxa.v2.V2Error
 import tech.xdge.muxa.v2.V2Event
@@ -86,7 +88,7 @@ class NextModel(
     var terminals by mutableStateOf(emptyList<Terminal>())
         private set
 
-    /** The paused Tasks (ADR 0102), oldest first. */
+    /** The paused Tasks (ADR 0104), oldest first. */
     var paused by mutableStateOf(emptyList<Paused>())
         private set
     var routines by mutableStateOf(emptyList<Routine>())
@@ -417,7 +419,7 @@ class NextModel(
         return loss
     }
 
-    // Paused Tasks (ADR 0102)
+    // Paused Tasks (ADR 0104)
 
     /** Stops a Task's agent and its shells, and keeps the Task with its places and items. */
     fun pauseTask(terminal: String) = scope.launch {
@@ -464,6 +466,47 @@ class NextModel(
     }
 
     private fun connected(): V2Client = client ?: throw IllegalStateException("Not connected.")
+
+    /** Each subscription with the limits its agents last reported (ADR 0103), as [loadPlanUsage] last read them. */
+    var planUsage: List<SubscriptionUsage> by mutableStateOf(emptyList())
+        private set
+
+    /** Today's tokens by Workspace and Task (ADR 0103 §6); null from a host without `token-usage`. */
+    var tokenUsage: TokenUsage? by mutableStateOf(null)
+        private set
+
+    /**
+     * Reads [planUsage] again. A failure keeps the last copy and leaves [requestError] alone: an older host
+     * refuses the request, and its screens then show "no data yet".
+     */
+    suspend fun loadPlanUsage() {
+        val c = client ?: return
+        try {
+            planUsage = c.subscriptions()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Kept: the screens show the last copy, or "no data yet".
+        }
+        try {
+            tokenUsage = c.tokenUsage()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // An older host refuses `token-usage`: Usage then shows the limits only.
+        }
+    }
+
+    /** Opens the login terminal of [subscription] (ADR 0103 §7); null with [requestError] set. */
+    suspend fun startLogin(subscription: String): Terminal? {
+        var started: Terminal? = null
+        request { c ->
+            val (t, _) = c.loginStart(subscription)
+            if (terminals.none { it.id == t.id }) terminals = terminals + t
+            started = t
+        }
+        return started
+    }
 
     /** Starts a Task; its agent terminal, or null with [requestError] set. */
     suspend fun startTask(draft: TaskDraft): Terminal? {
@@ -694,7 +737,7 @@ class NextModel(
         private const val CONFLICT = "conflict"
         private const val CHAT_WAIT_SECONDS = 20
 
-        /** A host before ADR 0102 never answers `paused-tasks`; it has no paused Task. */
+        /** A host before ADR 0104 never answers `paused-tasks`; it has no paused Task. */
         private val PAUSED_WAIT = 5.seconds
 
         /** The host's words for an agent whose session has not shown up yet. */

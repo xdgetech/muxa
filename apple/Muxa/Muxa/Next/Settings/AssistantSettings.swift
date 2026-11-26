@@ -13,6 +13,7 @@ struct AssistantSettings: View {
     @State private var readSoul: String?
     @State private var error: String?
     @State private var saved = false
+    @State private var subscriptions: [String] = []
 
     var body: some View {
         SettingsPage {
@@ -27,6 +28,14 @@ struct AssistantSettings: View {
             } footer: {
                 Text("Each capture gets one short run. It suggests a kind, a Workspace, a due date, a split, a Task or a Bot to ask. "
                     + "It has no Workspace and no connections.")
+            }
+            Section {
+                SubscriptionOrder(names: $subscriptions, available: model.settings.subscriptionNames(agent: "claude-code"),
+                                  id: "assistant.subs")
+            } header: {
+                Text("Subscriptions")
+            } footer: {
+                Text("Any Claude login on the host may run it. Empty: the default login.")
             }
             Section {
                 TextEditor(text: $soul)
@@ -73,12 +82,14 @@ struct AssistantSettings: View {
         worker = a?.worker ?? ""
         soul = a?.soulText ?? ""
         readSoul = a?.soulText
+        subscriptions = a?.subscriptions ?? []
     }
 
     private func save() async {
         // An unchanged Soul is not sent, so a file the host could not read stays as it is.
         let text = soul == (readSoul ?? "") ? nil : soul
-        error = await model.settings.save([.assistantUpdate(enabled: enabled, worker: Lines.optional(worker), soulText: text)])
+        error = await model.settings.save([.assistantUpdate(enabled: enabled, worker: Lines.optional(worker), soulText: text,
+                                                            subscriptions: subscriptions)])
         saved = error == nil
     }
 }

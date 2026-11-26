@@ -157,6 +157,12 @@ public actor V2Client {
 
     /// A new shell beside the Task's agent `terminal`; `refused(code: "conflict")`
     /// when the Task has its 3 shells.
+    /// The login terminal of `subscription` (ADR 0103 §7); `existing` when it was open already.
+    public func loginStart(_ subscription: String) async throws -> (Terminal, existing: Bool) {
+        let reply = try await request(.loginStart(subscription: subscription))
+        return (try field("terminal", of: reply), try field("existing", of: reply))
+    }
+
     public func taskShell(_ terminal: String) async throws -> Terminal {
         try field("terminal", of: await request(.taskShell(terminal: terminal)))
     }
@@ -190,6 +196,28 @@ public actor V2Client {
     /// The host's Workspaces, for starting a Task.
     public func workspaces() async throws -> [Workspace] {
         try field("workspaces", of: await request(.workspaces))
+    }
+
+    /// Each subscription with the limits its agents last reported (ADR 0103).
+    /// An older server refuses the request.
+    public func subscriptions() async throws -> [SubscriptionUsage] {
+        try field("subscriptions", of: await request(.subscriptions), decoder: Coding.plainDecoder)
+    }
+
+    /// The tokens agents used on `day` (`YYYY-MM-DD`; nil for today on the
+    /// host's clock). An older server refuses the request.
+    public func tokenUsage(day: String? = nil) async throws -> TokenUsage {
+        try field("token_usage", of: await request(.tokenUsage(day: day)), decoder: Coding.plainDecoder)
+    }
+
+    /// The host's Task places, other worktrees and build folders (ADR 0102).
+    public func disk() async throws -> [DiskRow] {
+        try field("rows", of: await request(.disk))
+    }
+
+    /// Removes rows of `disk`; a dry run unless `dryRun` is false.
+    public func diskClean(paths: [String] = [], force: Bool = false, dryRun: Bool = true) async throws -> DiskCleaned {
+        try Coding.decoder.decode(DiskCleaned.self, from: await request(.diskClean(paths: paths, force: force, dryRun: dryRun)))
     }
 
     /// The host's editable settings.
@@ -275,7 +303,7 @@ public actor V2Client {
 
     // MARK: Paused Tasks
 
-    /// Stops the Task of the agent `terminal` and keeps it (ADR 0102).
+    /// Stops the Task of the agent `terminal` and keeps it (ADR 0104).
     public func pauseTask(_ terminal: String) async throws -> Paused {
         try field("paused", of: await request(.pauseTask(terminal: terminal)))
     }

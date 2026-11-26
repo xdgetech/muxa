@@ -52,7 +52,7 @@ final class NextModel {
     private(set) var chatEnded: [UInt32: String] = [:]
     /// Task Loops by agent terminal.
     private(set) var loops: [String: LoopInfo] = [:]
-    /// The paused Tasks, oldest first (ADR 0102).
+    /// The paused Tasks, oldest first (ADR 0104).
     private(set) var paused: [Paused] = []
     /// The Workspaces with their repos and branches, for Focus's sidebar.
     private(set) var workspaceList: [Workspace] = []
@@ -70,7 +70,7 @@ final class NextModel {
     /// The channel each shown terminal is attached on, for Chat's input.
     private var channelOf: [String: UInt32] = [:]
 
-    /// A host older than ADR 0102 answers `paused-tasks` with an error that has
+    /// A host older than ADR 0104 answers `paused-tasks` with an error that has
     /// no id, so the request would wait forever.
     static let pausedLoadTimeout: Duration = .seconds(5)
 
@@ -397,7 +397,7 @@ final class NextModel {
 
     // MARK: Paused Tasks
 
-    /// Pauses the Task of the agent `terminal` (ADR 0102). The record is kept
+    /// Pauses the Task of the agent `terminal` (ADR 0104). The record is kept
     /// at once, so an open Task shows its Paused view instead of closing.
     @discardableResult
     func pauseTask(_ terminal: String) async -> Bool {
@@ -452,6 +452,17 @@ final class NextModel {
         await run { c in
             let t = try await c.taskShell(agent)
             if !self.terminals.contains(where: { $0.id == t.id }) { self.terminals.append(t) }
+            started = t
+        }
+        return started
+    }
+
+    /// The login terminal of a subscription (ADR 0103 §7), kept at once so Focus shows it.
+    func startLogin(_ subscription: String) async -> Terminal? {
+        var started: Terminal?
+        await run { c in
+            let (t, _) = try await c.loginStart(subscription)
+            if let at = self.terminals.firstIndex(where: { $0.id == t.id }) { self.terminals[at] = t } else { self.terminals.append(t) }
             started = t
         }
         return started
