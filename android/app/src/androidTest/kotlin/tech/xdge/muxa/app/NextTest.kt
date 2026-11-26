@@ -28,6 +28,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -608,6 +610,51 @@ class NextTest {
     }
 
     @Test
+    fun aTaskIsPausedAndResumedFromItsRowMenu() {
+        launch()
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t1"), TIMEOUT)
+        // The demo ships one paused Task.
+        compose.onNode(hasTestTag("terminal.t9") and isPaused).assertExists()
+        compose.onNodeWithTag("terminal.t1").performTouchInput { longClick() }
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.menu.pause"), TIMEOUT)
+        compose.onNodeWithTag("task.menu.pause").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t1") and isPaused, TIMEOUT)
+        compose.onNodeWithTag("terminal.t1").performTouchInput { longClick() }
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.menu.resume"), TIMEOUT)
+        compose.onNodeWithTag("task.menu.resume").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("terminal.t1"), TIMEOUT)
+        // The new agent keeps the Task's title.
+        compose.waitUntilAtLeastOneExists(hasTerminalTag and hasText("fix-login") and !isPaused, TIMEOUT)
+    }
+
+    @Test
+    fun aPausedTaskResumesFromFocus() {
+        launch()
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t9"), TIMEOUT)
+        compose.onNodeWithTag("terminal.t9").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("paused.view"), TIMEOUT)
+        compose.onNodeWithTag("paused.title").assertTextEquals("Wait for the API review")
+        compose.onNodeWithTag("paused.resume").performClick()
+        compose.waitUntilAtLeastOneExists(screenContains("Resuming the agent for Wait for the API review"), TIMEOUT)
+    }
+
+    @Test
+    fun aPausedTaskClosesFromFocus() {
+        launch()
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t9"), TIMEOUT)
+        compose.onNodeWithTag("terminal.t9").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("paused.close"), TIMEOUT)
+        compose.onNodeWithTag("paused.close").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("paused.close.confirm"), TIMEOUT)
+        compose.onNodeWithTag("paused.close.confirm").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("paused.view"), TIMEOUT)
+        compose.waitUntilDoesNotExist(hasTestTag("terminal.t9"), TIMEOUT)
+    }
+
+    @Test
     fun aRoutineRunsNow() {
         launch()
         compose.onNodeWithTag("home.part.Bots").performClick()
@@ -767,6 +814,13 @@ class NextTest {
 private val isItem = SemanticsMatcher("an Inbox item") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item.") == true }
 
 /** The terminal's screen, which the pane reports as its state. */
+/** A Task row the list marks Paused (ADR 0102). */
+private val isPaused = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Paused")
+
+private val hasTerminalTag = SemanticsMatcher("a terminal's row") { node ->
+    node.config.getOrNull(SemanticsProperties.TestTag)?.matches(Regex("terminal\\.t\\d+")) == true
+}
+
 private fun screenContains(text: String) = SemanticsMatcher("screen contains \"$text\"") { node ->
     node.config.getOrNull(SemanticsProperties.TestTag) == "focus.pane" &&
         node.config.getOrNull(SemanticsProperties.StateDescription)?.contains(text) == true

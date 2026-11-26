@@ -104,6 +104,22 @@ class FrameTest {
     }
 
     @Test
+    fun pausedTasksTravelAsTheSpecSays() {
+        assertEquals("""{"id":1,"type":"pause-task","terminal":"t1"}""", V2Request.PauseTask("t1").json(1).toString())
+        assertEquals("""{"id":2,"type":"resume-task","terminal":"t1"}""", V2Request.ResumeTask("t1").json(2).toString())
+        assertEquals("""{"id":3,"type":"paused-tasks"}""", V2Request.PausedTasks.json(3).toString())
+        val wire = """{"paused":[{"terminal":{"id":"t1","name":"fix","live":false,"status":null,
+            "labels":{"muxa.kind":"task","muxa.role":"agent","muxa.title":"Fix it"},"cols":80,"rows":24},
+            "paused_at":1764000000,"loop":{"check":"make test","max_attempts":3,"timeout":600}},
+            {"terminal":{"id":"t2","live":false,"cols":80,"rows":24},"paused_at":1764000001}]}"""
+        val paused = field<List<Paused>>("paused", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals("Fix it" to 1_764_000_000L, paused[0].terminal.taskTitle to paused[0].pausedAt)
+        assertEquals(LoopSpec("make test", 3, 600), paused[0].loop)
+        // No loop was active.
+        assertEquals(null, paused[1].loop)
+    }
+
+    @Test
     fun connectionsAndServersSayWhoUsesThem() {
         val wire = """{"workspaces":[{"name":"a","root":"/a","repos":[],"loop":null,
             "connections":[{"name":"github","default":false,"used_by":{"routines":["digest"],"tasks":["t4"]},"last_used":1700000000}],

@@ -3,7 +3,9 @@ package tech.xdge.muxa.app.next
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import tech.xdge.muxa.v2.Paused
 import tech.xdge.muxa.v2.Terminal
+import tech.xdge.muxa.v2.TerminalStatus
 
 class TerminalGroupsTest {
     private fun terminal(id: String, name: String? = null, live: Boolean = true, labels: Map<String, String> = emptyMap()) =
@@ -35,6 +37,17 @@ class TerminalGroupsTest {
     fun terminalsThatAreNotLiveAreLeftOut() {
         val groups = TerminalGroups.of(listOf(task("t1", "app", live = false), terminal("t2", live = false)))
         assertTrue(groups.isEmpty)
+    }
+
+    @Test
+    fun pausedTasksAreListedLastInTheirWorkspaceAsPaused() {
+        val live = task("t1", "app").copy(status = TerminalStatus("blocked"))
+        val stopped = Paused(task("t2", "app", live = false), pausedAt = 1)
+        val talk = Paused(terminal("t3", live = false, labels = mapOf("muxa.kind" to "task", "muxa.dir" to "/w/t", "muxa.bot" to "b")), 1)
+        val groups = TerminalGroups.of(listOf(live), listOf(stopped, talk))
+        assertEquals(listOf("t1", "t2"), groups.byWorkspace.getValue("app").map { it.id })
+        assertEquals(TaskState.PAUSED, groups.stateOf(stopped.terminal))
+        assertEquals(TaskState.NEEDS_YOU, groups.stateOf(live))
     }
 
     @Test

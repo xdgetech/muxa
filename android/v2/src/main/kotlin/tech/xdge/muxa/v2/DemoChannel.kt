@@ -67,10 +67,13 @@ data class DemoContent(
     val settings: Settings = Settings("1"),
     /** How the Bots' items ended before; Done and Delete add to them. */
     val botCounts: List<BotCount> = emptyList(),
+    /** Paused Tasks (ADR 0102), oldest first; their ids are not among [terminals]. */
+    val paused: List<Paused> = emptyList(),
 ) {
     companion object {
         /**
-         * Two Tasks (one waits on the user), a shell, every Inbox kind, a v1 item to resume (`d9`), and four Routines.
+         * Two Tasks (one waits on the user), a paused Task (`t9`), a shell, every Inbox kind, a v1 item to resume (`d9`),
+         * and four Routines.
          * Approving `d8` needs force. The Bot `pr-watch` owns the Routine `scan` and made `d10` and `d11`; `d12` holds
          * its settings proposal. The Capture assistant suggests a Workspace, a due date and a Task for `d13`.
          */
@@ -94,6 +97,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private var nextChat = 1
     private val settings = DemoSettings(content.settings)
     private var inbox = Inbox(1, content.inbox, emptyList(), content.botCounts)
+    private val paused = content.paused.toMutableList()
 
     /** Uploads by folder and file name, so a second one with the same name gets a number. */
     private val uploads = mutableSetOf<String>()
@@ -234,6 +238,9 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 reply(id)
             }
             "close-task" -> closeTask(id, m)
+            "pause-task" -> pauseTask(id, m.str("terminal") ?: "")
+            "resume-task" -> resumeTask(id, m.str("terminal") ?: "")
+            "paused-tasks" -> reply(id, "paused" to enc(paused.toList()))
             "upload" -> upload(id, m)
             "inbox-request-changes" -> requestChanges(id, item, m.str("comment") ?: "")
             "inbox-retry" -> retry(id, item)
@@ -361,6 +368,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         screens[t.id] = "Starting the agent for $title…\r\n"
         reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+        // An agent in a paused Task's place ends the pause (ADR 0102).
+        paused.firstOrNull { it.terminal.taskDir == dir }?.let { unpause(it.terminal.id, t.id) }
         loop?.let { armLoop(t.id, json.decodeFromJsonElement<LoopSpec>(it), null) }
     }
 
@@ -438,17 +447,72 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         reply(id, "path" to JsonPrimitive(".muxa/uploads/$file"))
     }
 
-    /** Closes a Task without its item, as Approve does, with its shells and open items. */
+    /** Closes a Task, live or paused, without its item, as Approve does, with its shells and open items. */
     private fun closeTask(id: Long, m: JsonObject) {
-        val agent = terminals.firstOrNull { it.id == m.str("terminal") && it.isTaskAgent }
+        val terminal = m.str("terminal")
+        val record = paused.firstOrNull { it.terminal.id == terminal }
+        val agent = record?.terminal ?: terminals.firstOrNull { it.id == terminal && it.isTaskAgent }
             ?: return send(error(id, "bad-request", "only a Task closes this way"))
         val open = inbox.items.filter { it.terminal == agent.id }
         if (m.str("worktree") != "force") {
             open.firstNotNullOfOrNull { losesWork[it.id] }?.let { return send(error(id, "would-lose-work", it)) }
         }
-        removeWithShells(agent.id)
+        if (record != null) {
+            paused.remove(record)
+            sendPaused()
+        } else {
+            removeWithShells(agent.id)
+        }
         val ids = open.map { it.id }.toSet()
         change(id) { i -> i.copy(items = i.items.filter { it.id !in ids }, done = open + i.done) }
+    }
+
+    /** Keeps a Task's agent as a record, then stops its loop and removes it with its shells (ADR 0102). */
+    private fun pauseTask(id: Long, terminal: String) {
+        paused.firstOrNull { it.terminal.id == terminal }?.let { return reply(id, "paused" to enc(it)) }
+        val agent = terminals.firstOrNull { it.id == terminal } ?: return send(error(id, "not-found", "no terminal $terminal"))
+        if (!agent.isTaskAgent) return send(error(id, "bad-request", "only a Task's agent pauses"))
+        val active = loops[terminal]?.takeIf { it.isActive }
+        val record = Paused(
+            agent.copy(live = false, status = null), now(),
+            active?.let { LoopSpec(it.check, it.maxAttempts, it.timeout) },
+        )
+        paused += record
+        active?.let { setLoop(it.copy(state = "stopped", reason = "user", since = now())) }
+        removeWithShells(terminal)
+        reply(id, "paused" to enc(record))
+        sendPaused()
+    }
+
+    /** Runs the paused Task's agent again with its labels and title; its loop is armed again. */
+    private fun resumeTask(id: Long, terminal: String) {
+        val record = paused.firstOrNull { it.terminal.id == terminal }
+            ?: return send(error(id, "not-found", "$terminal is not a paused Task"))
+        val old = record.terminal
+        val t = old.copy(id = newTerminalId(), live = true, status = TerminalStatus("working", "claude-code"))
+        terminals += t
+        screens[t.id] = "Resuming the agent for ${old.taskTitle ?: old.name.orEmpty()}…\r\n"
+        reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
+        if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+        record.loop?.let { armLoop(t.id, it, loops[old.id]) }
+        unpause(old.id, t.id)
+    }
+
+    /** Drops the paused Task [from] and moves its open items to the agent [to]. */
+    private fun unpause(from: String, to: String) {
+        paused.removeAll { it.terminal.id == from }
+        if (inbox.items.any { it.terminal == from }) {
+            inbox = inbox.copy(
+                revision = inbox.revision + 1,
+                items = inbox.items.map { if (it.terminal == from) it.copy(terminal = to) else it },
+            )
+            if (watching) send(buildJsonObject { put("type", "inbox"); put("inbox", enc(inbox)) })
+        }
+        sendPaused()
+    }
+
+    private fun sendPaused() {
+        if (watching) send(buildJsonObject { put("type", "paused"); put("paused", enc(paused.toList())) })
     }
 
     /** Removes a Task's agent, then the shells in its folder, as the server does. */
@@ -470,9 +534,9 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         }
     }
 
-    /** A terminal id not in use, also after one was removed. */
-    private fun newTerminalId(): String =
-        generateSequence(terminals.size + 1) { it + 1 }.map { "t$it" }.first { id -> terminals.none { it.id == id } }
+    /** A terminal id not in use, also after one was removed; a paused Task keeps its id. */
+    private fun newTerminalId(): String = generateSequence(terminals.size + 1) { it + 1 }.map { "t$it" }
+        .first { id -> terminals.none { it.id == id } && paused.none { it.terminal.id == id } }
 
     /** Types the comment to the Task's agent, as the user would. */
     private fun requestChanges(id: Long, item: String, comment: String) {
@@ -850,6 +914,15 @@ private fun standardContent(): DemoContent {
         settings = DEMO_SETTINGS,
         // pr-watch's runs added d10 and d11 today, as the host counts them (ADR 0086).
         botCounts = listOf(BotCount("app", "pr-watch", done = 4, deleted = 1, day = LocalDate.now().toString(), added = 2)),
+        paused = listOf(
+            Paused(
+                Terminal(
+                    "t9", "api-review", live = false, cols = 80, rows = 24,
+                    labels = agentLabels("api-review", "/demo/app", "/demo/app-api-review") + ("muxa.title" to "Wait for the API review"),
+                ),
+                pausedAt = 1_764_000_000,
+            ),
+        ),
     )
 }
 

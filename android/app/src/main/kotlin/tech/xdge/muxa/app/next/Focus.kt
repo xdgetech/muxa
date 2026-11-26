@@ -64,10 +64,15 @@ private enum class View { CHAT, TERMINAL, READER }
 fun Focus(model: NextModel, nav: Nav, selected: String?, select: (String?) -> Unit) {
     val phone = LocalPhoneLayout.current
     val terminal = model.terminals.firstOrNull { it.id == selected }
+    // A paused Task keeps its agent's id (ADR 0102); it shows a Paused view in place of the terminal.
+    val paused = if (terminal == null) model.paused.firstOrNull { it.terminal.id == selected } else null
     // Here, not in the list: the phone's list leaves the screen while a terminal is open.
     val othersOpen = rememberSaveable { mutableStateOf(false) }
     if (phone) {
-        if (terminal == null) {
+        if (paused != null) {
+            BackHandler { select(null) }
+            key(paused.terminal.id) { PausedView(model, paused, Modifier.fillMaxSize(), select) { select(null) } }
+        } else if (terminal == null) {
             PhoneTabs(nav) {
                 LargeTitle("Workspaces") {
                     BoxedIconButton(Icons.add, "New Task", { nav.newTask(TaskSeed()) }, Modifier.testTag("home.newtask"), round = true)
@@ -81,7 +86,9 @@ fun Focus(model: NextModel, nav: Nav, selected: String?, select: (String?) -> Un
     } else {
         Row(Modifier.fillMaxSize()) {
             Sidebar(model, nav) { StateList(model, othersOpen, selected, select) }
-            if (terminal == null) {
+            if (paused != null) {
+                key(paused.terminal.id) { PausedView(model, paused, Modifier.weight(1f).fillMaxHeight(), select, null) }
+            } else if (terminal == null) {
                 Box(Modifier.weight(1f).fillMaxHeight()) { Empty("Select a Task") }
             } else {
                 key(terminal.id) { TaskView(model, terminal, Modifier.weight(1f).fillMaxHeight(), null) }

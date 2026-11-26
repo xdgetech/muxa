@@ -229,6 +229,35 @@ class ServerTest {
     }
 
     @Test
+    fun aPausedTaskKeepsItsItemAndResumes() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            c.watch()
+            val (agent, _) = c.startTask("w", "pause me")
+            val review = c.inbox(V2Request.TaskReview(agent.id)).items.first { it.terminal == agent.id }
+            val record = c.pauseTask(agent.id)
+            assertEquals(agent.id to false, record.terminal.id to record.terminal.live)
+            assertEquals("pause me", record.terminal.taskTitle)
+            assertTrue(c.terminals().none { it.id == agent.id })
+            assertEquals(listOf(record), c.pausedTasks())
+            val pushed = c.next { it !is V2Event.PausedChanged }
+            assertEquals(V2Event.PausedChanged(listOf(record)), pushed)
+
+            val (again, existing) = c.resumeTask(agent.id)
+            assertEquals(false, existing)
+            assertEquals("pause me", again.taskTitle)
+            assertEquals(again.id, c.inbox().items.first { it.id == review.id }.terminal)
+            assertTrue(c.pausedTasks().isEmpty())
+
+            c.pauseTask(again.id)
+            val closed = c.inbox(V2Request.CloseTask(again.id))
+            assertTrue(closed.done.any { it.id == review.id })
+            assertTrue(c.pausedTasks().isEmpty())
+            c.close()
+        }
+    }
+
+    @Test
     fun routinesListAndRunOnce() = runBlocking {
         withTimeout(10_000) {
             val c = connect()

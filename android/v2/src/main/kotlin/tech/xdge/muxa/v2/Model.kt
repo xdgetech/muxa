@@ -325,6 +325,18 @@ data class Terminal(
         get() = labels["muxa.places"]?.let { runCatching { json.decodeFromString<List<Place>>(it) }.getOrNull() } ?: emptyList()
 }
 
+/**
+ * A paused Task (ADR 0102): its agent as it was at pause, not live, with its labels. The id stays the
+ * Task's, and its open items keep pointing at it. [pausedAt] is Unix seconds.
+ */
+@Serializable
+data class Paused(
+    val terminal: Terminal,
+    @SerialName("paused_at") val pausedAt: Long,
+    /** The Task Loop that was active at pause; Resume arms it again. */
+    val loop: LoopSpec? = null,
+)
+
 /** What the Reader lists and opens (plan F2). */
 enum class ReaderKind(val wire: String) { DOCS("docs"), CHANGES("changes"), IMAGES("images") }
 
@@ -509,6 +521,9 @@ sealed interface V2Event {
 
     /** A Task Loop changed; every loop as it is now. */
     data class Loops(val loops: List<LoopInfo>) : V2Event
+
+    /** A Task was paused, resumed or closed; every paused Task as it is now. */
+    data class PausedChanged(val paused: List<Paused>) : V2Event
 
     /** An open Reader file changed. */
     data class Reader(val reader: Int, val content: ReaderContent) : V2Event
