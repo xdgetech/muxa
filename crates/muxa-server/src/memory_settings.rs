@@ -103,6 +103,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 direct_writes: false,
                 claude_connectors: false,
                 bot_rules: Default::default(),
+                build_paths: vec!["target".into()],
                 connections: Vec::new(),
                 mcp: Vec::new(),
                 routines: Vec::new(),
@@ -120,8 +121,12 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             park_after,
             claude_connectors,
             bot_rules,
+            build_paths,
         } => {
             let w = workspace(s, &name)?;
+            if let Some(paths) = build_paths {
+                w.build_paths = paths;
+            }
             if let Some(on) = claude_connectors {
                 w.claude_connectors = on;
             }
@@ -363,6 +368,17 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             a.worker = worker;
             if let Some(text) = soul_text {
                 a.soul_text = Some(text);
+            }
+            Ok(())
+        }
+        SettingsOp::BuildUpdate { dir, drop_after } => {
+            let b = s.build.get_or_insert_with(Default::default);
+            if let Some(dir) = dir {
+                b.dir_found = dir.is_some();
+                b.dir = dir;
+            }
+            if let Some(after) = drop_after {
+                b.drop_after = after;
             }
             Ok(())
         }

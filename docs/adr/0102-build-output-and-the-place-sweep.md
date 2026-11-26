@@ -13,7 +13,7 @@ Status: proposed (2026-11-26).
 ## Decision
 
 1. **Build output goes to a build disk, one folder per place.**
-   - `workspaces.toml` takes a host default and a per-Workspace setting. Both are file-only, like `[codex]` (ADR 0074):
+   - `workspaces.toml` takes a host default and a per-Workspace setting:
 
      ```toml
      [build]
@@ -27,6 +27,7 @@ Status: proposed (2026-11-26).
      paths = ["target", "apple/MuxaKit/.build"]   # default ["target"]
      ```
 
+   - Settings in the apps edit `[build] dir`, `drop_after` and each Workspace's `paths` (ADR 0074's `settings-update`, op `build-update`). The view says whether `dir` is a folder on the host now, since a typo or an unmounted disk only shows in the log otherwise. `[workspace.build] dir` stays a hand edit: a second build disk is rare.
    - When a Task starts in a branch worktree, each of `paths` becomes a symlink to `<dir>/<workspace>/<worktree folder name>/<path, '/' as '-'>`. A Task folder gets no links: it is not a repo.
    - Each link is added to the repo's `info/exclude` as `/<path>`. A `target/` rule in `.gitignore` matches a folder, not a link, so without this every worktree would look dirty.
    - A symlink, not an environment variable: SwiftPM has no variable for its build path, and the agent, the Task's shells and the user all build through the same link.

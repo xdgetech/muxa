@@ -45,6 +45,13 @@ class SettingsTest {
             SettingsOp.AssistantUpdate(true) to """{"op":"assistant-update","enabled":true}""",
             SettingsOp.AssistantUpdate(false, "reviewer", "Be brief.") to
                 """{"op":"assistant-update","enabled":false,"worker":"reviewer","soul_text":"Be brief."}""",
+            SettingsOp.BuildUpdate() to """{"op":"build-update"}""",
+            SettingsOp.BuildUpdate(dir = Patch.Set("~/build"), dropAfter = Patch.Clear) to
+                """{"op":"build-update","dir":"~/build","drop_after":null}""",
+            SettingsOp.BuildUpdate(dir = Patch.Clear) to """{"op":"build-update","dir":null}""",
+            SettingsOp.BuildUpdate(dropAfter = Patch.Set("12h")) to """{"op":"build-update","drop_after":"12h"}""",
+            SettingsOp.WorkspaceUpdate("w", buildPaths = listOf("target", "web/.next")) to
+                """{"op":"workspace-update","workspace":"w","build_paths":["target","web/.next"]}""",
         )
         for ((op, expected) in ops) {
             assertEquals(json.parseToJsonElement(expected), op.json())
@@ -99,6 +106,21 @@ class SettingsTest {
             val text = v.toString()
             assertFalse(text, "s3cret" in text || "bar-value" in text)
         }
+    }
+
+    @Test
+    fun theBuildDiskDecodesAndIsAbsentFromAnOlderServer() {
+        val old = json.decodeFromString<Settings>("""{"revision":"r","workspaces":[{"name":"w","root":"~/w"}]}""")
+        assertEquals(null, old.build)
+        assertEquals(emptyList<String>(), old.workspaces.single().buildPaths)
+        val s = json.decodeFromString<Settings>(
+            """{"revision":"r","build":{"dir":"~/build","drop_after":null,"dir_found":false},""" +
+                """"workspaces":[{"name":"w","root":"~/w","build_paths":["target"]}]}""",
+        )
+        assertEquals(SettingsBuild(dir = "~/build", dropAfter = null, dirFound = false), s.build)
+        assertEquals(listOf("target"), s.workspaces.single().buildPaths)
+        val off = json.decodeFromString<Settings>("""{"revision":"r","build":{"dir":null,"drop_after":"2d","dir_found":false}}""")
+        assertEquals(SettingsBuild(dropAfter = "2d"), off.build)
     }
 
     @Test

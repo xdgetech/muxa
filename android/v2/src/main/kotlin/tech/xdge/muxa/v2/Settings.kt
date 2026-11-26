@@ -26,6 +26,19 @@ data class Settings(
     val workers: List<WorkerSpec> = emptyList(),
     /** The Capture assistant (ADR 0084); null from an older server. */
     val assistant: SettingsAssistant? = null,
+    /** The build disk (ADR 0102); null from an older server. */
+    val build: SettingsBuild? = null,
+)
+
+/** `[build]` in `workspaces.toml`: where Task worktrees put their build output (ADR 0102). */
+@Serializable
+data class SettingsBuild(
+    /** As written, `~/` included; null: the build disk is off. */
+    val dir: String? = null,
+    /** `3d`, `12h`; null: three days. */
+    @SerialName("drop_after") val dropAfter: String? = null,
+    /** [dir] is a folder on the host now. A disk that is not mounted is not. */
+    @SerialName("dir_found") val dirFound: Boolean = false,
 )
 
 /** `[assistant]` in `workspaces.toml`, and its `soul.md` and `memory.md` beside it. A text is null when it cannot be read. */
@@ -60,6 +73,8 @@ data class SettingsWorkspace(
     @SerialName("claude_connectors") val claudeConnectors: Boolean = false,
     /** `[workspace.bots]`: Claude Code permission rules for the Workspace's Bots only (ADR 0087). */
     @SerialName("bot_rules") val botRules: BotRules = BotRules(),
+    /** `[workspace.build] paths`: the paths under each Task worktree that go to the build disk; the server shows the defaults when unset. */
+    @SerialName("build_paths") val buildPaths: List<String> = emptyList(),
     val connections: List<SettingsConnection> = emptyList(),
     val mcp: List<McpSpec> = emptyList(),
     /** Listed also while [routinesEnabled] is false. */

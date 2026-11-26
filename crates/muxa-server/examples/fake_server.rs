@@ -21,7 +21,8 @@ use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
 use muxa_protocol::settings::{
     Access, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SecretState, Settings, SettingsAgent,
-    SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine, SettingsWorkspace, WorkerSpec,
+    SettingsBuild, SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine,
+    SettingsWorkspace, WorkerSpec,
 };
 use muxa_protocol::v2::{
     ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
@@ -327,6 +328,7 @@ fn start_settings() -> Settings {
             direct_writes: false,
             claude_connectors: false,
             bot_rules: Default::default(),
+            build_paths: vec!["target".into()],
             connections: vec![SettingsConnection {
                 spec: ConnectionSpec {
                     name: "github".into(),
@@ -368,6 +370,11 @@ fn start_settings() -> Settings {
             routines_problem: None,
         }],
         assistant: None,
+        build: Some(SettingsBuild {
+            dir: Some("/ssd/build".into()),
+            drop_after: None,
+            dir_found: true,
+        }),
     }
 }
 

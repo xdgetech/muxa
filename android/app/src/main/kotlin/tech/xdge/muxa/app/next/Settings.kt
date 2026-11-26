@@ -76,7 +76,7 @@ fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
 
 /**
  * The host, then its settings (ADR 0074): the Workspaces list or one Workspace, the workers and the
- * Capture assistant; last, this device's Appearance (ADR 0091). A talk with a Bot opens its Task with [open].
+ * Capture assistant and the build disk (ADR 0102); last, this device's Appearance (ADR 0091). A talk with a Bot opens its Task with [open].
  */
 @Composable
 private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
@@ -84,6 +84,7 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
     var usage by remember { mutableStateOf<List<Workspace>>(emptyList()) }
     var openWorkspace by remember { mutableStateOf<String?>(null) }
     var appearance by remember { mutableStateOf(false) }
+    var buildPage by remember { mutableStateOf(false) }
     LaunchedEffect(editor) { editor.load() }
     // Tasks that start or end change who uses what: ask again when the live terminals change.
     val live = model.terminals.filter { it.live }.map { it.id }
@@ -91,6 +92,14 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
 
     if (appearance) {
         Column(Modifier.padding(bottom = 16.dp)) { AppearanceSettings { appearance = false } }
+        return
+    }
+    val build = editor.settings?.build
+    if (buildPage && build != null) {
+        Column(Modifier.padding(bottom = 16.dp)) {
+            Notices(editor)
+            BuildSettings(editor, build) { buildPage = false }
+        }
         return
     }
     Column(Modifier.padding(bottom = 16.dp)) {
@@ -109,6 +118,7 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
                 WorkspaceList(editor) { openWorkspace = it }
                 WorkersSection(editor, settings.workspaces.map { it.name })
                 AssistantSection(editor)
+                BuildRow(editor) { buildPage = true }
             }
         }
         // The theme is the device's, so it shows even when the host's settings do not load.

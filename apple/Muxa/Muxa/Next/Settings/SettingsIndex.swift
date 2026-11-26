@@ -7,6 +7,8 @@ enum SettingsPlace: Hashable {
     case workers
     /// The Capture assistant (ADR 0084).
     case assistant
+    /// The build disk (ADR 0102).
+    case build
     /// How terminals look on this device.
     case terminal
 }
@@ -77,6 +79,11 @@ struct SettingsIndex: View {
             row(.assistant, id: "settings.assistant") {
                 LabeledContent("Capture assistant", value: s.settings?.assistant?.enabled == true ? "on" : "off")
             }
+            if let build = s.settings?.build {
+                row(.build, id: "settings.build") {
+                    LabeledContent("Build disk", value: Self.summary(build))
+                }
+            }
         }
         .listRowBackground(Palette.card)
     }
@@ -93,6 +100,11 @@ struct SettingsIndex: View {
         .buttonStyle(.plain)
         .listRowBackground(picked == place ? Palette.rowSelected : Palette.card)
         .accessibilityIdentifier(id)
+    }
+
+    static func summary(_ b: SettingsBuild) -> String {
+        guard b.dir != nil else { return "off" }
+        return b.dirFound ? "on" : "not found"
     }
 
     static func summary(_ w: SettingsWorkspace) -> String {
@@ -113,6 +125,7 @@ struct SettingsDetail: View {
         case .workspace(let name): WorkspaceSettings(name: name)
         case .workers: WorkersSettings()
         case .assistant: AssistantSettings()
+        case .build: BuildSettings()
         case .terminal: TerminalSettingsForm().navigationTitle("Appearance")
         }
     }

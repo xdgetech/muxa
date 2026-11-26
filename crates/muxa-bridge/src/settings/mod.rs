@@ -191,6 +191,7 @@ impl SettingsStore {
             }
         }
         let assistant = view::assistant(config.assistant.as_ref(), path, &mut revision);
+        let build = view::build(config.build, home);
         Ok(Settings {
             revision: revision.finish(),
             read_only: self.read_only,
@@ -198,6 +199,7 @@ impl SettingsStore {
             workspaces,
             workers: config.worker,
             assistant: Some(assistant),
+            build: Some(build),
         })
     }
 

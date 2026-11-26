@@ -602,6 +602,26 @@ class DemoTest {
     }
 
     @Test
+    fun theBuildDiskAndAWorkspacesBuildPathsAreSaved() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings()
+            assertEquals(SettingsBuild("/Volumes/Build/muxa", dirFound = true), before.build)
+            val moved = c.settingsUpdate("1", listOf(SettingsOp.BuildUpdate(dir = Patch.Set("~/build"), dropAfter = Patch.Set("12h"))))
+            assertEquals(SettingsBuild("~/build", "12h", dirFound = true), moved.build)
+            val off = c.settingsUpdate(moved.revision, listOf(SettingsOp.BuildUpdate(dir = Patch.Clear, dropAfter = Patch.Clear)))
+            assertEquals(SettingsBuild(), off.build)
+            val paths = listOf("target", "web/.next")
+            val s = c.settingsUpdate(off.revision, listOf(SettingsOp.WorkspaceUpdate("app", buildPaths = paths)))
+            assertEquals(paths, s.workspaces.first { it.name == "app" }.buildPaths)
+            val kept = c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", claudeConnectors = true)))
+            assertEquals(paths, kept.workspaces.first { it.name == "app" }.buildPaths)
+            assertEquals(listOf("target"), kept.workspaces.first { it.name == "Personal" }.buildPaths)
+            c.close()
+        }
+    }
+
+    @Test
     fun aTeamLeadsOnlyBotsThatLeadNone() = runBlocking {
         withTimeout(10_000) {
             val c = open()

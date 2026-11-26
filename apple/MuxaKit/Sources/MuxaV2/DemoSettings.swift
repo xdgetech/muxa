@@ -32,8 +32,10 @@ extension Settings {
         case let .workspaceAdd(name, root, repos):
             guard !workspaces.contains(where: { $0.name == name }) else { throw refusal("\(name) exists") }
             workspaces.append(SettingsWorkspace(name: name, root: root, repos: repos))
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
+                                  buildPaths):
             try edit(workspace) { w in
+                if let buildPaths { w.buildPaths = buildPaths }
                 if let botRules { w.botRules = botRules }
                 if let claudeConnectors { w.claudeConnectors = claudeConnectors }
                 if let root { w.root = root }
@@ -140,6 +142,11 @@ extension Settings {
             let old = assistant ?? SettingsAssistant()
             assistant = SettingsAssistant(enabled: enabled, worker: worker, soulText: text ?? old.soulText,
                                           memoryText: old.memoryText)
+        case let .buildUpdate(dir, dropAfter):
+            let old = build ?? SettingsBuild()
+            let newDir = dir.applied(to: old.dir)
+            // The demo host has every folder it is given.
+            build = SettingsBuild(dir: newDir, dropAfter: dropAfter.applied(to: old.dropAfter), dirFound: newDir != nil)
         case let .workerAdd(worker):
             guard !workers.contains(where: { $0.name == worker.name }) else { throw refusal("\(worker.name) exists") }
             workers.append(worker)

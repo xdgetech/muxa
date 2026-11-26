@@ -28,7 +28,7 @@ import tech.xdge.muxa.v2.Patch
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsWorkspace
 
-/** A Workspace's folders, agent command, Task Loop checks and Routines gate. Each saves on its own. */
+/** A Workspace's folders, build output, agent command, Task Loop checks and Routines gate. Each saves on its own. */
 @Composable
 fun WorkspaceGeneral(editor: SettingsEditor, ws: SettingsWorkspace) {
     val save = rememberInlineSave(editor)
@@ -43,6 +43,17 @@ fun WorkspaceGeneral(editor: SettingsEditor, ws: SettingsWorkspace) {
                 save.run(listOf(SettingsOp.WorkspaceUpdate(ws.name, parkAfter = patch)))
             }
         }
+    }
+    if (editor.settings?.build != null) {
+        SettingsHeader("Build output")
+        SettingsCard {
+            Column(Modifier.padding(14.dp)) {
+                Lines(ws.buildPaths, "Build paths", "settings.build.path", on, "target", ::buildPathProblem) {
+                    save.run(listOf(SettingsOp.WorkspaceUpdate(ws.name, buildPaths = it)))
+                }
+            }
+        }
+        SettingsNote("Paths in each Task worktree that go to the build disk. Default: target.")
     }
     SettingsHeader("Agent")
     SettingsCard {
@@ -68,7 +79,7 @@ fun WorkspaceGeneral(editor: SettingsEditor, ws: SettingsWorkspace) {
 
 /** A text the host keeps, with Save once it differs. */
 @Composable
-private fun SavedField(value: String, label: String, tag: String, enabled: Boolean, placeholder: String? = null, save: (String) -> Unit) {
+fun SavedField(value: String, label: String, tag: String, enabled: Boolean, placeholder: String? = null, save: (String) -> Unit) {
     var text by remember(value) { mutableStateOf(value) }
     Field(text, { text = it }, label, tag, enabled = enabled, mono = true, placeholder = placeholder)
     if (text != value) {

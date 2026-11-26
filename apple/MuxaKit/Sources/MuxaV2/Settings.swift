@@ -16,9 +16,12 @@ public struct Settings: Codable, Equatable, Sendable {
     public var workers: [WorkerSpec]
     /// The Capture assistant (ADR 0084); nil from an older server.
     public var assistant: SettingsAssistant?
+    /// The build disk (ADR 0102); nil from an older server.
+    public var build: SettingsBuild?
 
     public init(revision: String, readOnly: Bool = false, problem: String? = nil, workspaces: [SettingsWorkspace] = [],
-                workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil) {
+                workers: [WorkerSpec] = [], assistant: SettingsAssistant? = nil, build: SettingsBuild? = nil) {
+        self.build = build
         self.revision = revision
         self.readOnly = readOnly
         self.problem = problem
@@ -28,7 +31,7 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case revision, problem, workspaces, workers, assistant
+        case revision, problem, workspaces, workers, assistant, build
         case readOnly = "read_only"
     }
 
@@ -40,6 +43,37 @@ public struct Settings: Codable, Equatable, Sendable {
         workspaces = try c.decode(.workspaces, or: [])
         workers = try c.decode(.workers, or: [])
         assistant = try c.decodeIfPresent(SettingsAssistant.self, forKey: .assistant)
+        build = try c.decodeIfPresent(SettingsBuild.self, forKey: .build)
+    }
+}
+
+/// `[build]` in `workspaces.toml`: where Task worktrees put their build
+/// output, and how long an ended Task keeps it (ADR 0102).
+public struct SettingsBuild: Codable, Equatable, Sendable {
+    /// As written, `~/` included; nil: no build disk.
+    public var dir: String?
+    /// `12h`, `3d`; nil: three days.
+    public var dropAfter: String?
+    /// `dir` is a folder on the host now; false while its disk is not mounted.
+    public var dirFound: Bool
+
+    public init(dir: String? = nil, dropAfter: String? = nil, dirFound: Bool = false) {
+        self.dir = dir
+        self.dropAfter = dropAfter
+        self.dirFound = dirFound
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case dir
+        case dropAfter = "drop_after"
+        case dirFound = "dir_found"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dir = try c.decodeIfPresent(String.self, forKey: .dir)
+        dropAfter = try c.decodeIfPresent(String.self, forKey: .dropAfter)
+        dirFound = try c.decode(.dirFound, or: false)
     }
 }
 
@@ -96,6 +130,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var claudeConnectors: Bool
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     public var botRules: BotRules
+    /// Paths under each Task worktree that go to the build disk; the server
+    /// sends the defaults when the file sets none (ADR 0102).
+    public var buildPaths: [String]
     public var connections: [SettingsConnection]
     public var mcp: [McpSpec]
     /// Also while `routinesEnabled` is false.
@@ -111,7 +148,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
                 loop: WorkspaceLoop? = nil, routinesEnabled: Bool = false, directWrites: Bool = false,
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
                 routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = [],
-                botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false) {
+                botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false,
+                buildPaths: [String] = []) {
+        self.buildPaths = buildPaths
         self.bots = bots
         self.botRules = botRules
         self.claudeConnectors = claudeConnectors
@@ -138,6 +177,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         case directWrites = "direct_writes"
         case claudeConnectors = "claude_connectors"
         case botRules = "bot_rules"
+        case buildPaths = "build_paths"
         case routinesProblem = "routines_problem"
         case foundRepos = "found_repos"
         case hiddenRepos = "hidden_repos"
@@ -157,6 +197,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         directWrites = try c.decode(.directWrites, or: false)
         claudeConnectors = try c.decode(.claudeConnectors, or: false)
         botRules = try c.decode(.botRules, or: BotRules())
+        buildPaths = try c.decode(.buildPaths, or: [])
         connections = try c.decode(.connections, or: [])
         mcp = try c.decode(.mcp, or: [])
         routines = try c.decode(.routines, or: [])

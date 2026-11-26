@@ -53,6 +53,8 @@ sealed class SettingsOp(val op: String) {
         val claudeConnectors: Boolean? = null,
         /** Replaces both lists of `[workspace.bots]`; null keeps them. */
         val botRules: BotRules? = null,
+        /** Paths under each Task worktree that go to the build disk (ADR 0102); null keeps them. */
+        val buildPaths: List<String>? = null,
     ) : SettingsOp("workspace-update")
 
     /** Also removes the Keychain secrets of its connections; its folder and `.muxa/` stay. */
@@ -116,13 +118,16 @@ sealed class SettingsOp(val op: String) {
 
     /** The Capture assistant (ADR 0084). Null [worker]: the default agent. [soulText] replaces its `soul.md`. */
     data class AssistantUpdate(val enabled: Boolean, val worker: String? = null, val soulText: String? = null) : SettingsOp("assistant-update")
+
+    /** `[build]` (ADR 0102). Cleared [dir]: the build disk is off. Cleared [dropAfter]: three days. */
+    data class BuildUpdate(val dir: Patch<String> = Patch.Keep, val dropAfter: Patch<String> = Patch.Keep) : SettingsOp("build-update")
     data class WorkerAdd(val worker: WorkerSpec) : SettingsOp("worker-add")
 
     /** Replaces the worker named `worker.name`. */
     data class WorkerUpdate(val worker: WorkerSpec) : SettingsOp("worker-update")
     data class WorkerRemove(val name: String) : SettingsOp("worker-remove")
 
-    /** The Workspace this op changes; null for a worker or assistant op. */
+    /** The Workspace this op changes; null for a worker, assistant or build op. */
     val workspaceName: String?
         get() = when (this) {
             is WorkspaceAdd -> name
@@ -147,7 +152,7 @@ sealed class SettingsOp(val op: String) {
             is BotRemove -> workspace
             is BotRename -> workspace
             is BotMemoryRestore -> workspace
-            is AssistantUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
+            is AssistantUpdate, is BuildUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
         }
 
     fun json(): JsonObject = buildJsonObject {
@@ -163,6 +168,7 @@ sealed class SettingsOp(val op: String) {
                 patch("park_after", o.parkAfter)
                 o.claudeConnectors?.let { put("claude_connectors", it) }
                 o.botRules?.let { put("bot_rules", enc(it)) }
+                o.buildPaths?.let { put("build_paths", enc(it)) }
             }
             is WorkspaceRemove -> put("workspace", o.workspace)
             is EnvSet -> { put("workspace", o.workspace); put("key", o.key); put("value", o.value) }
@@ -192,6 +198,7 @@ sealed class SettingsOp(val op: String) {
                 o.worker?.let { put("worker", it) }
                 o.soulText?.let { put("soul_text", it) }
             }
+            is BuildUpdate -> { patch("dir", o.dir); patch("drop_after", o.dropAfter) }
             is WorkerAdd -> put("worker", enc(o.worker))
             is WorkerUpdate -> put("worker", enc(o.worker))
             is WorkerRemove -> put("name", o.name)
@@ -219,6 +226,7 @@ sealed class SettingsOp(val op: String) {
                 "workspace-update" -> WorkspaceUpdate(
                     ws(), s("root"), strings("repos"), patch("agent_command"), patch("park_after"), strings("hidden_repos"),
                     bool("claude_connectors"), o["bot_rules"]?.let { opsJson.decodeFromJsonElement<BotRules>(it) },
+                    strings("build_paths"),
                 )
                 "workspace-remove" -> WorkspaceRemove(ws())
                 "env-set" -> EnvSet(ws(), req("key"), req("value"))
@@ -245,6 +253,7 @@ sealed class SettingsOp(val op: String) {
                 "assistant-update" -> AssistantUpdate(
                     bool("enabled") ?: throw IllegalArgumentException("no enabled"), s("worker"), s("soul_text"),
                 )
+                "build-update" -> BuildUpdate(patch("dir"), patch("drop_after"))
                 "worker-add" -> WorkerAdd(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-update" -> WorkerUpdate(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-remove" -> WorkerRemove(req("name"))

@@ -155,9 +155,25 @@ struct ServerTests {
                         spec: RoutineSpec(name: "digest", at: "08:00", timezone: "Europe/Berlin",
                                           instructions: "routines/digest.md"),
                         instructionsText: "Summarize the day.\n")],
-                    foundRepos: ["app", "docs"], hiddenRepos: ["docs"]),
+                    foundRepos: ["app", "docs"], hiddenRepos: ["docs"], buildPaths: ["target"]),
             ],
-            workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")]))
+            workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
+            build: SettingsBuild(dir: "/ssd/build", dirFound: true)))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func buildUpdateKeepsAbsentFieldsAndClearsNullOnes() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let after = try await c.settingsUpdate(revision: "1", ops: [
+            .buildUpdate(dropAfter: .set("12h")),
+            .workspaceUpdate(workspace: "Personal", buildPaths: ["target", "dist"]),
+        ])
+        #expect(after.build == SettingsBuild(dir: "/ssd/build", dropAfter: "12h", dirFound: true))
+        #expect(after.workspaces.first?.buildPaths == ["target", "dist"])
+        let off = try await c.settingsUpdate(revision: after.revision, ops: [.buildUpdate(dir: .clear)])
+        #expect(off.build == SettingsBuild(dir: nil, dropAfter: "12h", dirFound: false))
         await c.close()
     }
 

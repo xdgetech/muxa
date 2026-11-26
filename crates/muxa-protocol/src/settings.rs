@@ -39,6 +39,24 @@ pub struct Settings {
     /// The Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant: Option<SettingsAssistant>,
+    /// The build disk (ADR 0102): `[build]` in `workspaces.toml`. Absent
+    /// from an older server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<SettingsBuild>,
+}
+
+/// `[build]`: where Task worktrees put their build output (ADR 0102).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsBuild {
+    /// As written, `~/` included; None turns the build disk off.
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// As written (`3d`); None means three days.
+    #[serde(default)]
+    pub drop_after: Option<String>,
+    /// `dir` is a folder on the host now. A disk that is not mounted is not.
+    #[serde(default)]
+    pub dir_found: bool,
 }
 
 /// The Capture assistant: no Workspace, no connections (ADR 0084).
@@ -87,6 +105,9 @@ pub struct SettingsWorkspace {
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     #[serde(default, skip_serializing_if = "BotRules::is_empty")]
     pub bot_rules: BotRules,
+    /// `[workspace.build] paths`, the defaults when unset (ADR 0102).
+    #[serde(default)]
+    pub build_paths: Vec<String>,
     #[serde(default)]
     pub connections: Vec<SettingsConnection>,
     #[serde(default)]
@@ -353,6 +374,8 @@ pub enum SettingsOp {
         claude_connectors: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bot_rules: Option<BotRules>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        build_paths: Option<Vec<String>>,
     },
     WorkspaceRemove {
         workspace: String,
@@ -464,6 +487,21 @@ pub enum SettingsOp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         soul_text: Option<String>,
     },
+    /// `[build]` (ADR 0102); `null` removes a field.
+    BuildUpdate {
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        dir: Option<Option<String>>,
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        drop_after: Option<Option<String>>,
+    },
     WorkerAdd {
         worker: WorkerSpec,
     },
@@ -502,6 +540,7 @@ impl SettingsOp {
             Self::BotRename { .. } => "bot-rename",
             Self::BotMemoryRestore { .. } => "bot-memory-restore",
             Self::AssistantUpdate { .. } => "assistant-update",
+            Self::BuildUpdate { .. } => "build-update",
             Self::WorkerAdd { .. } => "worker-add",
             Self::WorkerUpdate { .. } => "worker-update",
             Self::WorkerRemove { .. } => "worker-remove",
@@ -534,6 +573,7 @@ impl SettingsOp {
             | Self::BotRename { workspace, .. }
             | Self::BotMemoryRestore { workspace, .. } => Some(workspace),
             Self::AssistantUpdate { .. }
+            | Self::BuildUpdate { .. }
             | Self::WorkerAdd { .. }
             | Self::WorkerUpdate { .. }
             | Self::WorkerRemove { .. } => None,
@@ -612,5 +652,27 @@ mod tests {
             json!({"name": "gh", "env": "GH_TOKEN", "account": null, "access": "read",
                 "secret": "missing"})
         );
+    }
+
+    #[test]
+    fn build_update_keeps_absent_fields_and_null_clears() {
+        let op: SettingsOp =
+            serde_json::from_value(json!({"op": "build-update", "dir": null})).unwrap();
+        assert_eq!(
+            op,
+            SettingsOp::BuildUpdate {
+                dir: Some(None),
+                drop_after: None
+            }
+        );
+        let set = SettingsOp::BuildUpdate {
+            dir: Some(Some("/ssd/build".into())),
+            drop_after: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&set).unwrap(),
+            json!({"op": "build-update", "dir": "/ssd/build"})
+        );
+        assert_eq!(set.workspace(), None);
     }
 }

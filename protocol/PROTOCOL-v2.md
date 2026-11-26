@@ -364,18 +364,20 @@ ADR 0102. `disk` lists, with sizes in bytes (`du -sk`, links not followed):
 
 ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace's `.muxa/routines.toml` and the Routines' instruction files. The files stay the source of truth, and a person can still edit them by hand. The daemon edits them in place, so comments and order stay, and reads them again on its next use.
 
-`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...],"assistant"?}`.
+`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...],"assistant"?,"build"?}`.
 - `assistant`: `{"enabled","worker"?,"soul_text","memory_text"}`, the Capture assistant (ADR 0084): `[assistant]` in `workspaces.toml`, and `assistant/soul.md` and `memory.md` beside it. Absent from an older server.
+- `build`: `{"dir","drop_after","dir_found"}`, the build disk (ADR 0102): `[build]` in `workspaces.toml`. `dir` is the folder as written, or `null` (off). `drop_after` is like `park_after`, or `null` (three days). `dir_found` is true when `dir` is a folder on the host now; it is false while the disk is not mounted. Absent from an older server.
 - `revision`: a hash of the files' bytes. It changes when any of them changes, by hand too.
 - `read_only`: the daemon runs with `--settings-read-only`; `settings-update` is refused.
 - `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
 - Paths and schedules are shown as written in the files, `~/` included.
 
-`SettingsWorkspace`: `{"name","root","repos":[...],"found_repos":[...],"hidden_repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","claude_connectors","bot_rules"?,"connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"bots"?:[SettingsBot...],"routines_problem"}`. `repos` are the listed ones; `found_repos` are the repos the scan finds under the root (ADR 0031), hidden ones too, as named under it; `hidden_repos` are found repos the Workspace leaves out of its repo list, so `workspaces`, Start Task and `all-read` skip them. A listed repo is never hidden. `claude_connectors` (`claude_connectors = true` in the `[[workspace]]` table, ADR 0087): agents of a Workspace with MCP servers get them without `--strict-mcp-config`, so the user's claude.ai connectors load too. `bot_rules` (`[workspace.bots]` with `allow` and `deny` lists of Claude Code permission rules, ADR 0087) go only to the Workspace's Bots: their runs, talks and members, which always run Claude Code; absent when both lists are empty. A Workspace whose `[workspace.bots]` has no `allow` gets the default read rules (ADR 0090), and `bot_rules.allow` shows them. A `workspace-update` whose `allow` equals the defaults leaves the key out of the file, and an empty `allow` is written as `allow = []`, which allows nothing. muxa also allows a Bot, beyond these rules: edits in its own run folder, reads in the Workspace, and each Workspace MCP server (ADR 0088).
+`SettingsWorkspace`: `{"name","root","repos":[...],"found_repos":[...],"hidden_repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","claude_connectors","bot_rules"?,"build_paths","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"bots"?:[SettingsBot...],"routines_problem"}`. `repos` are the listed ones; `found_repos` are the repos the scan finds under the root (ADR 0031), hidden ones too, as named under it; `hidden_repos` are found repos the Workspace leaves out of its repo list, so `workspaces`, Start Task and `all-read` skip them. A listed repo is never hidden. `claude_connectors` (`claude_connectors = true` in the `[[workspace]]` table, ADR 0087): agents of a Workspace with MCP servers get them without `--strict-mcp-config`, so the user's claude.ai connectors load too. `bot_rules` (`[workspace.bots]` with `allow` and `deny` lists of Claude Code permission rules, ADR 0087) go only to the Workspace's Bots: their runs, talks and members, which always run Claude Code; absent when both lists are empty. A Workspace whose `[workspace.bots]` has no `allow` gets the default read rules (ADR 0090), and `bot_rules.allow` shows them. A `workspace-update` whose `allow` equals the defaults leaves the key out of the file, and an empty `allow` is written as `allow = []`, which allows nothing. muxa also allows a Bot, beyond these rules: edits in its own run folder, reads in the Workspace, and each Workspace MCP server (ADR 0088).
 - `park_after`: `"30m"`, `"12h"`, `"2d"`, or `null` (ADR 0034). `agent.command`: `null` means the daemon's `--task-command`.
 - `agent.env` lists the keys of `[workspace.agent] env` with `"set": true`. A value never crosses the wire from the server.
 - `loop`: `null` (no Task Loops), else `{"checks":"any"}` or `{"checks":["make test",...]}`.
 - `routines_enabled` and `direct_writes`: `[workspace.routines]`.
+- `build_paths`: `[workspace.build] paths`, the paths in each Task worktree that go to the build disk; the defaults (`["target"]`) when unset. A `workspace-update` whose `build_paths` equal the defaults leaves the key out of the file. `[workspace.build] dir` is not in the view; edit it by hand.
 - `routines`: the Routines of `<root>/.muxa/routines.toml`, also while `routines_enabled` is false. `routines_problem`: why that file cannot be used, or `null`.
 
 `SettingsConnection`: `{"name","env","account","access","secret"}`. `account` is a label or `null`; `access` is `"read"`, `"write"` or `null`. `secret` is `"set"`, `"missing"`, `"locked"` (the host's Keychain is locked) or `"unavailable"` (the host has no macOS Keychain). The secret itself never crosses the wire from the server.
@@ -399,7 +401,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `op` | Fields | Effect |
 |---|---|---|
 | `workspace-add` | `name`, `root`, `repos`? | A new `[[workspace]]` at the end |
-| `workspace-update` | `workspace`, `root`?, `repos`?, `hidden_repos`?, `agent_command`?, `park_after`?, `claude_connectors`?, `bot_rules`? | Sets the fields that are present; `null` removes `agent_command` or `park_after` |
+| `workspace-update` | `workspace`, `root`?, `repos`?, `hidden_repos`?, `agent_command`?, `park_after`?, `claude_connectors`?, `bot_rules`?, `build_paths`? | Sets the fields that are present; `null` removes `agent_command` or `park_after` |
 | `workspace-remove` | `workspace` | Removes the Workspace and the Keychain secrets of its connections. Its folder and `.muxa/` stay |
 | `env-set` | `workspace`, `key`, `value` | Sets one `[workspace.agent] env` variable |
 | `env-unset` | `workspace`, `key` | Removes it |
@@ -417,6 +419,7 @@ ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace'
 | `bot-rename` | `workspace`, `from`, `to` | Renames a Bot (ADR 0089): its `[[bot]]`, every Routine with `bot = from`, every team that lists it, and its folder `.muxa/bots/<from>/` with the Soul and Memory. `to` follows the name rules and must be free, as must its folder. The server then moves the Bot's Inbox items and counts to the new name. |
 | `bot-memory-restore` | `workspace`, `name`, `version` | Brings back kept memory `version`, 1 the newest of 5; the current one is kept in its place |
 | `assistant-update` | `enabled`, `worker`?, `soul_text`? | Sets `[assistant]`; `soul_text` replaces `assistant/soul.md` beside `workspaces.toml` |
+| `build-update` | `dir`?, `drop_after`? | Sets `[build]`; `null` removes a field. `dir` must be absolute after `~/` |
 | `worker-add`, `worker-update` | `worker`: WorkerSpec | Adds a worker, or replaces the one named `worker.name` |
 | `worker-remove` | `name` | |
 
@@ -424,7 +427,7 @@ Names are not renamed: a Keychain account, a Routine's state and a Task's labels
 
 Rules:
 1. `revision` must be the current one, else `conflict` and nothing changes. The client reads `settings` again and shows the user what changed.
-2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, the connections an MCP server needs, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
+2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, build paths of plain relative names, the connections an MCP server needs, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
 3. `value` and `secret` are write-only. They are never sent back, never logged, and never in an error message. A `secret` goes only to the host's macOS Keychain (service `muxa`, account `<workspace>/<name>`), at most 1800 bytes of one line. An env `value` goes only into `workspaces.toml`, as before.
 4. An `instructions_text` or `soul_text` is at most 12 KiB of UTF-8 without NUL. The file must stay inside `.muxa/`, also through a symlink.
 5. Each file is written whole to a temporary file and renamed over the old one; the old one is kept as `<file>.bak`. A file keeps its mode; a new file gets 0600.

@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
     BotRules, BotSpec, ConnectionSpec, EnvKey, McpSpec, MemoryVersion, RoutineSpec, SettingsAgent,
-    SettingsAssistant, SettingsBot, SettingsConnection, SettingsLoop, SettingsRoutine,
-    SettingsWorkspace, WorkerSpec,
+    SettingsAssistant, SettingsBot, SettingsBuild, SettingsConnection, SettingsLoop,
+    SettingsRoutine, SettingsWorkspace, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
 use serde::Deserialize;
@@ -26,6 +26,20 @@ pub struct FileConfig {
     #[serde(default)]
     pub worker: Vec<WorkerSpec>,
     pub assistant: Option<toml::Value>,
+    pub build: Option<FileBuild>,
+}
+
+/// `[build]` as written (ADR 0102).
+#[derive(Deserialize, Default)]
+pub struct FileBuild {
+    dir: Option<String>,
+    drop_after: Option<String>,
+}
+
+/// `[workspace.build]`; Settings edits only `paths`.
+#[derive(Deserialize, Default)]
+struct FileWorkspaceBuild {
+    paths: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +63,8 @@ pub struct FileWorkspace {
     claude_connectors: bool,
     #[serde(default)]
     bots: FileBotRules,
+    #[serde(default)]
+    build: FileWorkspaceBuild,
 }
 
 /// `[workspace.bots]`; with no `allow` the Bots get the defaults (ADR 0090),
@@ -346,11 +362,34 @@ pub fn workspace(
                 .unwrap_or_else(crate::records::bots::default_allow),
             deny: w.bots.deny,
         },
+        build_paths: w.build.paths.unwrap_or_else(default_build_paths),
         connections,
         mcp: w.mcp,
         routines: list,
         bots: bot_list,
         routines_problem: problem,
+    }
+}
+
+pub fn default_build_paths() -> Vec<String> {
+    crate::records::build::DEFAULT_PATHS
+        .iter()
+        .map(|p| (*p).to_owned())
+        .collect()
+}
+
+/// `[build]` as written, and whether its folder is there now. Blocking.
+pub fn build(raw: Option<FileBuild>, home: Option<&Path>) -> SettingsBuild {
+    let raw = raw.unwrap_or_default();
+    let dir_found = raw
+        .dir
+        .as_deref()
+        .and_then(|d| expand(d, home).ok())
+        .is_some_and(|d| d.is_dir());
+    SettingsBuild {
+        dir: raw.dir,
+        drop_after: raw.drop_after,
+        dir_found,
     }
 }
 

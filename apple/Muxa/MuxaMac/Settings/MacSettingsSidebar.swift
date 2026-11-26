@@ -31,6 +31,9 @@ struct MacSettingsSidebar: View {
                     row("Workers", meta: "\(model.settings.settings?.workers.count ?? 0)", place: .workers, id: "settings.workers")
                     row("Capture assistant", meta: model.settings.settings?.assistant?.enabled == true ? "on" : "off",
                         place: .assistant, id: "settings.assistant")
+                    if let build = model.settings.settings?.build {
+                        row("Build disk", meta: SettingsIndex.summary(build), place: .build, id: "settings.build")
+                    }
                 }
                 row(model.connectionTitle, meta: status, place: .connection, id: "settings.connection")
                 label("This Mac", top: 16)

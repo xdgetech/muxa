@@ -276,6 +276,7 @@ class ServerTest {
                         agent = SettingsAgent("claude", listOf(EnvKey("CLAUDE_CONFIG_DIR", true))),
                         loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
                         routinesEnabled = true, directWrites = false,
+                        buildPaths = listOf("target"),
                         connections = listOf(SettingsConnection("github", "GITHUB_TOKEN", "me@example.com", "read", SecretState.SET)),
                         mcp = listOf(McpSpec("docs", command = "npx", args = listOf("-y", "docs-mcp"))),
                         routines = listOf(
@@ -287,6 +288,7 @@ class ServerTest {
                     ),
                 ),
                 workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
+                build = SettingsBuild(dir = "/ssd/build", dropAfter = null, dirFound = true),
             )
             assertEquals(expected, c.settings())
             val ops = listOf(
@@ -298,6 +300,15 @@ class ServerTest {
             val ws = after.workspaces.single()
             assertEquals(listOf("CLAUDE_CONFIG_DIR", "FOO"), ws.agent.env.map { it.key })
             assertEquals(SecretState.SET, ws.connections.single { it.name == "linear" }.secret)
+            val build = c.settingsUpdate(
+                after.revision,
+                listOf(
+                    SettingsOp.BuildUpdate(dir = Patch.Clear, dropAfter = Patch.Set("12h")),
+                    SettingsOp.WorkspaceUpdate("Personal", buildPaths = listOf("target", "web/.next")),
+                ),
+            )
+            assertEquals(SettingsBuild(dir = null, dropAfter = "12h", dirFound = false), build.build)
+            assertEquals(listOf("target", "web/.next"), build.workspaces.single().buildPaths)
             val text = json.encodeToString(Settings.serializer(), after)
             assertTrue(text, "s3cret" !in text && "bar" !in text)
             try {
