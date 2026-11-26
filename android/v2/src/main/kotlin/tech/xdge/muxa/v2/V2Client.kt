@@ -181,6 +181,15 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** The host's Workspaces, with what starting a Task in each may use. */
     suspend fun workspaces(): List<Workspace> = field("workspaces", request(V2Request.Workspaces))
 
+    /** The host's Task places, other worktrees and build folders (ADR 0102). */
+    suspend fun disk(): List<DiskRow> = field("rows", request(V2Request.Disk))
+
+    /** Removes rows of [disk]; a dry run unless [dryRun] is false. */
+    suspend fun diskClean(paths: List<String> = emptyList(), force: Boolean = false, dryRun: Boolean = true): DiskCleaned {
+        val reply = request(V2Request.DiskClean(paths, force, dryRun))
+        return DiskCleaned(field("dry_run", reply), field("removed", reply), field("kept", reply))
+    }
+
     /** The Routines, the Workspaces whose Routines could not be read, and those that turn them off. */
     suspend fun routines(): Triple<List<Routine>, List<RoutineProblem>, List<RoutinesOff>> {
         val reply = request(V2Request.Routines)

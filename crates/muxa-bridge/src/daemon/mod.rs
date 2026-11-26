@@ -170,6 +170,7 @@ async fn serve(setup: Setup, path: &Path) -> std::io::Result<()> {
     crate::v2::assistant::spawn(Arc::clone(&herdr), assistant);
     crate::v2::spawn_loops(Arc::clone(&herdr), loops);
     crate::v2::spawn_talks(Arc::clone(&herdr), talks);
+    crate::v2::sweep::spawn(Arc::clone(&herdr), Arc::clone(&config));
     tokio::spawn(crate::v2::accept(listener, herdr));
     tracing::info!(version = env!("CARGO_PKG_VERSION"), socket = %path.display(), "daemon started");
     let mut term = signal(SignalKind::terminate())?;

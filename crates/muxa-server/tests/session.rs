@@ -1495,6 +1495,26 @@ async fn a_chat_opens_with_the_conversation_and_ends_with_the_agent() {
 }
 
 #[tokio::test]
+async fn disk_asks_the_host_and_force_needs_named_paths() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let reply = request(&mut client, json!({"type": "disk", "id": 1})).await;
+    assert_eq!(reply["rows"], json!([]));
+    let forced = request(
+        &mut client,
+        json!({"type": "disk-clean", "id": 2, "force": true}),
+    )
+    .await;
+    assert_eq!(
+        (forced["type"].as_str(), forced["code"].as_str()),
+        (Some("error"), Some("bad-request"))
+    );
+    let refused = request(&mut client, json!({"type": "disk-clean", "id": 3})).await;
+    assert_eq!(refused["code"], "bad-request");
+}
+
+#[tokio::test]
 async fn workspaces_list_what_a_task_may_use() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;

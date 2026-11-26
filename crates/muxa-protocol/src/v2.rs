@@ -475,6 +475,22 @@ pub enum ClientMsg {
     Workspaces {
         id: u64,
     },
+    /// The disk use of Task places, build folders and leftovers (ADR 0102).
+    Disk {
+        id: u64,
+    },
+    /// Removes rows of `disk`. Empty `paths` means every row `disk` marks
+    /// `cleanable`. `force` removes the named rows even when they hold work,
+    /// and needs `paths`. A held place is never removed.
+    DiskClean {
+        id: u64,
+        #[serde(default)]
+        paths: Vec<String>,
+        #[serde(default)]
+        force: bool,
+        #[serde(default = "yes")]
+        dry_run: bool,
+    },
     /// Approves a Review item: closes its Task (ADR 0068 §7, ADR 0043).
     InboxApprove {
         id: u64,
@@ -523,6 +539,68 @@ pub enum ClientMsg {
         #[serde(default)]
         dry_run: bool,
     },
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// How a place is held (ADR 0102 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Hold {
+    /// A live terminal works there.
+    Live,
+    /// Only an ended agent whose Inbox item is still open.
+    Ended,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiskKind {
+    /// A worktree muxa made for a Task.
+    TaskWorktree,
+    /// A Task's folder under `<root>/tasks`.
+    TaskFolder,
+    /// A worktree of a Workspace repo that muxa did not make.
+    Worktree,
+    /// A worktree under `<repo>/.claude/worktrees`, made by Claude Code.
+    ClaudeWorktree,
+    /// A folder on the build disk that no place links to.
+    BuildFolder,
+}
+
+/// One row of `disk`. Sizes are in bytes, None when they could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiskRow {
+    pub path: String,
+    pub kind: DiskKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    /// The place's folders on the build disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<Hold>,
+    /// No uncommitted changes. None for a row that is not a worktree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clean: Option<bool>,
+    /// The branch is in the base. None for a row that is not a worktree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged: Option<bool>,
+    /// `disk-clean` without `force` removes it.
+    pub cleanable: bool,
+}
+
+/// A row `disk-clean` did not remove, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiskKept {
+    pub path: String,
+    pub why: String,
 }
 
 /// What closing a Task does with a branch worktree that holds work.
@@ -1209,6 +1287,14 @@ pub enum Reply {
     },
     Workspaces {
         workspaces: Vec<Workspace>,
+    },
+    Disk {
+        rows: Vec<DiskRow>,
+    },
+    DiskCleaned {
+        dry_run: bool,
+        removed: Vec<String>,
+        kept: Vec<DiskKept>,
     },
     Settings {
         settings: Settings,

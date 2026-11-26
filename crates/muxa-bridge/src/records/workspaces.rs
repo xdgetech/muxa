@@ -12,6 +12,7 @@ use serde::Deserialize;
 use super::agent_env::{AgentSettings, RawAgent};
 use super::assistant::{self, Assistant};
 use super::bots::Bot;
+use super::build::{self, BuildDisk, HostBuild, RawHostBuild, RawWorkspaceBuild, WorkspaceBuild};
 use super::connections::{self, Connection, RawConnection};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
@@ -24,7 +25,7 @@ const MAX_NAME: usize = 64;
 /// In characters, before `-<id>`.
 const MAX_SLUG: usize = 40;
 const SLUG_FALLBACK: &str = "task";
-pub(super) const TASKS_DIR: &str = "tasks";
+pub(crate) const TASKS_DIR: &str = "tasks";
 pub(super) const ROUTINES_DIR: &str = "routines";
 
 #[derive(Debug, thiserror::Error)]
@@ -79,6 +80,8 @@ pub struct Workspace {
     pub claude_connectors: bool,
     /// Permission rules for this Workspace's Bots only (ADR 0087).
     pub bot_rules: super::bots::BotRules,
+    /// `[workspace.build]` (ADR 0102).
+    pub build: WorkspaceBuild,
 }
 
 /// The configured workspaces, in file order.
@@ -93,6 +96,8 @@ pub struct Workspaces {
     codex_threads: bool,
     /// `[assistant]` (ADR 0084).
     assistant: Assistant,
+    /// `[build]` (ADR 0102).
+    build: HostBuild,
 }
 
 #[derive(Deserialize)]
@@ -109,6 +114,7 @@ struct RawConfig {
     /// (ADR 0066) are read and ignored.
     assistant: Option<toml::Value>,
     codex: Option<RawCodex>,
+    build: Option<RawHostBuild>,
 }
 
 /// `[codex]`: the host's switch for Codex threads that muxa owns (ADR 0028).
@@ -140,6 +146,7 @@ struct RawWorkspace {
     #[serde(default)]
     claude_connectors: bool,
     bots: Option<super::bots::RawBotRules>,
+    build: Option<RawWorkspaceBuild>,
     /// `[workspace.assistant]` and `memory` of the removed assistant layer
     /// (ADR 0066): read so an older file still loads, not used.
     assistant: Option<toml::Value>,
@@ -271,6 +278,11 @@ impl Workspaces {
                 .unwrap_or_default()
                 .check()
                 .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
+            let build = w
+                .build
+                .unwrap_or_default()
+                .check(home)
+                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
             list.push(Workspace {
                 name: w.name,
                 root,
@@ -285,9 +297,11 @@ impl Workspaces {
                 mcp,
                 claude_connectors: w.claude_connectors,
                 bot_rules,
+                build,
             });
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);
+        let host_build = raw.build.unwrap_or_default().check(home).map_err(invalid)?;
         let mut worker_names = HashSet::new();
         let mut workers = Vec::with_capacity(raw.worker.len());
         for raw_worker in raw.worker {
@@ -322,7 +336,18 @@ impl Workspaces {
             problems,
             codex_threads,
             assistant,
+            build: host_build,
         })
+    }
+
+    pub fn host_build(&self) -> &HostBuild {
+        &self.build
+    }
+
+    /// Where `ws`'s places put their build output; None when no build disk
+    /// is set (ADR 0102).
+    pub fn build_disk(&self, ws: &Workspace) -> Option<BuildDisk> {
+        build::disk(&self.build, &ws.build)
     }
 
     pub fn assistant(&self) -> &Assistant {

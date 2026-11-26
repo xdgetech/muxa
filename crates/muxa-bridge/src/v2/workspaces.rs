@@ -144,6 +144,7 @@ mod tests {
             }],
             claude_connectors: false,
             bot_rules: Default::default(),
+            build: Default::default(),
         }
     }
 

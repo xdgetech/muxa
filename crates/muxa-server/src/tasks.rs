@@ -127,6 +127,21 @@ pub enum TaskError {
     ReadOnly(String),
 }
 
+/// A `disk-clean` request.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DiskClean {
+    pub paths: Vec<String>,
+    pub force: bool,
+    pub dry_run: bool,
+}
+
+/// What `disk-clean` removed, or would remove on a dry run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DiskCleaned {
+    pub removed: Vec<String>,
+    pub kept: Vec<muxa_protocol::v2::DiskKept>,
+}
+
 /// The host's Routines, and the Workspaces whose Routines cannot be read.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutineList {
@@ -165,6 +180,24 @@ pub trait Host: Send + Sync {
     /// The Workspaces as `workspaces` shows them. Nothing secret.
     fn workspace_list(&self) -> impl Future<Output = Result<Vec<Workspace>, TaskError>> + Send {
         async { Ok(Vec::new()) }
+    }
+
+    /// The disk use of Task places and leftovers (ADR 0102). `holds` says
+    /// which places terminals hold.
+    fn disk(
+        &self,
+        _holds: &crate::holds::Holds,
+    ) -> impl Future<Output = Result<Vec<muxa_protocol::v2::DiskRow>, TaskError>> + Send {
+        async { Ok(Vec::new()) }
+    }
+
+    /// Removes rows of [`Host::disk`]; see `disk-clean`.
+    fn disk_clean(
+        &self,
+        _holds: &crate::holds::Holds,
+        _clean: DiskClean,
+    ) -> impl Future<Output = Result<DiskCleaned, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host cannot clean its disk".into())) }
     }
 
     /// Whether closing a Task with `places` may go on: with

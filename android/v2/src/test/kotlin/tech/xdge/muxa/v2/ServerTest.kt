@@ -186,6 +186,21 @@ class ServerTest {
     }
 
     @Test
+    fun diskAsksTheHostAndForceNeedsPaths() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(emptyList<DiskRow>(), c.disk())
+            try {
+                c.diskClean(force = true)
+                fail("force without paths was accepted")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
     fun workspacesListTheHostsWorkspace() = runBlocking {
         withTimeout(10_000) {
             val c = connect()

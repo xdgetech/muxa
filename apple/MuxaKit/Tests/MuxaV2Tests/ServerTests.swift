@@ -108,6 +108,15 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func diskAsksTheHostAndForceNeedsPaths() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.disk() == [])
+        await #expect(throws: V2Error.self) { try await c.diskClean(force: true) }
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func workspacesListTheHostsWorkspaces() async throws {
         let server = try Server()
         let c = try await server.connect()

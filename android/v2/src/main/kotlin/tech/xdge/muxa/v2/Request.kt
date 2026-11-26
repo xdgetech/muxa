@@ -72,6 +72,10 @@ sealed interface V2Request {
     /** Accepts or dismisses the item's suggestion (ADR 0084). */
     data class InboxSuggestion(val item: String, val accept: Boolean) : V2Request
     data object Workspaces : V2Request
+    /** The disk use of Task places and leftovers (ADR 0102). */
+    data object Disk : V2Request
+    /** A dry run unless [dryRun] is false; [force] needs [paths]. */
+    data class DiskClean(val paths: List<String> = emptyList(), val force: Boolean = false, val dryRun: Boolean = true) : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request
     data class ReaderListOf(val terminal: String, val kind: ReaderKind, val html: Boolean = false) : V2Request
@@ -140,6 +144,13 @@ sealed interface V2Request {
             is InboxApply -> { type("inbox-apply"); put("item", r.item) }
             is InboxSuggestion -> { type("inbox-suggestion"); put("item", r.item); put("accept", r.accept) }
             Workspaces -> type("workspaces")
+            Disk -> type("disk")
+            is DiskClean -> {
+                type("disk-clean")
+                put("paths", buildJsonArray { r.paths.forEach { add(JsonPrimitive(it)) } })
+                put("force", r.force)
+                put("dry_run", r.dryRun)
+            }
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
             is ReaderListOf -> { type("reader-list"); put("terminal", r.terminal); put("kind", r.kind.wire); put("html", r.html) }

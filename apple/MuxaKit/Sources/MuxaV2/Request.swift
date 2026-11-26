@@ -57,6 +57,10 @@ public enum V2Request: Sendable {
     case chatOpen(terminal: String)
     case chatClose(chat: UInt32)
     case workspaces
+    /// The disk use of Task places and leftovers (ADR 0102).
+    case disk
+    /// A dry run unless `dryRun` is false; `force` needs `paths`.
+    case diskClean(paths: [String] = [], force: Bool = false, dryRun: Bool = true)
     /// The host's editable settings (ADR 0074).
     case settings
     /// `revision` must be the current one; the ops apply all or none.
@@ -119,6 +123,9 @@ public enum V2Request: Sendable {
         case let .chatOpen(terminal): set("chat-open", ["terminal": terminal])
         case let .chatClose(chat): set("chat-close", ["chat": chat])
         case .workspaces: set("workspaces", [:])
+        case .disk: set("disk", [:])
+        case let .diskClean(paths, force, dryRun):
+            set("disk-clean", ["paths": paths, "force": force, "dry_run": dryRun])
         case .settings: set("settings", [:])
         case let .settingsUpdate(revision, ops):
             set("settings-update", ["revision": revision, "ops": try ops.map { try $0.jsonObject() }])

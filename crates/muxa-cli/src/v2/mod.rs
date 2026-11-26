@@ -4,6 +4,7 @@
 
 mod chat;
 pub mod client;
+mod disk;
 mod inbox;
 mod reader;
 mod settings;
@@ -45,6 +46,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] close-shell TERMINAL
        muxa-cli v2 [--bridge CMD] upload TERMINAL FILE
        muxa-cli v2 [--bridge CMD] workspaces [--json]
+       muxa-cli v2 [--bridge CMD] disk [--json]
+       muxa-cli v2 [--bridge CMD] disk clean [PATH]... [--force] [--yes] [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] settings [--json]
        muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
@@ -119,6 +122,7 @@ enum Cmd {
     Workspaces {
         json: bool,
     },
+    Disk(disk::Disk),
     Inbox {
         action: inbox::Action,
         json: bool,
@@ -230,7 +234,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut chose = false;
     let mut words = Vec::new();
     let mut note: Option<String> = None;
-    let (mut force, mut dry_run) = (false, false);
+    let (mut force, mut dry_run, mut yes) = (false, false, false);
     let mut revision: Option<String> = None;
     while let Some(arg) = p.next()? {
         match arg {
@@ -281,6 +285,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("note") => note = Some(p.value()?.string()?),
             Long("force") => force = true,
             Long("dry-run") => dry_run = true,
+            Long("yes") => yes = true,
             Long("existing") => places.push(PlaceSpec::Existing {
                 path: p.value()?.string()?,
             }),
@@ -298,6 +303,13 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let cmd = match words.as_slice() {
         ["terminals"] => Cmd::Terminals { json },
         ["workspaces"] => Cmd::Workspaces { json },
+        ["disk"] => Cmd::Disk(disk::Disk::Report { json }),
+        ["disk", "clean", paths @ ..] => Cmd::Disk(disk::Disk::Clean {
+            paths: paths.iter().map(|p| (*p).to_owned()).collect(),
+            yes,
+            force,
+            json,
+        }),
         ["approve", i] => Cmd::Inbox {
             action: inbox::Action::Approve {
                 item: (*i).to_owned(),
@@ -589,6 +601,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             folder,
             out,
         } => reader::folder(bridge, &terminal, &folder, &out).await,
+        Cmd::Disk(d) => disk::run(bridge, &d).await,
         Cmd::Workspaces { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "workspaces"})).await?;
@@ -963,6 +976,18 @@ mod tests {
         assert_eq!(
             parse(args(&["workspaces", "--json"])).unwrap(),
             Some(("muxa-bridge connect".into(), Cmd::Workspaces { json: true }))
+        );
+        assert_eq!(
+            parse(args(&["disk", "clean", "/w/r-x", "--force", "--yes"])).unwrap(),
+            Some((
+                "muxa-bridge connect".into(),
+                Cmd::Disk(disk::Disk::Clean {
+                    paths: vec!["/w/r-x".into()],
+                    yes: true,
+                    force: true,
+                    json: false,
+                })
+            ))
         );
     }
 

@@ -526,6 +526,20 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
             },
             ClientMsg::Workspaces { id } => self.workspaces(id).await,
+            ClientMsg::Disk { id } => self.disk(id).await,
+            ClientMsg::DiskClean {
+                id,
+                paths,
+                force,
+                dry_run,
+            } => {
+                let clean = crate::tasks::DiskClean {
+                    paths,
+                    force,
+                    dry_run,
+                };
+                self.disk_clean(id, clean).await
+            }
             ClientMsg::InboxApprove { id, item, worktree } => {
                 let mode = worktree.unwrap_or_default();
                 let done =
@@ -716,6 +730,44 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.reply(id, Reply::Workspaces { workspaces });
             }
             Err(e) => self.error(Some(id), code_of(&e), e.to_string()),
+        }
+    }
+
+    async fn disk(&mut self, id: u64) {
+        let holds = match crate::holds::holds(self.backend, self.inbox).await {
+            Ok(h) => h,
+            Err(e) => return self.error(Some(id), ErrorCode::Backend, e),
+        };
+        match self.host.disk(&holds).await {
+            Ok(rows) => self.reply(id, Reply::Disk { rows }),
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+        }
+    }
+
+    /// Never without the terminals: a place that cannot be shown free stays.
+    async fn disk_clean(&mut self, id: u64, clean: crate::tasks::DiskClean) {
+        if clean.force && clean.paths.is_empty() {
+            return self.error(
+                Some(id),
+                ErrorCode::BadRequest,
+                "force needs the paths to remove".into(),
+            );
+        }
+        let holds = match crate::holds::holds(self.backend, self.inbox).await {
+            Ok(h) => h,
+            Err(e) => return self.error(Some(id), ErrorCode::Backend, e),
+        };
+        let dry_run = clean.dry_run;
+        match self.host.disk_clean(&holds, clean).await {
+            Ok(done) => self.reply(
+                id,
+                Reply::DiskCleaned {
+                    dry_run,
+                    removed: done.removed,
+                    kept: done.kept,
+                },
+            ),
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
         }
     }
 

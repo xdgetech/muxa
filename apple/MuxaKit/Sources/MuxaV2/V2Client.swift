@@ -177,6 +177,16 @@ public actor V2Client {
         try field("workspaces", of: await request(.workspaces))
     }
 
+    /// The host's Task places, other worktrees and build folders (ADR 0102).
+    public func disk() async throws -> [DiskRow] {
+        try field("rows", of: await request(.disk))
+    }
+
+    /// Removes rows of `disk`; a dry run unless `dryRun` is false.
+    public func diskClean(paths: [String] = [], force: Bool = false, dryRun: Bool = true) async throws -> DiskCleaned {
+        try Coding.decoder.decode(DiskCleaned.self, from: await request(.diskClean(paths: paths, force: force, dryRun: dryRun)))
+    }
+
     /// The host's editable settings.
     public func settings() async throws -> Settings {
         try field("settings", of: await request(.settings), decoder: Coding.plainDecoder)

@@ -373,6 +373,22 @@ fn prepared(
     }
 }
 
+/// Links build paths and records the places. A failure is only logged: the
+/// places are made. Blocking.
+fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place]) {
+    let disk = match records.load_workspaces() {
+        Ok(all) => all.get(workspace).and_then(|ws| all.build_disk(ws)),
+        Err(_) => None,
+    };
+    super::place_records::after_make(
+        records.state_dir.as_deref(),
+        disk.as_ref(),
+        workspace,
+        made,
+        crate::records::now(),
+    );
+}
+
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, TaskError> {
@@ -450,7 +466,9 @@ impl Host for BridgeHost {
         let made = places::make(&ws, title, checked).await?;
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let talk_text = talk.clone();
+        let (records, ws_name) = (Arc::clone(&self.records), ws.name.clone());
         let made = blocking(move || {
+            note_places(&records, &ws_name, &made.places);
             places::brief(&made, &title_owned, goal.as_deref())?;
             if let Some(text) = &talk_text {
                 super::git::append_file(made.working(), "TASK.md", text)?;
@@ -591,6 +609,21 @@ impl Host for BridgeHost {
         .await
     }
 
+    async fn disk(
+        &self,
+        holds: &muxa_server::holds::Holds,
+    ) -> Result<Vec<muxa_protocol::v2::DiskRow>, TaskError> {
+        super::disk::report(&self.records, holds).await
+    }
+
+    async fn disk_clean(
+        &self,
+        holds: &muxa_server::holds::Holds,
+        clean: muxa_server::DiskClean,
+    ) -> Result<muxa_server::DiskCleaned, TaskError> {
+        super::disk::clean(&self.records, holds, clean).await
+    }
+
     async fn check_close(
         &self,
         places: &[muxa_protocol::v2::Place],
@@ -604,7 +637,14 @@ impl Host for BridgeHost {
         places: &[muxa_protocol::v2::Place],
         mode: muxa_protocol::v2::WorktreeMode,
     ) -> Result<(), TaskError> {
-        super::close::remove(places, mode).await
+        let removed = super::close::remove(places, mode).await;
+        let (records, places) = (Arc::clone(&self.records), places.to_vec());
+        let _ = blocking(move || {
+            super::place_records::after_close(records.state_dir.as_deref(), &places);
+            Ok(())
+        })
+        .await;
+        removed
     }
 
     async fn routines(&self) -> Result<RoutineList, TaskError> {

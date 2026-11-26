@@ -4,6 +4,7 @@
 pub mod agent_env;
 pub mod assistant;
 pub mod bots;
+pub mod build;
 pub mod connections;
 pub mod cron;
 pub mod lock;

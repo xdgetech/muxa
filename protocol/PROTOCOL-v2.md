@@ -106,6 +106,8 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"loop-start","terminal","loop":LoopSpec,"reset"?}` | `{"loop":Loop}`. Starts or restarts the loop of a Task's agent |
 | `{"type":"loop-stop","terminal"}` | `{"loop":Loop}`. Stopped with reason `user` |
 | `{"type":"workspaces"}` | `{"workspaces":[Workspace...]}`: what a Task may use. See Task actions |
+| `{"type":"disk"}` | `{"rows":[DiskRow...]}`: the disk use of Task places and leftovers. See Disk |
+| `{"type":"disk-clean","paths"?,"force"?,"dry_run"?}` | `{"dry_run","removed":[path...],"kept":[{"path","why"}...]}`. See Disk |
 | `{"type":"inbox-approve","item","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of a Review item; `worktree` is `remove` (the default) or `force`. See Task actions |
 | `{"type":"inbox-request-changes","item","comment"}` | `{"inbox":Inbox}`. Types the comment into the Task's agent and resolves the Review item |
 | `{"type":"inbox-retry","item"}` | `{"inbox":Inbox}`. Runs again what made a Failed item and resolves it |
@@ -246,7 +248,7 @@ ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...],"bots"?:[{"wo
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
 - `due`: `YYYY-MM-DD`. `created`: Unix seconds.
 - Every open item is in `items`; a client hides none. Servers before ADR 0096 sent `later_until` on an item Later hid. A server since then never sends it, and on start it moves such stored items to the end of `items`.
-- `source`: `capture`, `task`, `routine` or `v1`.
+- `source`: `capture`, `task`, `routine`, `v1` or `host`.
 - `terminal`: the Task agent terminal that made the item (Review, and Failed of an agent or a Task Loop). `routine`: `{"workspace","name"}`, the Routine that made it. Items made before these fields have neither.
 - `place`: `{"workspace","path"}`, where an older Task worked. A client offers Resume Task for it: `start-task` with that workspace, the title without `Resume: `, and `places: [{"kind":"existing","path"}]`, then `inbox-done`.
 
@@ -256,6 +258,7 @@ Items the server makes:
 - **Review** (`source: task`): on `task-review`. An agent can send it for its own Task (`muxa-cli v2 review` uses `HC_TERMINAL_ID`). While one is open, another `task-review` for the Task makes none.
 - **Failed** (`source: task`): a Task's agent ended with a non-zero code, on a signal it did not get from a kill, or was lost. Once per terminal. A clean exit or a kill makes none.
 - **Read** and **Decide** (`source: routine`): a Routine's briefing and proposal entries; **Failed** for a Routine's failure. Once each. Entries from before the server first ran are not copied.
+- **Decide** (`source: host`): the place sweep kept a Task worktree that nothing holds, because removing it would lose work (ADR 0102). Once per worktree.
 
 ### Migration from v1
 
@@ -341,6 +344,21 @@ A Review item with no `terminal`, or another kind, is `bad-request`. A terminal 
 - `terminal`, live agent: its Task Loop starts again with the same check and `reset` (a failed loop). No loop is `bad-request`.
 - `terminal`, ended agent: the Workspace's agent starts again in the same working place, with the same places, labels and connections, but not in plan mode. The ended terminal is removed. A working place that is gone is `bad-request`.
 - Neither, or another kind: `bad-request`.
+
+### Disk
+
+ADR 0102. `disk` lists, with sizes in bytes (`du -sk`, links not followed):
+- the places muxa recorded for Tasks (`task-worktree`, `task-folder`), with their folders on the build disk in `build_bytes`;
+- every other worktree of the Workspaces' repos: `claude-worktree` under `<repo>/.claude/worktrees`, else `worktree`;
+- folders under `<root>/tasks` with no record (`task-folder`), and folders on the build disk no record names (`build-folder`).
+
+`DiskRow`: `{"path","kind","workspace"?,"branch"?,"bytes"?,"build_bytes"?,"held"?,"clean"?,"merged"?,"cleanable"}`. `held` is `live` (a live terminal names the place in `muxa.places` or `muxa.dir`) or `ended` (only an ended agent with an open Inbox item does). `cleanable` is true for an unheld row with nothing to lose: a worktree that is clean and merged (one muxa did not make must also be unchanged for a day; a Task worktree must be older than 10 minutes), or a build folder. A Task folder is never cleanable: it holds the user's files.
+
+`disk-clean` scans again and acts on that scan:
+1. `dry_run` defaults to true: the reply says what it would remove, and nothing changes.
+2. No `paths` means every cleanable row. A path that is not a row of the scan is `bad-request`, and nothing changes.
+3. Without `force`, a named row that is not cleanable is kept, with why. `force` needs `paths`, and removes them with `git worktree remove --force` and `git branch -D`.
+4. A held row is always kept.
 
 ### Settings
 
