@@ -97,7 +97,7 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
      Today by Workspace     tokens in / out
      Company                1.2M / 84k
      Personal               310k / 22k
-     Today by Task          top 10, each opens its Task
+     Today by Task          top 10, a running one opens its Task
      ```
    - A Task and a Routine run show their subscription, and their tokens from S5.
 
@@ -138,7 +138,7 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
 | S2 | Usage reading (Claude status line through one settings writer, Codex rollouts), the record, `subscriptions` wire, `muxa-cli v2 subscriptions` | `make check`, `make test-apple-v2`, `make test-android-v2` |
 | S3 | Apps: onboarding (find, add, the login terminal), Settings → Subscriptions, the Usage page (meters), the Start Task line, Bot and assistant pickers | `make test-app`, `make test-app-iphone`, `make test-android-app`, `make test-mac-app` |
 | S4 | Limits: warn items, switch, pause unattended work (done 2026-11-25; the Task Loop as S4b, done 2026-11-25) | `make check` with recorded usage files |
-| S5 | Tokens per Task and Workspace, `token-usage`, the Usage page's lower half (done 2026-11-25; a Task row names the Task but does not open it yet) | `make check` with fixture transcripts |
+| S5 | Tokens per Task and Workspace, `token-usage`, the Usage page's lower half (done 2026-11-25; since 2026-11-26 a Task row whose agent still runs opens it) | `make check` with fixture transcripts |
 | Later | Codex `account/rateLimits/read`; Gemini/Antigravity; Copilot (`premium_request/usage` with a connection) | — |
 
 ## Decided with the developer (2026-11-24)

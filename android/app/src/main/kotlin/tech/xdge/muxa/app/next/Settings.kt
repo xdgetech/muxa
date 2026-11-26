@@ -105,7 +105,7 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
             else -> {
                 WorkspaceList(editor) { openWorkspace = it }
                 SubscriptionsSection(editor, model, model.planUsage, open)
-                UsageSection(editor, model.planUsage, model.tokenUsage, model.terminals)
+                UsageSection(editor, model.planUsage, model.tokenUsage, model.terminals, open)
                 WorkersSection(editor, settings.workspaces.map { it.name })
                 AssistantSection(editor, model.planUsage)
             }

@@ -46,9 +46,13 @@ extension MacNextTests {
         XCTAssertTrue(app.descendants(matching: .any)["usage.claude-personal"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["82%"].waitForExistence(timeout: 5))
         // Today's tokens: a Task whose agent still runs goes by its name.
-        XCTAssertTrue(app.descendants(matching: .any)["usage.task.app-fix-login"].waitForExistence(timeout: 5))
+        let task = app.descendants(matching: .any)["usage.task.app-fix-login"]
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
         // A row's name and value may read as one element.
         let tokens = NSPredicate(format: "label CONTAINS %@", "1.2M in · 84k out · 9.4M cached")
         XCTAssertTrue(app.descendants(matching: .any).matching(tokens).firstMatch.waitForExistence(timeout: 5), "app's tokens today")
+        // Its row opens the Task in the main window's Focus.
+        task.click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10), "fix-login's Task is open")
     }
 }

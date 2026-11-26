@@ -203,7 +203,7 @@ private struct SubscriptionEditor: View {
                 Task {
                     if let t = await model.startLogin(name) {
                         dismiss()
-                        BotTalk.show(t, nav: nav, openWindow: openWindow)
+                        OpenInFocus.show(t, nav: nav, openWindow: openWindow)
                     } else {
                         loginError = model.requestError ?? "The login terminal did not start."
                     }

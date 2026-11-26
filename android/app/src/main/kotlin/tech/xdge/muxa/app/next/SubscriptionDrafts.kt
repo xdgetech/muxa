@@ -145,9 +145,12 @@ object TokenText {
     fun line(input: Long, cached: Long, output: Long): String =
         listOfNotNull("${short(input)} in", "${short(output)} out", "${short(cached)} cached".takeIf { cached > 0 }).joinToString(" · ")
 
+    /** The Task agent that still runs in [t]'s folder: its row goes by its name and opens it. */
+    fun agentOf(t: TaskTokens, terminals: List<Terminal>): Terminal? =
+        terminals.firstOrNull { it.labels["muxa.dir"] == t.dir && it.labels["muxa.role"] == "agent" }
+
     /** The name of the Task agent that still runs in [t]'s folder, else the folder's name. */
-    fun taskName(t: TaskTokens, terminals: List<Terminal>): String =
-        terminals.firstOrNull { it.labels["muxa.dir"] == t.dir && it.labels["muxa.role"] == "agent" }?.name ?: t.title
+    fun taskName(t: TaskTokens, terminals: List<Terminal>): String = agentOf(t, terminals)?.name ?: t.title
 
     /** One decimal below 10, none from 10: `1.2`, `84`. */
     private fun rounded(x: Double): String = if (x < ONE_DECIMAL_BELOW) String.format(Locale.ROOT, "%.1f", x) else String.format(Locale.ROOT, "%.0f", x)

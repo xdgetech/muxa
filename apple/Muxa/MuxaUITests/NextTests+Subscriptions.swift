@@ -52,6 +52,9 @@ extension NextTests {
         // A row's name and value may read as one element.
         let tokens = NSPredicate(format: "label CONTAINS %@", "1.2M in · 84k out · 9.4M cached")
         XCTAssertTrue(app.descendants(matching: .any).matching(tokens).firstMatch.waitForExistence(timeout: 5), "app's tokens today")
+        // Its row opens the Task.
+        task.tap()
+        XCTAssertTrue(app.buttons["task.terminal.t1"].waitForExistence(timeout: 10), "fix-login's Task is open")
     }
 
     @MainActor

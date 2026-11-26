@@ -184,7 +184,7 @@ struct BotEditor: View {
             return
         }
         dismiss()
-        BotTalk.show(t, nav: nav, openWindow: openWindow)
+        OpenInFocus.show(t, nav: nav, openWindow: openWindow)
     }
 
     private var soul: some View {

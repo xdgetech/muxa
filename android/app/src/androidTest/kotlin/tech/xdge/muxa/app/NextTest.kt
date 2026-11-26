@@ -485,6 +485,9 @@ class NextTest {
         // Today's tokens: a Task whose agent still runs goes by its name.
         compose.onNodeWithTag("usage.workspaces").performScrollTo().assert(hasText("1.2M in · 84k out · 9.4M cached", substring = true))
         compose.onNodeWithTag("usage.task.app-fix-login").performScrollTo().assert(hasText("fix-login"))
+        // Its row opens the Task.
+        compose.onNodeWithTag("usage.task.app-fix-login").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.terminal.t1"), TIMEOUT)
     }
 
     /** ADR 0091 §4: Use makes a login Current for the next Tasks; switching when full is the Workspace's choice. */

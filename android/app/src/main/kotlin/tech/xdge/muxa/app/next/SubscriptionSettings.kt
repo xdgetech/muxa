@@ -1,6 +1,7 @@
 package tech.xdge.muxa.app.next
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -149,7 +150,7 @@ private fun LoginButton(model: NextModel, name: String, command: String, open: (
 
 /** The Usage part of Settings (ADR 0091 §8): each subscription's windows as its agents last reported them. */
 @Composable
-fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>, tokens: TokenUsage?, terminals: List<Terminal>) {
+fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>, tokens: TokenUsage?, terminals: List<Terminal>, open: (Terminal) -> Unit) {
     val subs = editor.settings?.subscriptions.orEmpty()
     if (subs.isEmpty()) return
     SettingsHeader("Usage")
@@ -171,12 +172,12 @@ fun UsageSection(editor: SettingsEditor, usage: List<SubscriptionUsage>, tokens:
             "At ${PlanWindow.WARN}% muxa warns; from ${PlanWindow.SWITCH}% new agents take the next subscription in their list. " +
             "Tokens come from the agents' transcripts on the host.",
     )
-    tokens?.let { TokenCards(it, terminals) }
+    tokens?.let { TokenCards(it, terminals, open) }
 }
 
-/** Today's tokens (ADR 0091 §6): each Workspace, then the ten Task folders that used most. */
+/** Today's tokens (ADR 0091 §6): each Workspace, then the ten Task folders that used most. A running Task's row opens it. */
 @Composable
-private fun TokenCards(tokens: TokenUsage, terminals: List<Terminal>) {
+private fun TokenCards(tokens: TokenUsage, terminals: List<Terminal>, open: (Terminal) -> Unit) {
     SettingsHeader("Today by Workspace")
     SettingsCard(Modifier.testTag("usage.workspaces").semantics(mergeDescendants = true) {}) {
         if (tokens.workspaces.isEmpty()) TokenRow("No agent used tokens today.", null, "")
@@ -189,7 +190,9 @@ private fun TokenCards(tokens: TokenUsage, terminals: List<Terminal>) {
     SettingsHeader("Today by Task")
     SettingsCard(Modifier.testTag("usage.tasks")) {
         for (t in tokens.tasks.take(TokenText.TASKS)) {
-            Box(Modifier.testTag("usage.task.${t.title}").semantics(mergeDescendants = true) {}) {
+            val agent = TokenText.agentOf(t, terminals)
+            val row = Modifier.testTag("usage.task.${t.title}")
+            Box(if (agent == null) row.semantics(mergeDescendants = true) {} else row.clickable(onClickLabel = "Open the Task") { open(agent) }) {
                 TokenRow(TokenText.taskName(t, terminals), t.workspace, TokenText.line(t.input, t.cached, t.output))
             }
             CardDivider()

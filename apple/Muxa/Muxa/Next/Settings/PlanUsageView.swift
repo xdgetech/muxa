@@ -61,9 +61,12 @@ struct PlanUsageView: View {
 }
 
 /// Today's tokens (ADR 0091 §6): each Workspace, then the ten Task folders
-/// that used most. A Task whose agent still runs goes by its name.
+/// that used most. A Task whose agent still runs goes by its name and opens
+/// in Focus; an ended one has nothing to open.
 private struct TokenSections: View {
     @Environment(NextModel.self) private var model
+    @Environment(NextNavigation.self) private var nav
+    @Environment(\.openWindow) private var openWindow
     let tokens: TokenUsage
 
     var body: some View {
@@ -79,20 +82,30 @@ private struct TokenSections: View {
         if !tokens.tasks.isEmpty {
             Section("Today by Task") {
                 ForEach(tokens.tasks.prefix(10)) { t in
-                    LabeledContent {
-                        Text(TokenText.line(input: t.input, cached: t.cached, output: t.output))
-                    } label: {
-                        Text(name(t))
-                        Text(t.workspace)
+                    if let agent = agent(t) {
+                        Button { OpenInFocus.show(agent, nav: nav, openWindow: openWindow) } label: { row(t, name: agent.name ?? t.title) }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens the Task")
+                            .accessibilityIdentifier("usage.task.\(t.title)")
+                    } else {
+                        row(t, name: t.title).accessibilityIdentifier("usage.task.\(t.title)")
                     }
-                    .accessibilityIdentifier("usage.task.\(t.title)")
                 }
             }
         }
     }
 
-    private func name(_ t: TaskTokens) -> String {
-        let agent = model.terminals.first { $0.labels["muxa.dir"] == t.dir && $0.labels["muxa.role"] == "agent" }
-        return agent?.name ?? t.title
+    private func row(_ t: TaskTokens, name: String) -> some View {
+        LabeledContent {
+            Text(TokenText.line(input: t.input, cached: t.cached, output: t.output))
+        } label: {
+            Text(name)
+            Text(t.workspace)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func agent(_ t: TaskTokens) -> MuxaV2.Terminal? {
+        model.terminals.first { $0.labels["muxa.dir"] == t.dir && $0.labels["muxa.role"] == "agent" }
     }
 }
