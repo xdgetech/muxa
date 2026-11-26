@@ -797,3 +797,24 @@ fn the_build_disk_is_edited_and_checked() {
     assert_eq!(s.build.unwrap().dir, None);
     assert!(!text(&h).contains("[build]\n"));
 }
+
+#[test]
+fn a_build_disk_muxa_may_not_write_to_is_not_saved() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = host("build-denied");
+    let s = h.store.view().unwrap();
+    let ssd = h.dir.join("ssd");
+    fs::create_dir_all(&ssd).unwrap();
+    fs::set_permissions(&ssd, fs::Permissions::from_mode(0o500)).unwrap();
+    let refused = h.store.update(
+        &s.revision,
+        vec![op(json!({"op": "build-update", "dir": ssd}))],
+    );
+    fs::set_permissions(&ssd, fs::Permissions::from_mode(0o700)).unwrap();
+    let Err(SettingsError::Invalid(why)) = refused else {
+        panic!("{refused:?}");
+    };
+    assert!(why.contains(&ssd.display().to_string()), "{why}");
+    assert!(why.contains("Privacy & Security"), "{why}");
+    assert!(!text(&h).contains("[build]\n"));
+}

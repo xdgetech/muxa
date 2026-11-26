@@ -161,7 +161,8 @@ async fn serve(setup: Setup, path: &Path) -> std::io::Result<()> {
         .with_runner(Arc::clone(&runner))
         .with_loops(Arc::clone(&loops))
         .with_chats(chats)
-        .with_settings(settings);
+        .with_settings(settings)
+        .with_inbox(Arc::clone(&inbox));
     crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&config));
     let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
     crate::v2::spawn_task_watch(Arc::clone(&herdr));

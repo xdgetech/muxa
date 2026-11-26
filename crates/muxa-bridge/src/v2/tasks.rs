@@ -5,7 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use muxa_protocol::v2::{Place, PlaceKind};
+use muxa_inbox::{Inbox, NewItem};
+use muxa_protocol::v2::{ItemKind, Place, PlaceKind};
 use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
@@ -35,6 +36,8 @@ pub struct BridgeHost {
     claude_dirs: Vec<PathBuf>,
     /// Finds an agent that already works in an adopted place.
     agents_in: Arc<AgentLookup>,
+    /// Where Task start says why the build disk was not used.
+    inbox: Option<Arc<Inbox>>,
 }
 
 impl BridgeHost {
@@ -48,6 +51,14 @@ impl BridgeHost {
             settings: None,
             claude_dirs: Vec::new(),
             agents_in: adopt::host_lookup(),
+            inbox: None,
+        }
+    }
+
+    pub fn with_inbox(self, inbox: Arc<Inbox>) -> Self {
+        BridgeHost {
+            inbox: Some(inbox),
+            ..self
         }
     }
 
@@ -374,8 +385,8 @@ fn prepared(
 }
 
 /// Links build paths and records the places. A failure is only logged: the
-/// places are made. Blocking.
-fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place]) {
+/// places are made. Returns why the build disk was not used. Blocking.
+fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place]) -> Option<String> {
     let disk = match records.load_workspaces() {
         Ok(all) => all.get(workspace).and_then(|ws| all.build_disk(ws)),
         Err(_) => None,
@@ -386,7 +397,30 @@ fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place])
         workspace,
         made,
         crate::records::now(),
-    );
+    )
+}
+
+/// One open item per message: every Task start that falls back finds it.
+fn ask_for_build_access(inbox: &Inbox, workspace: &str, why: &str) {
+    let item = NewItem {
+        kind: ItemKind::Todo,
+        title: "Allow muxa-bridge to write to the build disk".into(),
+        note: Some(format!(
+            "{why}\n\nUntil then, each Task builds in its own worktree. Tasks started after that use the build disk."
+        )),
+        workspace: Some(workspace.to_owned()),
+        due: None,
+        source: "host".into(),
+        key: Some(format!("build-access:{why}")),
+        once: false,
+        terminal: None,
+        routine: None,
+        place: None,
+        extra: Default::default(),
+    };
+    if let Err(e) = inbox.change(|b, now| b.add(item, now).map(drop)) {
+        tracing::warn!(error = %e, "cannot say why the build disk was not used");
+    }
 }
 
 async fn blocking<T: Send + 'static>(
@@ -467,8 +501,13 @@ impl Host for BridgeHost {
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let talk_text = talk.clone();
         let (records, ws_name) = (Arc::clone(&self.records), ws.name.clone());
+        let inbox = self.inbox.clone();
         let made = blocking(move || {
-            note_places(&records, &ws_name, &made.places);
+            if let Some(why) = note_places(&records, &ws_name, &made.places)
+                && let Some(inbox) = &inbox
+            {
+                ask_for_build_access(inbox, &ws_name, &why);
+            }
             places::brief(&made, &title_owned, goal.as_deref())?;
             if let Some(text) = &talk_text {
                 super::git::append_file(made.working(), "TASK.md", text)?;
@@ -934,6 +973,55 @@ mod tests {
         let named = host.prepare(&spec(&["web"])).await.unwrap();
         assert_eq!(named.mcp, ["docs"]);
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn a_build_disk_muxa_may_not_write_to_starts_the_task_and_says_why() {
+        use std::os::unix::fs::PermissionsExt;
+        let ssd = std::env::temp_dir().join(format!("muxa-tasks-{}-ssd", std::process::id()));
+        std::fs::create_dir_all(&ssd).unwrap();
+        let (host, base) = host(
+            "build-denied",
+            &format!("[build]\ndir = \"{}\"\n", ssd.display()),
+        );
+        let app = base.join("root/app");
+        super::super::adopt::tests::repo(&app);
+        let inbox = Arc::new(Inbox::memory());
+        let host = host.with_inbox(Arc::clone(&inbox));
+        let task = TaskSpec {
+            places: vec![muxa_protocol::v2::PlaceSpec::Branch {
+                repo: "app".into(),
+                branch: "fix".into(),
+                base: None,
+            }],
+            ..spec(&[])
+        };
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let ready = host.prepare(&task).await;
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let ready = ready.unwrap();
+        assert!(ready.dir.is_dir());
+        let items = inbox.view().items;
+        assert_eq!(items.len(), 1, "{items:?}");
+        let note = items[0].note.clone().unwrap_or_default();
+        assert!(note.contains(&ssd.display().to_string()), "{note}");
+        assert!(note.contains("Privacy & Security"), "{note}");
+        // A second start finds the open item.
+        let again = TaskSpec {
+            places: vec![muxa_protocol::v2::PlaceSpec::Branch {
+                repo: "app".into(),
+                branch: "fix-2".into(),
+                base: None,
+            }],
+            ..spec(&[])
+        };
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let second = host.prepare(&again).await;
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+        second.unwrap();
+        assert_eq!(inbox.view().items.len(), 1);
+        let _ = std::fs::remove_dir_all(base);
+        let _ = std::fs::remove_dir_all(ssd);
     }
 
     #[tokio::test]

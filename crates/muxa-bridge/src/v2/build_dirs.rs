@@ -5,6 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::records::build::BuildDisk;
+use crate::records::build_access::{self, Access};
 
 /// Where `rel` of `place` builds: `<dir>/<workspace>/<place name>/<rel, '/' as '-'>`.
 pub fn target(disk: &BuildDisk, workspace: &str, place: &Path, rel: &Path) -> Option<PathBuf> {
@@ -16,10 +17,15 @@ pub fn target(disk: &BuildDisk, workspace: &str, place: &Path, rel: &Path) -> Op
 /// Links each build path of `place` to the build disk. Returns the build
 /// folders it links to. A path that is a real folder, or whose parent is
 /// not in this place, stays as it is. With no build disk mounted, nothing.
-pub fn link(disk: &BuildDisk, workspace: &str, place: &Path) -> Vec<PathBuf> {
-    if !disk.dir.is_dir() {
-        tracing::warn!(dir = %disk.dir.display(), "the build disk is not there; builds stay in the place");
-        return Vec::new();
+/// A disk muxa may not write to, or that does not answer in time,
+/// links nothing and returns the message for the user.
+pub fn link(disk: &BuildDisk, workspace: &str, place: &Path) -> Result<Vec<PathBuf>, String> {
+    match build_access::check(&disk.dir, build_access::WAIT)? {
+        Access::Writable => {}
+        Access::Missing => {
+            tracing::warn!(dir = %disk.dir.display(), "the build disk is not there; builds stay in the place");
+            return Ok(Vec::new());
+        }
     }
     let mut out = Vec::new();
     for rel in &super::build_paths::of(place, &disk.extra_paths) {
@@ -39,7 +45,7 @@ pub fn link(disk: &BuildDisk, workspace: &str, place: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// `/target`: the link itself, which a `target/` rule in `.gitignore` does
@@ -140,7 +146,7 @@ mod tests {
         std::fs::create_dir_all(&ssd).unwrap();
         let place = root.join("r");
         project(&place);
-        let made = link(&disk(&ssd), "w", &place);
+        let made = link(&disk(&ssd), "w", &place).unwrap();
         assert_eq!(
             made,
             vec![ssd.join("w/r/apple-Kit-.build"), ssd.join("w/r/target")]
@@ -159,7 +165,7 @@ mod tests {
             String::from_utf8_lossy(&status.stdout)
         );
         // A second start finds the same links.
-        assert_eq!(link(&disk(&ssd), "w", &place), made);
+        assert_eq!(link(&disk(&ssd), "w", &place).unwrap(), made);
     }
 
     #[test]
@@ -171,7 +177,7 @@ mod tests {
         project(&place);
         std::fs::create_dir_all(place.join("target")).unwrap();
         assert_eq!(
-            link(&disk(&ssd), "w", &place),
+            link(&disk(&ssd), "w", &place).unwrap(),
             vec![ssd.join("w/r/apple-Kit-.build")]
         );
         assert!(
@@ -184,9 +190,29 @@ mod tests {
         );
         let other = root.join("o");
         project(&other);
-        assert!(link(&disk(&root.join("not-mounted")), "w", &other).is_empty());
+        assert!(
+            link(&disk(&root.join("not-mounted")), "w", &other)
+                .unwrap()
+                .is_empty()
+        );
         assert!(other.join("target").symlink_metadata().is_err());
         git(&other, &["status"]);
+    }
+
+    #[test]
+    fn a_disk_muxa_may_not_write_to_links_nothing_and_says_why() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp("build-denied");
+        let ssd = root.join("ssd");
+        std::fs::create_dir_all(&ssd).unwrap();
+        let place = root.join("r");
+        project(&place);
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let got = link(&disk(&ssd), "w", &place);
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let why = got.unwrap_err();
+        assert!(why.contains(&ssd.display().to_string()), "{why}");
+        assert!(place.join("target").symlink_metadata().is_err());
     }
 
     #[test]
