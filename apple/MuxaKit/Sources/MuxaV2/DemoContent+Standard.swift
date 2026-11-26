@@ -267,8 +267,7 @@ extension DemoContent {
                     SettingsBot(
                         spec: BotSpec(name: "scout", description: "Looks into the questions I hand it"),
                         soulText: "I answer one question at a time and cite where I found it.\n", memoryText: ""),
-                ],
-                buildPaths: ["target", "node_modules/.cache"]),
+                ]),
             SettingsWorkspace(
                 name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude"),
                 routines: [
@@ -276,15 +275,14 @@ extension DemoContent {
                         spec: RoutineSpec(name: "weekly-review", at: "18:00", timezone: "Europe/Berlin",
                                           instructions: "routines/weekly-review.md"),
                         instructionsText: "Sum up the week's Done items.\n"),
-                ],
-                buildPaths: ["target"]),
+                ]),
         ],
         workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
         assistant: SettingsAssistant(
             enabled: true,
             soulText: "I sort what you capture: the Workspace, a due date, and whether a Bot can help.\n",
             memoryText: "Release items go to app. Personal errands have no Workspace.\n"),
-        build: SettingsBuild(dir: "/Volumes/Build/muxa", dirFound: true))
+        build: SettingsBuild(dir: "/Volumes/Build/muxa", dirFound: true, extraPaths: ["out"]))
 
     private static let plan = """
         # Plan

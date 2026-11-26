@@ -39,6 +39,8 @@ data class SettingsBuild(
     @SerialName("drop_after") val dropAfter: String? = null,
     /** [dir] is a folder on the host now. A disk that is not mounted is not. */
     @SerialName("dir_found") val dirFound: Boolean = false,
+    /** Paths every Task worktree sends to the build disk too, beside the build folders muxa finds from each repo's build files. */
+    @SerialName("extra_paths") val extraPaths: List<String> = emptyList(),
 )
 
 /** `[assistant]` in `workspaces.toml`, and its `soul.md` and `memory.md` beside it. A text is null when it cannot be read. */
@@ -73,8 +75,6 @@ data class SettingsWorkspace(
     @SerialName("claude_connectors") val claudeConnectors: Boolean = false,
     /** `[workspace.bots]`: Claude Code permission rules for the Workspace's Bots only (ADR 0087). */
     @SerialName("bot_rules") val botRules: BotRules = BotRules(),
-    /** `[workspace.build] paths`: the paths under each Task worktree that go to the build disk; the server shows the defaults when unset. */
-    @SerialName("build_paths") val buildPaths: List<String> = emptyList(),
     val connections: List<SettingsConnection> = emptyList(),
     val mcp: List<McpSpec> = emptyList(),
     /** Listed also while [routinesEnabled] is false. */

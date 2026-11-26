@@ -276,7 +276,6 @@ class ServerTest {
                         agent = SettingsAgent("claude", listOf(EnvKey("CLAUDE_CONFIG_DIR", true))),
                         loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
                         routinesEnabled = true, directWrites = false,
-                        buildPaths = listOf("target"),
                         connections = listOf(SettingsConnection("github", "GITHUB_TOKEN", "me@example.com", "read", SecretState.SET)),
                         mcp = listOf(McpSpec("docs", command = "npx", args = listOf("-y", "docs-mcp"))),
                         routines = listOf(
@@ -304,11 +303,10 @@ class ServerTest {
                 after.revision,
                 listOf(
                     SettingsOp.BuildUpdate(dir = Patch.Clear, dropAfter = Patch.Set("12h")),
-                    SettingsOp.WorkspaceUpdate("Personal", buildPaths = listOf("target", "web/.next")),
+                    SettingsOp.BuildUpdate(extraPaths = listOf("out")),
                 ),
             )
-            assertEquals(SettingsBuild(dir = null, dropAfter = "12h", dirFound = false), build.build)
-            assertEquals(listOf("target", "web/.next"), build.workspaces.single().buildPaths)
+            assertEquals(SettingsBuild(dir = null, dropAfter = "12h", dirFound = false, extraPaths = listOf("out")), build.build)
             val text = json.encodeToString(Settings.serializer(), after)
             assertTrue(text, "s3cret" !in text && "bar" !in text)
             try {

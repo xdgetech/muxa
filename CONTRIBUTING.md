@@ -28,14 +28,9 @@ A Task worktree builds its own `target/` (several GB each). muxa can put that ou
 # workspaces.toml
 [build]
 dir = "/Volumes/External/muxa/build"
-
-[[workspace]]
-# …
-[workspace.build]
-paths = ["target", "apple/MuxaKit/.build"]
 ```
 
-Settings in the apps edits `[build]` and each Workspace's build paths, and says when the host cannot find the folder, for example while the disk is not mounted.
+muxa finds each repo's build folders from its build files (`target`, `.build`, Gradle's `build` and `.gradle`, `.next`) and moves only the ones the repo's git ignores. `extra_paths` under `[build]` adds others. Settings in the apps edits `[build]`, and says when the host cannot find the folder, for example while the disk is not mounted.
 
 `muxa-cli disk` shows what the Task places, other worktrees and build folders use; `muxa-cli disk clean` says what it would remove, and `--yes` removes it. `cargo clean` in a worktree replaces the `target` link with a real folder; start the Task again, or remove the folder, to get the link back.
 

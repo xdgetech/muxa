@@ -57,6 +57,10 @@ pub struct SettingsBuild {
     /// `dir` is a folder on the host now. A disk that is not mounted is not.
     #[serde(default)]
     pub dir_found: bool,
+    /// Paths every worktree links too, beside the ones found from each
+    /// repo's build files, when the repo ignores them.
+    #[serde(default)]
+    pub extra_paths: Vec<String>,
 }
 
 /// The Capture assistant: no Workspace, no connections (ADR 0084).
@@ -105,9 +109,6 @@ pub struct SettingsWorkspace {
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     #[serde(default, skip_serializing_if = "BotRules::is_empty")]
     pub bot_rules: BotRules,
-    /// `[workspace.build] paths`, the defaults when unset (ADR 0102).
-    #[serde(default)]
-    pub build_paths: Vec<String>,
     #[serde(default)]
     pub connections: Vec<SettingsConnection>,
     #[serde(default)]
@@ -374,8 +375,6 @@ pub enum SettingsOp {
         claude_connectors: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bot_rules: Option<BotRules>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        build_paths: Option<Vec<String>>,
     },
     WorkspaceRemove {
         workspace: String,
@@ -501,6 +500,8 @@ pub enum SettingsOp {
             skip_serializing_if = "Option::is_none"
         )]
         drop_after: Option<Option<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extra_paths: Option<Vec<String>>,
     },
     WorkerAdd {
         worker: WorkerSpec,
@@ -662,12 +663,14 @@ mod tests {
             op,
             SettingsOp::BuildUpdate {
                 dir: Some(None),
-                drop_after: None
+                drop_after: None,
+                extra_paths: None,
             }
         );
         let set = SettingsOp::BuildUpdate {
             dir: Some(Some("/ssd/build".into())),
             drop_after: None,
+            extra_paths: None,
         };
         assert_eq!(
             serde_json::to_value(&set).unwrap(),

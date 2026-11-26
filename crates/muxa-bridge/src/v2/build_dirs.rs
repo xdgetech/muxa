@@ -1,5 +1,5 @@
 //! A worktree's build output on the build disk (ADR 0102 §1): each build
-//! path becomes a link to `<dir>/<workspace>/<place name>/<path>`. Blocking.
+//! path (`build_paths`) becomes a link to `<dir>/<workspace>/<place name>/<path>`. Blocking.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,7 @@ pub fn link(disk: &BuildDisk, workspace: &str, place: &Path) -> Vec<PathBuf> {
         return Vec::new();
     }
     let mut out = Vec::new();
-    for rel in &disk.paths {
+    for rel in &super::build_paths::of(place, &disk.extra_paths) {
         let Some(to) = target(disk, workspace, place, rel) else {
             continue;
         };
@@ -105,8 +105,32 @@ mod tests {
     fn disk(dir: &Path) -> BuildDisk {
         BuildDisk {
             dir: dir.to_owned(),
-            paths: vec!["target".into(), "apple/Kit/.build".into()],
+            extra_paths: Vec::new(),
         }
+    }
+
+    /// A repo with a Cargo crate and a Swift package, whose build folders
+    /// it ignores.
+    fn project(place: &Path) {
+        repo(place);
+        std::fs::create_dir_all(place.join("apple/Kit")).unwrap();
+        std::fs::write(place.join("Cargo.toml"), "[package]\n").unwrap();
+        std::fs::write(place.join("apple/Kit/Package.swift"), "// swift\n").unwrap();
+        std::fs::write(place.join(".gitignore"), "target/\n.build/\n").unwrap();
+        git(place, &["add", "."]);
+        git(
+            place,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "-m",
+                "p",
+            ],
+        );
     }
 
     #[test]
@@ -115,14 +139,13 @@ mod tests {
         let ssd = root.join("ssd");
         std::fs::create_dir_all(&ssd).unwrap();
         let place = root.join("r");
-        repo(&place);
-        std::fs::create_dir_all(place.join("apple/Kit")).unwrap();
+        project(&place);
         let made = link(&disk(&ssd), "w", &place);
         assert_eq!(
             made,
-            vec![ssd.join("w/r/target"), ssd.join("w/r/apple-Kit-.build")]
+            vec![ssd.join("w/r/apple-Kit-.build"), ssd.join("w/r/target")]
         );
-        assert_eq!(std::fs::read_link(place.join("target")).unwrap(), made[0]);
+        assert_eq!(std::fs::read_link(place.join("target")).unwrap(), made[1]);
         assert!(made[0].is_dir());
         let status = std::process::Command::new("git")
             .arg("-C")
@@ -145,9 +168,12 @@ mod tests {
         let ssd = root.join("ssd");
         std::fs::create_dir_all(&ssd).unwrap();
         let place = root.join("r");
-        repo(&place);
+        project(&place);
         std::fs::create_dir_all(place.join("target")).unwrap();
-        assert!(link(&disk(&ssd), "w", &place).is_empty());
+        assert_eq!(
+            link(&disk(&ssd), "w", &place),
+            vec![ssd.join("w/r/apple-Kit-.build")]
+        );
         assert!(
             !place
                 .join("target")
@@ -157,7 +183,7 @@ mod tests {
                 .is_symlink()
         );
         let other = root.join("o");
-        repo(&other);
+        project(&other);
         assert!(link(&disk(&root.join("not-mounted")), "w", &other).is_empty());
         assert!(other.join("target").symlink_metadata().is_err());
         git(&other, &["status"]);

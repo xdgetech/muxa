@@ -7,6 +7,7 @@ struct BuildSettings: View {
     @Environment(NextModel.self) private var model
     @State private var dir = ""
     @State private var dropAfter = ""
+    @State private var extraPaths: [EditableLine] = []
     @State private var error: String?
 
     var body: some View {
@@ -29,9 +30,10 @@ struct BuildSettings: View {
             } header: {
                 Text("Drop build output after")
             } footer: {
-                Text("Each Task worktree's build output (target/ and the Workspace's build paths) goes to its own folder here. "
+                Text("Each Task worktree's build output goes to its own folder here. "
                     + "After an ended Task waits this long, its build output is removed; its work stays.")
             }
+            extra(build)
             SaveError(text: error, id: "build.error")
         }
         .navigationTitle("Build disk")
@@ -52,6 +54,33 @@ struct BuildSettings: View {
                     .accessibilityIdentifier("\(id).save")
             }
         }
+    }
+
+    /// Folders muxa cannot find from a build file (ADR 0102).
+    private func extra(_ build: SettingsBuild) -> some View {
+        let paths = extraPaths.map { Lines.trimmed($0.text) }.filter { !$0.isEmpty }
+        return Section {
+            EditableLineList(lines: $extraPaths, placeholder: "out", addTitle: "Add a path", id: "build.extra",
+                             problem: Self.pathProblem)
+            Button("Save") { Task { error = await model.settings.save([.buildUpdate(extraPaths: paths)]) } }
+                .disabled(paths == build.extraPaths || extraPaths.contains { Self.pathProblem($0.text) != nil }
+                    || model.settings.saving || model.settings.readOnly)
+                .accessibilityIdentifier("build.extra.save")
+        } header: {
+            Text("Extra paths")
+        } footer: {
+            Text("muxa finds each repo's build folders from its build files: target for Cargo, .build for SwiftPM, "
+                + "build and .gradle for Gradle, .next for Next.js. Add any other folder here. "
+                + "A path is used only where the repo's git ignores it.")
+        }
+    }
+
+    /// The host's rule, said early: a relative path of plain names.
+    static func pathProblem(_ text: String) -> String? {
+        let t = Lines.trimmed(text)
+        let plain = !t.hasPrefix("/") && !t.hasPrefix("~")
+            && !t.split(separator: "/").contains { $0 == "." || $0 == ".." }
+        return plain ? nil : "A path inside the repo, like out or web/dist."
     }
 
     @ViewBuilder
@@ -80,5 +109,6 @@ struct BuildSettings: View {
     private func show(_ build: SettingsBuild?) {
         dir = build?.dir ?? ""
         dropAfter = build?.dropAfter ?? ""
+        extraPaths = (build?.extraPaths ?? []).map(EditableLine.init)
     }
 }

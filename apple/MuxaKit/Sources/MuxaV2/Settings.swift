@@ -56,17 +56,22 @@ public struct SettingsBuild: Codable, Equatable, Sendable {
     public var dropAfter: String?
     /// `dir` is a folder on the host now; false while its disk is not mounted.
     public var dirFound: Bool
+    /// Paths every worktree also links, beside the build folders muxa finds
+    /// from each repo's build files; used only where git ignores them.
+    public var extraPaths: [String]
 
-    public init(dir: String? = nil, dropAfter: String? = nil, dirFound: Bool = false) {
+    public init(dir: String? = nil, dropAfter: String? = nil, dirFound: Bool = false, extraPaths: [String] = []) {
         self.dir = dir
         self.dropAfter = dropAfter
         self.dirFound = dirFound
+        self.extraPaths = extraPaths
     }
 
     enum CodingKeys: String, CodingKey {
         case dir
         case dropAfter = "drop_after"
         case dirFound = "dir_found"
+        case extraPaths = "extra_paths"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -74,6 +79,7 @@ public struct SettingsBuild: Codable, Equatable, Sendable {
         dir = try c.decodeIfPresent(String.self, forKey: .dir)
         dropAfter = try c.decodeIfPresent(String.self, forKey: .dropAfter)
         dirFound = try c.decode(.dirFound, or: false)
+        extraPaths = try c.decode(.extraPaths, or: [])
     }
 }
 
@@ -130,9 +136,6 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var claudeConnectors: Bool
     /// Claude Code permission rules for this Workspace's Bots only (ADR 0087).
     public var botRules: BotRules
-    /// Paths under each Task worktree that go to the build disk; the server
-    /// sends the defaults when the file sets none (ADR 0102).
-    public var buildPaths: [String]
     public var connections: [SettingsConnection]
     public var mcp: [McpSpec]
     /// Also while `routinesEnabled` is false.
@@ -148,9 +151,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
                 loop: WorkspaceLoop? = nil, routinesEnabled: Bool = false, directWrites: Bool = false,
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
                 routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = [],
-                botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false,
-                buildPaths: [String] = []) {
-        self.buildPaths = buildPaths
+                botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false) {
         self.bots = bots
         self.botRules = botRules
         self.claudeConnectors = claudeConnectors
@@ -177,7 +178,6 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         case directWrites = "direct_writes"
         case claudeConnectors = "claude_connectors"
         case botRules = "bot_rules"
-        case buildPaths = "build_paths"
         case routinesProblem = "routines_problem"
         case foundRepos = "found_repos"
         case hiddenRepos = "hidden_repos"
@@ -197,7 +197,6 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         directWrites = try c.decode(.directWrites, or: false)
         claudeConnectors = try c.decode(.claudeConnectors, or: false)
         botRules = try c.decode(.botRules, or: BotRules())
-        buildPaths = try c.decode(.buildPaths, or: [])
         connections = try c.decode(.connections, or: [])
         mcp = try c.decode(.mcp, or: [])
         routines = try c.decode(.routines, or: [])

@@ -916,7 +916,6 @@ private val DEMO_SETTINGS = Settings(
             loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
             routinesEnabled = true,
             botRules = BotRules(allow = listOf("WebSearch", "WebFetch"), deny = listOf("Bash")),
-            buildPaths = listOf("target", "node_modules/.cache"),
             connections = listOf(
                 SettingsConnection("github", "GITHUB_TOKEN", "demo@example.com", "read", secret = SecretState.SET),
             ),
@@ -943,7 +942,7 @@ private val DEMO_SETTINGS = Settings(
             ),
         ),
         SettingsWorkspace(
-            "Personal", "/demo/personal", agent = SettingsAgent("claude"), buildPaths = listOf("target"),
+            "Personal", "/demo/personal", agent = SettingsAgent("claude"),
             routines = listOf(
                 SettingsRoutine(
                     "weekly-review", at = "18:00", timezone = "Europe/Berlin", instructions = "routines/weekly-review.md",
@@ -958,6 +957,6 @@ private val DEMO_SETTINGS = Settings(
         soulText = "Sort what I capture. Name the Workspace and a due date only when the item says so.\n",
         memoryText = "- Items about the login go to app.\n",
     ),
-    build = SettingsBuild(dir = "/Volumes/Build/muxa", dirFound = true),
+    build = SettingsBuild(dir = "/Volumes/Build/muxa", dirFound = true, extraPaths = listOf("out")),
 )
 private const val MAX_SHELLS = 3

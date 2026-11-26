@@ -7,6 +7,7 @@ pub mod assistant;
 mod assistant_brief;
 mod bot_run;
 mod build_dirs;
+mod build_paths;
 pub mod chat;
 mod close;
 mod disk;

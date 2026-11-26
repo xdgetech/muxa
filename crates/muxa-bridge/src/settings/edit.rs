@@ -63,16 +63,8 @@ pub fn apply(
             park_after,
             claude_connectors,
             bot_rules,
-            build_paths,
         } => {
             let t = find_ws(workspaces, &workspace)?;
-            if let Some(paths) = build_paths {
-                let build = sub_table(t, "build")?;
-                // The defaults stay unwritten, so they follow muxa's.
-                let defaults = paths == super::view::default_build_paths();
-                set_opt_list(build, "paths", (!defaults).then_some(&paths));
-                drop_empty(t, "build");
-            }
             if let Some(on) = claude_connectors {
                 set_bool(t, "claude_connectors", on, false);
             }
@@ -358,7 +350,11 @@ pub fn apply(
             }
             Ok(())
         }
-        SettingsOp::BuildUpdate { dir, drop_after } => {
+        SettingsOp::BuildUpdate {
+            dir,
+            drop_after,
+            extra_paths,
+        } => {
             let t = workspaces
                 .as_table_mut()
                 .entry("build")
@@ -370,6 +366,9 @@ pub fn apply(
             }
             if let Some(after) = drop_after {
                 set_str(t, "drop_after", after.as_deref());
+            }
+            if let Some(paths) = extra_paths {
+                set_list(t, "extra_paths", &paths);
             }
             drop_empty(workspaces.as_table_mut(), "build");
             Ok(())

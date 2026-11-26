@@ -34,12 +34,8 @@ pub struct FileConfig {
 pub struct FileBuild {
     dir: Option<String>,
     drop_after: Option<String>,
-}
-
-/// `[workspace.build]`; Settings edits only `paths`.
-#[derive(Deserialize, Default)]
-struct FileWorkspaceBuild {
-    paths: Option<Vec<String>>,
+    #[serde(default)]
+    extra_paths: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -63,8 +59,6 @@ pub struct FileWorkspace {
     claude_connectors: bool,
     #[serde(default)]
     bots: FileBotRules,
-    #[serde(default)]
-    build: FileWorkspaceBuild,
 }
 
 /// `[workspace.bots]`; with no `allow` the Bots get the defaults (ADR 0090),
@@ -362,20 +356,12 @@ pub fn workspace(
                 .unwrap_or_else(crate::records::bots::default_allow),
             deny: w.bots.deny,
         },
-        build_paths: w.build.paths.unwrap_or_else(default_build_paths),
         connections,
         mcp: w.mcp,
         routines: list,
         bots: bot_list,
         routines_problem: problem,
     }
-}
-
-pub fn default_build_paths() -> Vec<String> {
-    crate::records::build::DEFAULT_PATHS
-        .iter()
-        .map(|p| (*p).to_owned())
-        .collect()
 }
 
 /// `[build]` as written, and whether its folder is there now. Blocking.
@@ -390,6 +376,7 @@ pub fn build(raw: Option<FileBuild>, home: Option<&Path>) -> SettingsBuild {
         dir: raw.dir,
         drop_after: raw.drop_after,
         dir_found,
+        extra_paths: raw.extra_paths,
     }
 }
 

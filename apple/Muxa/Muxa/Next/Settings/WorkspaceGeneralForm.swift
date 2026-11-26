@@ -2,7 +2,7 @@ import MuxaV2
 import SwiftUI
 
 /// The root folder, the repos found under it and outside it, the Routines
-/// gate, the build paths, and removal.
+/// gate, and removal.
 struct WorkspaceGeneralForm: View {
     @Environment(NextModel.self) private var model
     let workspace: SettingsWorkspace
@@ -10,12 +10,10 @@ struct WorkspaceGeneralForm: View {
     @State private var newRepo = ""
     @State private var error: String?
     @State private var confirmRemove = false
-    @State private var buildPaths: [EditableLine]
 
     init(workspace: SettingsWorkspace) {
         self.workspace = workspace
         _root = State(initialValue: workspace.root)
-        _buildPaths = State(initialValue: workspace.buildPaths.map(EditableLine.init))
     }
 
     var body: some View {
@@ -49,7 +47,6 @@ struct WorkspaceGeneralForm: View {
         found
         repos
         routines
-        if model.settings.settings?.build != nil { build }
         SaveError(text: error, id: "settings.error")
         Section {
             Button("Remove Workspace", role: .destructive) { confirmRemove = true }
@@ -137,32 +134,6 @@ struct WorkspaceGeneralForm: View {
         } footer: {
             Text("Direct writes let a Routine change outside systems without a proposal, when the Routine asks for it.")
         }
-    }
-
-    /// The paths under each Task worktree that go to the build disk (ADR 0102).
-    private var build: some View {
-        let paths = buildPaths.map { Lines.trimmed($0.text) }.filter { !$0.isEmpty }
-        return Section {
-            EditableLineList(lines: $buildPaths, placeholder: "target", addTitle: "Add a path", id: "ws.build.paths",
-                             problem: Self.buildPathProblem)
-            Button("Save") { save(.workspaceUpdate(workspace: workspace.name, buildPaths: paths)) }
-                .disabled(paths == workspace.buildPaths || buildPaths.contains { Self.buildPathProblem($0.text) != nil }
-                    || model.settings.saving || model.settings.readOnly)
-                .accessibilityIdentifier("ws.build.save")
-        } header: {
-            Text("Build output")
-        } footer: {
-            Text("Paths in each Task worktree that go to the build disk. Default: target.")
-        }
-        .onChange(of: workspace.buildPaths) { _, saved in buildPaths = saved.map(EditableLine.init) }
-    }
-
-    /// The host's rule, said early: a relative path of plain names.
-    static func buildPathProblem(_ text: String) -> String? {
-        let t = Lines.trimmed(text)
-        let plain = !t.hasPrefix("/") && !t.hasPrefix("~")
-            && !t.split(separator: "/").contains { $0 == "." || $0 == ".." }
-        return plain ? nil : "A path inside the worktree, like target or apple/MuxaKit/.build."
     }
 
     private func save(_ op: SettingsOp) {

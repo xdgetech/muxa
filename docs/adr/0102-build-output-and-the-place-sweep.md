@@ -13,22 +13,23 @@ Status: proposed (2026-11-26).
 ## Decision
 
 1. **Build output goes to a build disk, one folder per place.**
-   - `workspaces.toml` takes a host default and a per-Workspace setting:
+   - `workspaces.toml` sets the build disk for the host:
 
      ```toml
      [build]
      dir = "/Volumes/Atlas/muxa/build"   # absolute
      drop_after = "3d"                   # see 3
+     extra_paths = ["out"]               # optional; see below
 
      [[workspace]]
      name = "xdge"
      [workspace.build]
      dir = "/Volumes/Other/build"        # optional; overrides [build] dir
-     paths = ["target", "apple/MuxaKit/.build"]   # default ["target"]
      ```
 
-   - Settings in the apps edit `[build] dir`, `drop_after` and each Workspace's `paths` (ADR 0074's `settings-update`, op `build-update`). The view says whether `dir` is a folder on the host now, since a typo or an unmounted disk only shows in the log otherwise. `[workspace.build] dir` stays a hand edit: a second build disk is rare.
-   - When a Task starts in a branch worktree, each of `paths` becomes a symlink to `<dir>/<workspace>/<worktree folder name>/<path, '/' as '-'>`. A Task folder gets no links: it is not a repo.
+   - **The build paths are found per repo, not configured.** A Workspace holds repos that build in different ways, so a list per Workspace fits none of them. Each tracked marker file, at most 3 folders deep, names the folder beside it: `Cargo.toml` → `target` (the outermost one only, since a Cargo workspace builds into one), `Package.swift` → `.build`, `build.gradle(.kts)` → `build`, `settings.gradle(.kts)` → `.gradle`, and a `package.json` that depends on `next` → `.next`. `extra_paths` adds paths for every repo. A path is used only when `git check-ignore` says the repo ignores it: build output is always ignored, so muxa never links a folder the repo tracks. At most 32 paths per place.
+   - Settings in the apps edit `[build] dir`, `drop_after` and `extra_paths` (ADR 0074's `settings-update`, op `build-update`). The view says whether `dir` is a folder on the host now, since a typo or an unmounted disk only shows in the log otherwise. `[workspace.build] dir` stays a hand edit: a second build disk is rare.
+   - When a Task starts in a branch worktree, each build path becomes a symlink to `<dir>/<workspace>/<worktree folder name>/<path, '/' as '-'>`. A Task folder gets no links: it is not a repo.
    - Each link is added to the repo's `info/exclude` as `/<path>`. A `target/` rule in `.gitignore` matches a folder, not a link, so without this every worktree would look dirty.
    - A symlink, not an environment variable: SwiftPM has no variable for its build path, and the agent, the Task's shells and the user all build through the same link.
    - One folder per place, not one shared target dir. Parallel Tasks do not wait on Cargo's lock, and the folder goes with its place.
@@ -64,4 +65,5 @@ Status: proposed (2026-11-26).
 - **`CARGO_TARGET_DIR` for the agent:** covers Cargo only, not the Task's shells or SwiftPM.
 - **One shared target dir:** parallel builds wait on one lock, and its output never goes.
 - **Sweep every worktree in `.worktrees`:** the user's own worktrees live there too.
+- **Build paths per Workspace:** the first version had `[workspace.build] paths`. It applied one list to every repo of the Workspace, and the user had to know each repo's build folders.
 - **Stop Claude Code from making worktrees:** muxa cannot set where they go, and blocking isolation costs the agent more than the disk.

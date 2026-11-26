@@ -1,5 +1,5 @@
 //! `[build]` and `[workspace.build]`: where a place's build output goes
-//! (ADR 0102). File-only; the apps' Settings do not edit them.
+//! (ADR 0102). Which paths go is found per repo (`v2::build_paths`).
 
 use std::path::{Component, Path, PathBuf};
 
@@ -7,8 +7,6 @@ use serde::Deserialize;
 
 use super::workspaces::{expand, parse_duration};
 
-/// What `paths` is when a Workspace names none.
-pub const DEFAULT_PATHS: [&str; 1] = ["target"];
 /// Three days, in seconds.
 pub const DEFAULT_DROP_AFTER: u64 = 3 * 86_400;
 const MAX_PATHS: usize = 16;
@@ -18,13 +16,13 @@ const MAX_PATHS: usize = 16;
 pub(super) struct RawHostBuild {
     dir: Option<String>,
     drop_after: Option<String>,
+    extra_paths: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawWorkspaceBuild {
     dir: Option<String>,
-    paths: Option<Vec<String>>,
 }
 
 /// The host's `[build]`.
@@ -35,6 +33,9 @@ pub struct HostBuild {
     pub dir: Option<PathBuf>,
     /// Seconds after which an ended agent's places lose their build output.
     pub drop_after: u64,
+    /// Paths every worktree links too, when its repo ignores them. Relative,
+    /// plain names only.
+    pub extra_paths: Vec<PathBuf>,
 }
 
 impl Default for HostBuild {
@@ -42,23 +43,23 @@ impl Default for HostBuild {
         Self {
             dir: None,
             drop_after: DEFAULT_DROP_AFTER,
+            extra_paths: Vec::new(),
         }
     }
 }
 
-/// A Workspace's `[workspace.build]`.
+/// A Workspace's `[workspace.build]`: another build disk, a hand edit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkspaceBuild {
     pub dir: Option<PathBuf>,
-    /// Relative, plain names only. None means [`DEFAULT_PATHS`].
-    pub paths: Option<Vec<PathBuf>>,
 }
 
 /// Where one Workspace's places put their build output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildDisk {
     pub dir: PathBuf,
-    pub paths: Vec<PathBuf>,
+    /// The host's `extra_paths`, beside the ones found in each repo.
+    pub extra_paths: Vec<PathBuf>,
 }
 
 impl RawHostBuild {
@@ -75,7 +76,16 @@ impl RawHostBuild {
             .transpose()
             .map_err(|r| format!("[build] drop_after {r}"))?
             .unwrap_or(DEFAULT_DROP_AFTER);
-        Ok(HostBuild { dir, drop_after })
+        let extra_paths = self
+            .extra_paths
+            .map(|p| check_paths(&p))
+            .transpose()?
+            .unwrap_or_default();
+        Ok(HostBuild {
+            dir,
+            drop_after,
+            extra_paths,
+        })
     }
 }
 
@@ -86,24 +96,24 @@ impl RawWorkspaceBuild {
             .map(|d| expand(&d, home))
             .transpose()
             .map_err(|r| format!("build dir {r}"))?;
-        let paths = self.paths.map(|p| check_paths(&p)).transpose()?;
-        Ok(WorkspaceBuild { dir, paths })
+        Ok(WorkspaceBuild { dir })
     }
 }
 
 /// The Workspace's own `dir`, else the host's; None turns the build disk off.
 pub fn disk(host: &HostBuild, ws: &WorkspaceBuild) -> Option<BuildDisk> {
     let dir = ws.dir.clone().or_else(|| host.dir.clone())?;
-    let paths = ws
-        .paths
-        .clone()
-        .unwrap_or_else(|| DEFAULT_PATHS.iter().map(PathBuf::from).collect());
-    Some(BuildDisk { dir, paths })
+    Some(BuildDisk {
+        dir,
+        extra_paths: host.extra_paths.clone(),
+    })
 }
 
 fn check_paths(raw: &[String]) -> Result<Vec<PathBuf>, String> {
     if raw.len() > MAX_PATHS {
-        return Err(format!("build paths has more than {MAX_PATHS} entries"));
+        return Err(format!(
+            "build extra_paths has more than {MAX_PATHS} entries"
+        ));
     }
     raw.iter()
         .map(|p| {
@@ -114,7 +124,7 @@ fn check_paths(raw: &[String]) -> Result<Vec<PathBuf>, String> {
                 Ok(path)
             } else {
                 Err(format!(
-                    "build paths: {p:?} must be a relative path of plain names"
+                    "build extra_paths: {p:?} must be a relative path of plain names"
                 ))
             }
         })
@@ -125,19 +135,19 @@ fn check_paths(raw: &[String]) -> Result<Vec<PathBuf>, String> {
 mod tests {
     use super::*;
 
-    fn ws(paths: &[&str]) -> Result<WorkspaceBuild, String> {
-        RawWorkspaceBuild {
-            dir: None,
-            paths: Some(paths.iter().map(|p| p.to_string()).collect()),
+    fn extra(paths: &[&str]) -> Result<HostBuild, String> {
+        RawHostBuild {
+            extra_paths: Some(paths.iter().map(|p| p.to_string()).collect()),
+            ..RawHostBuild::default()
         }
         .check(None)
     }
 
     #[test]
-    fn paths_must_be_plain_and_relative() {
-        assert!(ws(&["target", "apple/MuxaKit/.build"]).is_ok());
+    fn extra_paths_must_be_plain_and_relative() {
+        assert!(extra(&["target", "web/.next"]).is_ok());
         for bad in ["", "/abs", "../up", "a/../b", "./x"] {
-            assert!(ws(&[bad]).is_err(), "{bad:?} was accepted");
+            assert!(extra(&[bad]).is_err(), "{bad:?} was accepted");
         }
     }
 
@@ -145,15 +155,16 @@ mod tests {
     fn dir_must_be_absolute() {
         let raw = RawHostBuild {
             dir: Some("relative/dir".into()),
-            drop_after: None,
+            ..RawHostBuild::default()
         };
         assert!(raw.check(None).is_err());
     }
 
     #[test]
-    fn workspace_dir_wins_and_paths_default_to_target() {
+    fn workspace_dir_wins_and_extra_paths_come_from_the_host() {
         let host = HostBuild {
             dir: Some("/ssd/host".into()),
+            extra_paths: vec!["out".into()],
             ..HostBuild::default()
         };
         let none = WorkspaceBuild::default();
@@ -161,12 +172,11 @@ mod tests {
             disk(&host, &none),
             Some(BuildDisk {
                 dir: "/ssd/host".into(),
-                paths: vec!["target".into()],
+                extra_paths: vec!["out".into()],
             })
         );
         let own = WorkspaceBuild {
             dir: Some("/ssd/ws".into()),
-            paths: None,
         };
         assert_eq!(disk(&host, &own).map(|d| d.dir), Some("/ssd/ws".into()));
         assert_eq!(disk(&HostBuild::default(), &none), None);
@@ -177,8 +187,8 @@ mod tests {
         let host = RawHostBuild::default().check(None).unwrap();
         assert_eq!(host.drop_after, DEFAULT_DROP_AFTER);
         let raw = RawHostBuild {
-            dir: None,
             drop_after: Some("12h".into()),
+            ..RawHostBuild::default()
         };
         assert_eq!(raw.check(None).unwrap().drop_after, 12 * 3600);
     }

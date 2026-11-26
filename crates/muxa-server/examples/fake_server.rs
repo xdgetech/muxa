@@ -328,7 +328,6 @@ fn start_settings() -> Settings {
             direct_writes: false,
             claude_connectors: false,
             bot_rules: Default::default(),
-            build_paths: vec!["target".into()],
             connections: vec![SettingsConnection {
                 spec: ConnectionSpec {
                     name: "github".into(),
@@ -374,6 +373,7 @@ fn start_settings() -> Settings {
             dir: Some("/ssd/build".into()),
             drop_after: None,
             dir_found: true,
+            extra_paths: Vec::new(),
         }),
     }
 }

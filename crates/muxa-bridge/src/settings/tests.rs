@@ -748,56 +748,49 @@ fn a_kept_memory_comes_back_and_the_current_one_is_kept() {
 mod bots;
 
 #[test]
-fn the_build_disk_and_build_paths_are_edited_and_checked() {
+fn the_build_disk_is_edited_and_checked() {
     let h = host("build");
     let s = h.store.view().unwrap();
     let build = s.build.clone().unwrap();
     assert_eq!((build.dir, build.dir_found), (None, false));
-    assert_eq!(s.workspaces[0].build_paths, ["target"]);
     let ssd = h.dir.join("ssd");
     fs::create_dir_all(&ssd).unwrap();
     let s = h
         .store
         .update(
             &s.revision,
-            vec![
-                op(json!({"op": "build-update", "dir": ssd, "drop_after": "12h"})),
-                op(json!({"op": "workspace-update", "workspace": "Work",
-                          "build_paths": ["target", "apple/MuxaKit/.build"]})),
-                op(json!({"op": "workspace-update", "workspace": "Home", "build_paths": ["target"]})),
-            ],
+            vec![op(
+                json!({"op": "build-update", "dir": ssd, "drop_after": "12h", "extra_paths": ["out"]}),
+            )],
         )
         .unwrap();
     let build = s.build.clone().unwrap();
     assert!(build.dir_found);
     assert_eq!(build.drop_after.as_deref(), Some("12h"));
-    assert_eq!(
-        s.workspaces[0].build_paths,
-        ["target", "apple/MuxaKit/.build"]
-    );
+    assert_eq!(build.extra_paths, ["out"]);
     let after = text(&h);
     assert!(after.contains("[build]\n"), "{after}");
-    assert_eq!(
-        after.matches("[workspace.build]").count(),
-        1,
-        "the defaults stay unwritten: {after}"
-    );
     let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
     assert_eq!(loaded.host_build().drop_after, 12 * 3600);
-    let refused = h.store.update(
-        &s.revision,
-        vec![op(json!({"op": "build-update", "dir": "relative/dir"}))],
-    );
-    assert!(
-        matches!(refused, Err(SettingsError::Invalid(_))),
-        "{refused:?}"
-    );
+    assert_eq!(loaded.host_build().extra_paths, [PathBuf::from("out")]);
+    for bad in [
+        json!({"dir": "relative/dir"}),
+        json!({"extra_paths": ["../up"]}),
+    ] {
+        let mut o = bad.clone();
+        o["op"] = json!("build-update");
+        let refused = h.store.update(&s.revision, vec![op(o)]);
+        assert!(
+            matches!(refused, Err(SettingsError::Invalid(_))),
+            "{bad}: {refused:?}"
+        );
+    }
     let s = h
         .store
         .update(
             &s.revision,
             vec![op(
-                json!({"op": "build-update", "dir": null, "drop_after": null}),
+                json!({"op": "build-update", "dir": null, "drop_after": null, "extra_paths": []}),
             )],
         )
         .unwrap();

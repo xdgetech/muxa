@@ -58,7 +58,12 @@ internal class DemoSettings(initial: Settings) {
             val old = s.build ?: SettingsBuild()
             val dir = patched(old.dir, op.dir)
             // The demo has no disks: a folder it was given is found.
-            s.copy(build = old.copy(dir = dir, dropAfter = patched(old.dropAfter, op.dropAfter), dirFound = dir != null))
+            s.copy(
+                build = old.copy(
+                    dir = dir, dropAfter = patched(old.dropAfter, op.dropAfter),
+                dirFound = dir != null, extraPaths = op.extraPaths ?: old.extraPaths,
+            ),
+        )
         }
         else -> {
             val ws = workspace(s, op.workspaceName ?: "")
@@ -78,7 +83,6 @@ internal class DemoSettings(initial: Settings) {
             agent = w.agent.copy(command = patched(w.agent.command, op.agentCommand)),
             claudeConnectors = op.claudeConnectors ?: w.claudeConnectors,
             botRules = op.botRules ?: w.botRules,
-            buildPaths = op.buildPaths ?: w.buildPaths,
         )
         is SettingsOp.EnvSet -> w.copy(
             agent = w.agent.copy(env = (w.agent.env.filter { it.key != op.key } + EnvKey(op.key, true)).sortedBy { it.key }),

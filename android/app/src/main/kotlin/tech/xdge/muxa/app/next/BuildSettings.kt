@@ -52,8 +52,21 @@ fun BuildSettings(editor: SettingsEditor, build: SettingsBuild, back: () -> Unit
         }
         BuildStatus(build)
         SettingsNote(
-            "Each Task worktree's build output (target/ and the Workspace's build paths) goes to its own folder here. " +
+            "Each Task worktree's build output goes to its own folder here. " +
                 "After an ended Task waits this long, its build output is removed; its work stays.",
+        )
+        SettingsHeader("Extra paths")
+        SettingsCard {
+            Column(Modifier.padding(14.dp)) {
+                Lines(build.extraPaths, "Extra paths", "settings.build.extra", on, "out", ::buildPathProblem) {
+                    save.run(listOf(SettingsOp.BuildUpdate(extraPaths = it)))
+                }
+            }
+        }
+        SettingsNote(
+            "muxa finds each repo's build folders from its build files: target for Cargo, .build for SwiftPM, " +
+                "build and .gradle for Gradle, .next for Next.js. Add any other folder here. " +
+                "A path is used only where the repo's git ignores it.",
         )
         save.Error()
     }
@@ -75,7 +88,7 @@ private fun BuildStatus(build: SettingsBuild) {
 /** An empty field clears the setting. */
 private fun patchOf(text: String): Patch<String> = text.trim().ifEmpty { null }?.let { Patch.Set(it) } ?: Patch.Clear
 
-/** Why a build path cannot be added: the host takes only relative paths of plain names. */
+/** Why an extra path cannot be added: the host takes only relative paths of plain names. */
 fun buildPathProblem(path: String): String? {
     val parts = path.split('/')
     val plain = !path.startsWith("/") && parts.none { it.isEmpty() || it == "." || it == ".." || it == "~" }

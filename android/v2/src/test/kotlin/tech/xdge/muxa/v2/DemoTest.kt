@@ -602,21 +602,19 @@ class DemoTest {
     }
 
     @Test
-    fun theBuildDiskAndAWorkspacesBuildPathsAreSaved() = runBlocking {
+    fun theBuildDiskIsSaved() = runBlocking {
         withTimeout(10_000) {
             val c = open()
             val before = c.settings()
-            assertEquals(SettingsBuild("/Volumes/Build/muxa", dirFound = true), before.build)
+            assertEquals(SettingsBuild("/Volumes/Build/muxa", dirFound = true, extraPaths = listOf("out")), before.build)
             val moved = c.settingsUpdate("1", listOf(SettingsOp.BuildUpdate(dir = Patch.Set("~/build"), dropAfter = Patch.Set("12h"))))
-            assertEquals(SettingsBuild("~/build", "12h", dirFound = true), moved.build)
-            val off = c.settingsUpdate(moved.revision, listOf(SettingsOp.BuildUpdate(dir = Patch.Clear, dropAfter = Patch.Clear)))
+            assertEquals(SettingsBuild("~/build", "12h", dirFound = true, extraPaths = listOf("out")), moved.build)
+            val extra = c.settingsUpdate(moved.revision, listOf(SettingsOp.BuildUpdate(extraPaths = listOf("out", "web/dist"))))
+            assertEquals(listOf("out", "web/dist"), extra.build?.extraPaths)
+            val kept = c.settingsUpdate(extra.revision, listOf(SettingsOp.BuildUpdate(dropAfter = Patch.Clear)))
+            assertEquals(SettingsBuild("~/build", null, dirFound = true, extraPaths = listOf("out", "web/dist")), kept.build)
+            val off = c.settingsUpdate(kept.revision, listOf(SettingsOp.BuildUpdate(dir = Patch.Clear, extraPaths = emptyList())))
             assertEquals(SettingsBuild(), off.build)
-            val paths = listOf("target", "web/.next")
-            val s = c.settingsUpdate(off.revision, listOf(SettingsOp.WorkspaceUpdate("app", buildPaths = paths)))
-            assertEquals(paths, s.workspaces.first { it.name == "app" }.buildPaths)
-            val kept = c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", claudeConnectors = true)))
-            assertEquals(paths, kept.workspaces.first { it.name == "app" }.buildPaths)
-            assertEquals(listOf("target"), kept.workspaces.first { it.name == "Personal" }.buildPaths)
             c.close()
         }
     }

@@ -14,8 +14,7 @@ public enum SettingsOp: Equatable, Sendable {
     case workspaceAdd(name: String, root: String, repos: [String] = [])
     case workspaceUpdate(workspace: String, root: String? = nil, repos: [String]? = nil,
                          agentCommand: FieldChange<String> = .keep, parkAfter: FieldChange<String> = .keep,
-                         hiddenRepos: [String]? = nil, claudeConnectors: Bool? = nil, botRules: BotRules? = nil,
-                         buildPaths: [String]? = nil)
+                         hiddenRepos: [String]? = nil, claudeConnectors: Bool? = nil, botRules: BotRules? = nil)
     /// Also removes the Keychain secrets of its connections; its folder stays.
     case workspaceRemove(workspace: String)
     case envSet(workspace: String, key: String, value: String)
@@ -49,7 +48,8 @@ public enum SettingsOp: Equatable, Sendable {
     /// The Capture assistant (ADR 0084). `soulText` replaces its `soul.md`.
     case assistantUpdate(enabled: Bool, worker: String? = nil, soulText: String? = nil)
     /// The build disk (ADR 0102).
-    case buildUpdate(dir: FieldChange<String> = .keep, dropAfter: FieldChange<String> = .keep)
+    /// `extraPaths` replaces the list; nil keeps it.
+    case buildUpdate(dir: FieldChange<String> = .keep, dropAfter: FieldChange<String> = .keep, extraPaths: [String]? = nil)
     case workerAdd(worker: WorkerSpec)
     /// Replaces the worker named `worker.name`.
     case workerUpdate(worker: WorkerSpec)
@@ -99,7 +99,7 @@ extension SettingsOp: Codable {
         case from, to
         case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot, dir
         case dropAfter = "drop_after"
-        case buildPaths = "build_paths"
+        case extraPaths = "extra_paths"
         case claudeConnectors = "claude_connectors"
         case botRules = "bot_rules"
         case version
@@ -119,11 +119,9 @@ extension SettingsOp: Codable {
             try c.encode(name, forKey: .name)
             try c.encode(root, forKey: .root)
             try c.encode(repos, forKey: .repos)
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
-                                  buildPaths):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules):
             try c.encode(workspace, forKey: .workspace)
             try c.encodeIfPresent(botRules, forKey: .botRules)
-            try c.encodeIfPresent(buildPaths, forKey: .buildPaths)
             try c.encodeIfPresent(root, forKey: .root)
             try c.encodeIfPresent(repos, forKey: .repos)
             try c.encodeIfPresent(hiddenRepos, forKey: .hiddenRepos)
@@ -174,9 +172,10 @@ extension SettingsOp: Codable {
             try c.encode(enabled, forKey: .enabled)
             try c.encodeIfPresent(worker, forKey: .worker)
             try c.encodeIfPresent(text, forKey: .soulText)
-        case let .buildUpdate(dir, dropAfter):
+        case let .buildUpdate(dir, dropAfter, extraPaths):
             try c.encode(dir, forKey: .dir)
             try c.encode(dropAfter, forKey: .dropAfter)
+            try c.encodeIfPresent(extraPaths, forKey: .extraPaths)
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp):
             try c.encode(workspace, forKey: .workspace)
             try c.encode(mcp, forKey: .mcp)
@@ -206,8 +205,7 @@ extension SettingsOp: Codable {
                 agentCommand: try FieldChange(c, .agentCommand), parkAfter: try FieldChange(c, .parkAfter),
                 hiddenRepos: try c.decodeIfPresent([String].self, forKey: .hiddenRepos),
                 claudeConnectors: try c.decodeIfPresent(Bool.self, forKey: .claudeConnectors),
-                botRules: try c.decodeIfPresent(BotRules.self, forKey: .botRules),
-                buildPaths: try c.decodeIfPresent([String].self, forKey: .buildPaths))
+                botRules: try c.decodeIfPresent(BotRules.self, forKey: .botRules))
         case "workspace-remove": self = .workspaceRemove(workspace: try ws())
         case "env-set": self = .envSet(workspace: try ws(), key: try s(.key), value: try s(.value))
         case "env-unset": self = .envUnset(workspace: try ws(), key: try s(.key))
@@ -250,7 +248,8 @@ extension SettingsOp: Codable {
                                     worker: try c.decodeIfPresent(String.self, forKey: .worker),
                                     soulText: try c.decodeIfPresent(String.self, forKey: .soulText))
         case "build-update":
-            self = .buildUpdate(dir: try FieldChange(c, .dir), dropAfter: try FieldChange(c, .dropAfter))
+            self = .buildUpdate(dir: try FieldChange(c, .dir), dropAfter: try FieldChange(c, .dropAfter),
+                                extraPaths: try c.decodeIfPresent([String].self, forKey: .extraPaths))
         case "worker-add": self = .workerAdd(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-update": self = .workerUpdate(worker: try c.decode(WorkerSpec.self, forKey: .worker))
         case "worker-remove": self = .workerRemove(name: try s(.name))
@@ -289,14 +288,12 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
     public var description: String {
         switch self {
         case let .workspaceAdd(name, root, repos): "\(self.name)(\(name), root: \(root), repos: \(repos))"
-        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
-                                  buildPaths):
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules):
             "\(name)(\(workspace), root: \(root ?? "keep"), repos: \(repos.map { "\($0)" } ?? "keep"), "
                 + "agent_command: \(agentCommand), park_after: \(parkAfter), "
                 + "hidden_repos: \(hiddenRepos.map { "\($0)" } ?? "keep"), "
                 + "claude_connectors: \(claudeConnectors.map { "\($0)" } ?? "keep"), "
-                + "bot_rules: \(botRules.map { "\($0.allow.count) allow, \($0.deny.count) deny" } ?? "keep"), "
-                + "build_paths: \(buildPaths.map { "\($0)" } ?? "keep"))"
+                + "bot_rules: \(botRules.map { "\($0.allow.count) allow, \($0.deny.count) deny" } ?? "keep"))"
         case let .workspaceRemove(workspace): "\(name)(\(workspace))"
         case let .envSet(workspace, key, _): "\(name)(\(workspace), \(key)=\(Self.hidden))"
         case let .envUnset(workspace, key): "\(name)(\(workspace), \(key))"
@@ -319,7 +316,8 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
         case let .mcpAdd(workspace, mcp), let .mcpUpdate(workspace, mcp): "\(name)(\(workspace), \(mcp))"
         case let .routineAdd(workspace, routine, text), let .routineUpdate(workspace, routine, text):
             "\(name)(\(workspace), \(routine), instructions_text: \(text.map { "\($0.utf8.count) bytes" } ?? "keep"))"
-        case let .buildUpdate(dir, dropAfter): "\(name)(dir: \(dir), drop_after: \(dropAfter))"
+        case let .buildUpdate(dir, dropAfter, extraPaths):
+            "\(name)(dir: \(dir), drop_after: \(dropAfter), extra_paths: \(extraPaths.map { "\($0)" } ?? "keep"))"
         case let .workerAdd(worker), let .workerUpdate(worker): "\(name)(\(worker))"
         case let .workerRemove(n): "\(name)(\(n))"
         }
