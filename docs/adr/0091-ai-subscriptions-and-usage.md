@@ -46,7 +46,17 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
    - The Capture assistant has no Workspace and no connections (ADR 0084); any Claude subscription may be in its list.
    - A Workspace with `subscriptions` may not also set `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in its env; the loader refuses it. A Workspace without `subscriptions` works as today, so nothing migrates by force.
    - **An unknown name never blocks.** A name in `routines.toml` or `[assistant]` that names no subscription, or one outside the Workspace's list, is skipped and shown as a `problem` (as ADR 0075 did for connections). Agents write `routines.toml`, so a stale name must not block a Remove or a load. Removing a subscription that a Workspace names is refused, with the list.
-   - Start Task has no picker. ADR 0075 removed pickers for the same reason: a forgotten choice costs more than it gives. Start Task shows one line: the subscription the agent will use and its %.
+   - Start Task has no picker. ADR 0075 removed pickers for the same reason: a forgotten choice costs more than it gives. Start Task shows one line: the subscription the agent will use and its %, with **Change**, which opens the Workspace's list.
+   - **Three ways to use a list** (decided 2026-11-26). Each Workspace has `switch_subscriptions`, on by default.
+
+     | Use | List | `switch_subscriptions` |
+     |---|---|---|
+     | One account per Workspace (Company on the work login, Personal on the personal one) | one name of each kind | either |
+     | Priority order: a full login gives way to the next | several | on |
+     | By hand: the user picks the login the next Tasks use | several | `false` |
+
+     - **Current** is the first login of a kind in the list. **Use for next Tasks** on a row moves it to the top: one `workspace-update` with the new order, no new state. Running agents keep their login (decision 5).
+     - With switching off, every agent of the Workspace takes the first of its kind, full or not, and its Bots' lists follow the same rule. Unattended work then waits for that login's reset (decision 9); the user's own Start Task starts and is warned.
    - A Routine without a Bot has no list of its own. It runs on its Workspace's list (decided 2026-11-24).
    - A Worker's `agent` decides the kind; it has no subscription of its own.
 
@@ -138,6 +148,7 @@ Proposed (2026-11-24). Builds on ADR 0016, 0069, 0074, 0075. Amends ADR 0082 §1
 3. A Routine without a Bot uses its Workspace's list.
 4. Gemini and Antigravity wait.
 5. A cheaper login for Bots is wanted. It goes in the Workspace's list, and the Bots put it first (decision 4).
+6. (2026-11-26) A Workspace may stay on one account, follow its order, or be switched by hand: `switch_subscriptions` and Use for next Tasks (decision 4).
 
 ## Diagram
 

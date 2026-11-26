@@ -33,12 +33,13 @@ extension Settings {
             guard !workspaces.contains(where: { $0.name == name }) else { throw refusal("\(name) exists") }
             workspaces.append(SettingsWorkspace(name: name, root: root, repos: repos))
         case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
-                                  subscriptions):
+                                  subscriptions, switchSubscriptions):
             if let missing = subscriptions?.first(where: { name in !self.subscriptions.contains { $0.name == name } }) {
                 throw refusal("subscriptions: \(missing) is not a [[subscription]]")
             }
             try edit(workspace) { w in
                 if let subscriptions { w.subscriptions = subscriptions }
+                if let switchSubscriptions { w.switchSubscriptions = switchSubscriptions }
                 if let botRules { w.botRules = botRules }
                 if let claudeConnectors { w.claudeConnectors = claudeConnectors }
                 if let root { w.root = root }

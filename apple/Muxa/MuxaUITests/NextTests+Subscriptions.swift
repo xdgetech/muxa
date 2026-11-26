@@ -16,6 +16,25 @@ extension NextTests {
         XCTAssertTrue(waitFor(personal, labelContaining: "82% of 5 h"))
     }
 
+    /// ADR 0091 §4: Use makes a login Current for the next Tasks; switching
+    /// when full is the Workspace's choice.
+    @MainActor
+    func testUseMakesASubscriptionCurrentForNextTasks() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.agent", name: "Personal")
+        let use = app.buttons["ws.subs.use.claude-spare"]
+        scrollTo(use, in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["ws.subs.current.claude-personal"].exists)
+        use.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["ws.subs.current.claude-spare"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["ws.subs.use.claude-personal"].exists, "claude-personal is no longer Current")
+        let toggle = app.switches["ws.subs.switch"]
+        scrollTo(toggle, in: app)
+        XCTAssertEqual(toggle.value as? String, "1")
+        toggle.switches.firstMatch.tap()
+        XCTAssertTrue(waitFor(toggle, valueContaining: "0"))
+    }
+
     @MainActor
     func testUsageShowsEachSubscriptionsLastReport() throws {
         let app = launch()

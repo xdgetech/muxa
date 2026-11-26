@@ -403,6 +403,7 @@ fn start_settings() -> Settings {
             claude_connectors: false,
             bot_rules: Default::default(),
             subscriptions: Vec::new(),
+            switch_subscriptions: true,
             connections: vec![SettingsConnection {
                 spec: ConnectionSpec {
                     name: "github".into(),

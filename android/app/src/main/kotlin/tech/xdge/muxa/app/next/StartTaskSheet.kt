@@ -58,6 +58,7 @@ import tech.xdge.muxa.app.ui.PrimaryButton
 import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.Settings
+import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
 
@@ -130,7 +131,23 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
                             choices.goal, { choices = choices.copy(goal = it) }, Modifier.fillMaxWidth().testTag("task.goal"),
                             label = { Text("Goal") }, minLines = 2,
                         )
-                        if (ws != null) TaskOptions(ws, settings?.runsOn(ws.name, ws.agent, model.planUsage), choices) { choices = it }
+                        if (ws != null) {
+                            val logins = settings?.loginsFor(ws.name, ws.agent).orEmpty()
+                            val runsOn = settings?.runsOn(ws.name, ws.agent, model.planUsage)
+                            // Use for next Tasks (ADR 0091 §4): the Workspace's order changes on the host.
+                            val use: (String) -> Unit = { name ->
+                                settings?.let { s ->
+                                    val all = s.workspaces.firstOrNull { it.name == ws.name }?.subscriptions.orEmpty()
+                                    scope.launch {
+                                        val op = SettingsOp.WorkspaceUpdate(ws.name, subscriptions = firstIn(all, name))
+                                        runCatching { model.settingsHost.settingsUpdate(s.revision, listOf(op)) }
+                                            .onSuccess { settings = it }
+                                            .onFailure { model.requestError = "The subscription did not change: ${it.message}" }
+                                    }
+                                }
+                            }
+                            TaskOptions(ws, runsOn, logins.drop(1), use, choices) { choices = it }
+                        }
                     }
                 }
             }
@@ -156,11 +173,23 @@ private fun WorkspacePicker(list: List<Workspace>, picked: String, pick: (Worksp
 
 /** The parts that depend on the Workspace. */
 @Composable
-private fun TaskOptions(ws: Workspace, runsOn: String?, choices: TaskChoices, change: (TaskChoices) -> Unit) {
+private fun TaskOptions(
+    ws: Workspace,
+    runsOn: String?,
+    others: List<String>,
+    use: (String) -> Unit,
+    choices: TaskChoices,
+    change: (TaskChoices) -> Unit,
+) {
     Places(ws, choices, change)
     toolsLine(ws)?.let { Text(it, Modifier.testTag("task.tools"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium) }
-    // The Workspace's order picks the login (ADR 0091 §4): no picker here.
-    runsOn?.let { Text(it, Modifier.testTag("task.subscription"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium) }
+    // The Workspace's order picks the login (ADR 0091 §4); Change moves another first.
+    runsOn?.let {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(it, Modifier.weight(1f).testTag("task.subscription"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium)
+            if (others.isNotEmpty()) ChangeLogin(others, use)
+        }
+    }
     SwitchRow("Plan mode", "task.plan", choices.plan) { change(choices.copy(plan = it)) }
     ws.loop?.let { LoopOptions(it.checks, choices, change) }
 }
@@ -236,3 +265,20 @@ private fun SwitchRow(title: String, tag: String, on: Boolean, change: (Boolean)
 
 private const val SHEET_WIDTH = 560
 private const val SHEET_HEIGHT = 720
+
+/** Another login of the Workspace for this Task and the next ones. */
+@Composable
+private fun ChangeLogin(others: List<String>, use: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        LinkButton("Change", { open = true }, Modifier.testTag("task.subscription.change"))
+        DropdownMenu(open, { open = false }) {
+            for (n in others) {
+                DropdownMenuItem({ Text(n) }, {
+                    open = false
+                    use(n)
+                }, Modifier.testTag("task.subscription.use.$n"))
+            }
+        }
+    }
+}

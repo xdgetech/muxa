@@ -557,7 +557,7 @@ pub(crate) fn run_wait(
         .and_then(|b| workspaces.bot(&routine.workspace, b));
     subscriptions::wait_until(
         workspaces.subscriptions(),
-        names_for(ws, bot),
+        &names_for(workspaces, ws, bot),
         WorkerAgent::ClaudeCode,
         limits,
     )
@@ -590,15 +590,18 @@ pub(crate) fn waits(
         .collect()
 }
 
-/// A background agent's list: its Bot's when it has one, else the
-/// Workspace's (ADR 0091 §4).
-pub(crate) fn names_for<'a>(
-    ws: &'a crate::records::Workspace,
-    bot: Option<&'a crate::records::bots::Bot>,
-) -> &'a [String] {
-    bot.map(|b| &b.subscriptions)
+/// An agent's list: its Bot's when it has one, else the Workspace's, as
+/// the Workspace's switching allows (ADR 0091 §4).
+pub(crate) fn names_for(
+    workspaces: &Workspaces,
+    ws: &crate::records::Workspace,
+    bot: Option<&crate::records::bots::Bot>,
+) -> Vec<String> {
+    let names = bot
+        .map(|b| &b.subscriptions)
         .filter(|n| !n.is_empty())
-        .unwrap_or(&ws.subscriptions)
+        .unwrap_or(&ws.subscriptions);
+    subscriptions::order(workspaces.subscriptions(), names, ws.switch_subscriptions)
 }
 
 /// The login a background agent of `ws` runs on, from [`names_for`].
@@ -609,9 +612,9 @@ pub(crate) fn login_for(
     bot: Option<&crate::records::bots::Bot>,
     command: &LaunchCommand,
 ) -> Option<subscriptions::Login> {
-    let names = names_for(ws, bot);
+    let names = names_for(workspaces, ws, bot);
     let limits = limits_of(config, workspaces);
-    subscriptions::login(workspaces.subscriptions(), names, command, None, &limits)
+    subscriptions::login(workspaces.subscriptions(), &names, command, None, &limits)
 }
 
 /// Blocking. The subscriptions' last reports, for picking a login now.

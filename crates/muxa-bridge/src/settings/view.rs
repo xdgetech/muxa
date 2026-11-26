@@ -53,6 +53,7 @@ pub struct FileWorkspace {
     bots: FileBotRules,
     #[serde(default)]
     subscriptions: Vec<String>,
+    switch_subscriptions: Option<bool>,
 }
 
 impl FileWorkspace {
@@ -408,6 +409,7 @@ pub fn workspace(
             deny: w.bots.deny,
         },
         subscriptions: w.subscriptions,
+        switch_subscriptions: w.switch_subscriptions.unwrap_or(true),
         connections,
         mcp: w.mcp,
         routines: list,

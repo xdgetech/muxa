@@ -15,7 +15,9 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isOff
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -483,6 +485,21 @@ class NextTest {
         // Today's tokens: a Task whose agent still runs goes by its name.
         compose.onNodeWithTag("usage.workspaces").performScrollTo().assert(hasText("1.2M in · 84k out · 9.4M cached", substring = true))
         compose.onNodeWithTag("usage.task.app-fix-login").performScrollTo().assert(hasText("fix-login"))
+    }
+
+    /** ADR 0091 §4: Use makes a login Current for the next Tasks; switching when full is the Workspace's choice. */
+    @Test
+    fun useMakesASubscriptionCurrentForNextTasks() {
+        launch()
+        compose.openWorkspaceSettings("Personal")
+        compose.onNodeWithTag("settings.subs.current.claude-personal").performScrollTo()
+        compose.onNodeWithTag("settings.subs.use.claude-spare").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.subs.current.claude-spare"), TIMEOUT)
+        compose.onNodeWithTag("settings.subs.use.claude-personal").assertExists()
+        compose.onNodeWithTag("settings.subs.switch").performScrollTo().assertIsOn().performClick()
+        compose.waitUntil(TIMEOUT) {
+            compose.onAllNodes(hasTestTag("settings.subs.switch") and isOff()).fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     @Test

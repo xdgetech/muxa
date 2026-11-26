@@ -156,10 +156,8 @@ impl BridgeHost {
         );
         blocking(move || {
             let all = records.load_workspaces()?;
-            let names = bot
-                .and_then(|b| all.bot(&ws.name, &b).map(|b| b.subscriptions.clone()))
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| ws.subscriptions.clone());
+            let names =
+                super::runner::names_for(&all, &ws, bot.and_then(|b| all.bot(&ws.name, &b)));
             let keep = keep.or_else(|| {
                 let dir = adopted?;
                 subscriptions::holding(all.subscriptions(), &ws.subscriptions, &dir)

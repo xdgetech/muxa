@@ -878,3 +878,38 @@ fn a_workspaces_env_login_is_found_and_adopted_without_its_path_crossing_the_wir
         matches!(refused, Err(SettingsError::Invalid(m)) if m.contains("has no CLAUDE_CONFIG_DIR"))
     );
 }
+
+/// ADR 0091 §4: only switching off is written; on is the default again.
+#[test]
+fn a_workspaces_switching_is_written_only_when_off() {
+    let h = host("switching");
+    let rev = h.store.view().unwrap().revision;
+    assert!(h.store.view().unwrap().workspaces[1].switch_subscriptions);
+    let s = h
+        .store
+        .update(
+            &rev,
+            vec![op(
+                json!({"op": "workspace-update", "workspace": "Home", "switch_subscriptions": false}),
+            )],
+        )
+        .unwrap();
+    assert!(!s.workspaces[1].switch_subscriptions);
+    let loaded = Workspaces::load(&h.file, Some(&h.dir)).unwrap();
+    assert!(!loaded.get("Home").unwrap().switch_subscriptions);
+    let s = h
+        .store
+        .update(
+            &s.revision,
+            vec![op(
+                json!({"op": "workspace-update", "workspace": "Home", "switch_subscriptions": true}),
+            )],
+        )
+        .unwrap();
+    assert!(s.workspaces[1].switch_subscriptions);
+    assert!(
+        !fs::read_to_string(&h.file)
+            .unwrap()
+            .contains("switch_subscriptions")
+    );
+}

@@ -95,6 +95,8 @@ data class SettingsWorkspace(
     @SerialName("bot_rules") val botRules: BotRules = BotRules(),
     /** The subscriptions its agents use, in order (ADR 0091). */
     val subscriptions: List<String> = emptyList(),
+    /** False: each agent keeps the first of its kind, full or not; the user switches by the order (ADR 0091 §4). */
+    @SerialName("switch_subscriptions") val switchSubscriptions: Boolean = true,
     val connections: List<SettingsConnection> = emptyList(),
     val mcp: List<McpSpec> = emptyList(),
     /** Listed also while [routinesEnabled] is false. */

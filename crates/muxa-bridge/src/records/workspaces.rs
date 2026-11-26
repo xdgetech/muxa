@@ -83,6 +83,9 @@ pub struct Workspace {
     /// The logins its agents use, in order (ADR 0091). Empty: as before,
     /// the env's `CLAUDE_CONFIG_DIR` or `CODEX_HOME`, else the default login.
     pub subscriptions: Vec<String>,
+    /// A full login gives way to the next of its kind. Off: the first of
+    /// its kind only, chosen by the order the user sets (ADR 0091 §4).
+    pub switch_subscriptions: bool,
 }
 
 /// The configured workspaces, in file order.
@@ -150,6 +153,7 @@ struct RawWorkspace {
     bots: Option<super::bots::RawBotRules>,
     #[serde(default)]
     subscriptions: Vec<String>,
+    switch_subscriptions: Option<bool>,
     /// `[workspace.assistant]` and `memory` of the removed assistant layer
     /// (ADR 0066): read so an older file still loads, not used.
     assistant: Option<toml::Value>,
@@ -311,6 +315,7 @@ impl Workspaces {
                 claude_connectors: w.claude_connectors,
                 bot_rules,
                 subscriptions: w.subscriptions,
+                switch_subscriptions: w.switch_subscriptions.unwrap_or(true),
             });
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);

@@ -117,10 +117,10 @@ extension MacNextTests {
         app.typeKey(",", modifierFlags: .command)
     }
 
-    /// The demo's `app` Workspace, on one of its tabs.
-    func openWorkspace(_ app: XCUIApplication, tab: String) {
+    /// A demo Workspace, `app` unless named, on one of its tabs.
+    func openWorkspace(_ app: XCUIApplication, tab: String, name: String = "app") {
         openSettings(app)
-        let row = app.descendants(matching: .any)["settings.workspace.app"]
+        let row = app.descendants(matching: .any)["settings.workspace.\(name)"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.click()
         let button = app.buttons[tab]

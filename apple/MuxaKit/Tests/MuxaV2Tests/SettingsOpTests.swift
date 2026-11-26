@@ -56,6 +56,8 @@ struct SettingsOpTests {
              #"{"agent":"claude-code","name":"work","op":"subscription-adopt","plan":"Max 20x","workspace":"w"}"#),
             (.workspaceUpdate(workspace: "w", subscriptions: ["work", "spare"]),
              #"{"op":"workspace-update","subscriptions":["work","spare"],"workspace":"w"}"#),
+            (.workspaceUpdate(workspace: "w", subscriptions: ["spare", "work"], switchSubscriptions: false),
+             #"{"op":"workspace-update","subscriptions":["spare","work"],"switch_subscriptions":false,"workspace":"w"}"#),
             (.assistantUpdate(enabled: true, subscriptions: ["work"]),
              #"{"enabled":true,"op":"assistant-update","subscriptions":["work"]}"#),
             (.botUpdate(workspace: "w", bot: BotSpec(name: "b", subscriptions: ["spare"])),

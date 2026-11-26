@@ -55,6 +55,8 @@ sealed class SettingsOp(val op: String) {
         val botRules: BotRules? = null,
         /** The subscriptions its agents use, in order (ADR 0091); null keeps them. */
         val subscriptions: List<String>? = null,
+        /** Whether a full login gives way to the next of its kind (ADR 0091 §4); null keeps it. */
+        val switchSubscriptions: Boolean? = null,
     ) : SettingsOp("workspace-update")
 
     /** Also removes the Keychain secrets of its connections; its folder and `.muxa/` stay. */
@@ -187,6 +189,7 @@ sealed class SettingsOp(val op: String) {
                 o.claudeConnectors?.let { put("claude_connectors", it) }
                 o.botRules?.let { put("bot_rules", enc(it)) }
                 o.subscriptions?.let { put("subscriptions", enc(it)) }
+                o.switchSubscriptions?.let { put("switch_subscriptions", it) }
             }
             is WorkspaceRemove -> put("workspace", o.workspace)
             is EnvSet -> { put("workspace", o.workspace); put("key", o.key); put("value", o.value) }
@@ -251,7 +254,7 @@ sealed class SettingsOp(val op: String) {
                 "workspace-update" -> WorkspaceUpdate(
                     ws(), s("root"), strings("repos"), patch("agent_command"), patch("park_after"), strings("hidden_repos"),
                     bool("claude_connectors"), o["bot_rules"]?.let { opsJson.decodeFromJsonElement<BotRules>(it) },
-                    strings("subscriptions"),
+                    strings("subscriptions"), bool("switch_subscriptions"),
                 )
                 "workspace-remove" -> WorkspaceRemove(ws())
                 "env-set" -> EnvSet(ws(), req("key"), req("value"))

@@ -65,10 +65,19 @@ pub fn apply(
             claude_connectors,
             bot_rules,
             subscriptions,
+            switch_subscriptions,
         } => {
             let t = find_ws(workspaces, &workspace)?;
             if let Some(names) = subscriptions {
                 set_list(t, "subscriptions", &names);
+            }
+            if let Some(on) = switch_subscriptions {
+                // On is the default, so only off is written.
+                if on {
+                    t.remove("switch_subscriptions");
+                } else {
+                    t.insert("switch_subscriptions", value(false));
+                }
             }
             if let Some(on) = claude_connectors {
                 set_bool(t, "claude_connectors", on, false);

@@ -234,3 +234,58 @@ fn a_full_login_is_skipped_and_all_full_means_wait() {
     let kept = choose(subs, &names, &shell("claude"), Some("work"), &both).unwrap();
     assert_eq!(kept.name, "work");
 }
+
+/// ADR 0091 §4: with switching off, a Workspace keeps the first login of
+/// each kind, also when it is full; moving another to the top switches.
+#[test]
+fn with_switching_off_the_first_login_of_its_kind_stays_until_the_user_moves_one_up() {
+    let home = temp("noswitch");
+    let all = load(
+        &home,
+        "subscriptions = ['work', 'chatgpt', 'spare']\nswitch_subscriptions = false\n",
+        "",
+        "",
+    )
+    .unwrap();
+    let ws = all.get("Company").unwrap();
+    assert!(!ws.switch_subscriptions);
+    let subs = all.subscriptions();
+    assert_eq!(
+        order(subs, &ws.subscriptions, ws.switch_subscriptions),
+        ["work", "chatgpt"]
+    );
+    let now = 1_800_000_000;
+    let work_full = crate::thresholds::Snapshot::new(
+        [(
+            "work".to_owned(),
+            crate::limits::merge(
+                &Default::default(),
+                &[crate::limits::Window {
+                    minutes: 300,
+                    used_percent: 97.0,
+                    resets_at: now + 900,
+                }],
+                now,
+            ),
+        )]
+        .into(),
+        now,
+    );
+    let names = order(subs, &ws.subscriptions, false);
+    let claude = WorkerAgent::ClaudeCode;
+    assert_eq!(pick(subs, &names, claude, &work_full).unwrap().name, "work");
+    assert_eq!(
+        wait_until(subs, &names, claude, &work_full),
+        Some(now + 900)
+    );
+    // The user puts spare first: the next agent takes it.
+    let moved: Vec<String> = ["spare", "work", "chatgpt"].map(String::from).to_vec();
+    let names = order(subs, &moved, false);
+    assert_eq!(
+        pick(subs, &names, claude, &work_full).unwrap().name,
+        "spare"
+    );
+    // On by default.
+    let on = load(&home, "subscriptions = ['work']\n", "", "").unwrap();
+    assert!(on.get("Company").unwrap().switch_subscriptions);
+}

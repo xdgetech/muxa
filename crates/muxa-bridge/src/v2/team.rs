@@ -527,7 +527,7 @@ fn members_wait(
             let member = workspaces.bot(workspace, &h.to);
             subscriptions::wait_until(
                 workspaces.subscriptions(),
-                runner::names_for(ws, member),
+                &runner::names_for(workspaces, ws, member),
                 WorkerAgent::ClaudeCode,
                 limits,
             )

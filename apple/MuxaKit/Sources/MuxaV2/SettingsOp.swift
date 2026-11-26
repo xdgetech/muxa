@@ -15,7 +15,7 @@ public enum SettingsOp: Equatable, Sendable {
     case workspaceUpdate(workspace: String, root: String? = nil, repos: [String]? = nil,
                          agentCommand: FieldChange<String> = .keep, parkAfter: FieldChange<String> = .keep,
                          hiddenRepos: [String]? = nil, claudeConnectors: Bool? = nil, botRules: BotRules? = nil,
-                         subscriptions: [String]? = nil)
+                         subscriptions: [String]? = nil, switchSubscriptions: Bool? = nil)
     /// Also removes the Keychain secrets of its connections; its folder stays.
     case workspaceRemove(workspace: String)
     case envSet(workspace: String, key: String, value: String)
@@ -111,6 +111,7 @@ extension SettingsOp: Codable {
         case op, name, root, repos, workspace, key, value, checks, enabled, connection, secret, mcp, routine, worker, bot
         case subscription, subscriptions, agent, plan
         case claudeConnectors = "claude_connectors"
+        case switchSubscriptions = "switch_subscriptions"
         case botRules = "bot_rules"
         case version
         case soulText = "soul_text"
@@ -130,9 +131,10 @@ extension SettingsOp: Codable {
             try c.encode(root, forKey: .root)
             try c.encode(repos, forKey: .repos)
         case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
-                                  subscriptions):
+                                  subscriptions, switchSubscriptions):
             try c.encode(workspace, forKey: .workspace)
             try c.encodeIfPresent(subscriptions, forKey: .subscriptions)
+            try c.encodeIfPresent(switchSubscriptions, forKey: .switchSubscriptions)
             try c.encodeIfPresent(botRules, forKey: .botRules)
             try c.encodeIfPresent(root, forKey: .root)
             try c.encodeIfPresent(repos, forKey: .repos)
@@ -224,7 +226,8 @@ extension SettingsOp: Codable {
                 hiddenRepos: try c.decodeIfPresent([String].self, forKey: .hiddenRepos),
                 claudeConnectors: try c.decodeIfPresent(Bool.self, forKey: .claudeConnectors),
                 botRules: try c.decodeIfPresent(BotRules.self, forKey: .botRules),
-                subscriptions: try c.decodeIfPresent([String].self, forKey: .subscriptions))
+                subscriptions: try c.decodeIfPresent([String].self, forKey: .subscriptions),
+                switchSubscriptions: try c.decodeIfPresent(Bool.self, forKey: .switchSubscriptions))
         case "workspace-remove": self = .workspaceRemove(workspace: try ws())
         case "env-set": self = .envSet(workspace: try ws(), key: try s(.key), value: try s(.value))
         case "env-unset": self = .envUnset(workspace: try ws(), key: try s(.key))
@@ -314,13 +317,14 @@ extension SettingsOp: CustomStringConvertible, CustomDebugStringConvertible, Cus
         switch self {
         case let .workspaceAdd(name, root, repos): "\(self.name)(\(name), root: \(root), repos: \(repos))"
         case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter, hiddenRepos, claudeConnectors, botRules,
-                                  subscriptions):
+                                  subscriptions, switchSubscriptions):
             "\(name)(\(workspace), root: \(root ?? "keep"), repos: \(repos.map { "\($0)" } ?? "keep"), "
                 + "agent_command: \(agentCommand), park_after: \(parkAfter), "
                 + "hidden_repos: \(hiddenRepos.map { "\($0)" } ?? "keep"), "
                 + "claude_connectors: \(claudeConnectors.map { "\($0)" } ?? "keep"), "
                 + "bot_rules: \(botRules.map { "\($0.allow.count) allow, \($0.deny.count) deny" } ?? "keep"), "
-                + "subscriptions: \(subscriptions.map { "\($0)" } ?? "keep"))"
+                + "subscriptions: \(subscriptions.map { "\($0)" } ?? "keep"), "
+                + "switch_subscriptions: \(switchSubscriptions.map { "\($0)" } ?? "keep"))"
         case let .workspaceRemove(workspace): "\(name)(\(workspace))"
         case let .envSet(workspace, key, _): "\(name)(\(workspace), \(key)=\(Self.hidden))"
         case let .envUnset(workspace, key): "\(name)(\(workspace), \(key))"

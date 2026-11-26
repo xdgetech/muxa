@@ -2,6 +2,7 @@ package tech.xdge.muxa.app.next
 
 import tech.xdge.muxa.v2.FoundLogin
 import tech.xdge.muxa.v2.Settings
+import tech.xdge.muxa.v2.SettingsWorkspace
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SubscriptionSpec
 import tech.xdge.muxa.v2.SubscriptionUsage
@@ -102,10 +103,31 @@ fun Settings.usersOf(name: String): List<String> =
  * as the host picks it. Null when the Workspace lists none of that kind.
  */
 fun Settings.runsOn(workspace: String, agent: String?, usage: List<SubscriptionUsage>): String? {
+    val name = loginsFor(workspace, agent).firstOrNull() ?: return null
+    return "Runs on $name · ${PlanWindow.line(usage.firstOrNull { it.name == name })}"
+}
+
+/** [workspace]'s subscriptions of its [agent] command's kind, in order. */
+fun Settings.loginsFor(workspace: String, agent: String?): List<String> {
     val names = workspaces.firstOrNull { it.name == workspace }?.subscriptions.orEmpty()
     val kind = if (agent?.endsWith("codex") == true) CODEX else CLAUDE_CODE
-    val name = names.firstOrNull { n -> subscriptions.any { it.name == n && it.agent == kind } } ?: return null
-    return "Runs on $name · ${PlanWindow.line(usage.firstOrNull { it.name == name })}"
+    return names.filter { n -> subscriptions.any { it.name == n && it.agent == kind } }
+}
+
+/** The first of each agent kind in [names]: Current, the login the next agent of that kind takes (ADR 0091 §4). */
+fun Settings.currentOf(names: List<String>): Set<String> {
+    val kinds = mutableSetOf<String>()
+    return names.filter { n -> subscriptions.firstOrNull { it.name == n }?.let { kinds.add(it.agent) } == true }.toSet()
+}
+
+/** [names] with [name] first: Use for next Tasks. */
+fun firstIn(names: List<String>, name: String): List<String> = listOf(name) + (names - name)
+
+/** What a Workspace's Subscriptions list says under it. */
+fun switchNote(ws: SettingsWorkspace): String = when {
+    ws.subscriptions.isEmpty() -> "Each agent takes the first subscription of its kind. Empty: the agent's default login."
+    ws.switchSubscriptions -> "New agents take the Current login of their kind. At 95% of a limit they take the next one."
+    else -> "New agents take the Current login of their kind, also when it is full. Use another to switch."
 }
 
 /** How token counts read (ADR 0091 §6): `84`, `84k`, `1.2M`. */

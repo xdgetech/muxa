@@ -68,6 +68,7 @@ fn ws(root: &Path) -> Workspace {
         claude_connectors: false,
         bot_rules: Default::default(),
         subscriptions: Vec::new(),
+        switch_subscriptions: true,
     }
 }
 

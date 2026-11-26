@@ -262,6 +262,10 @@ fun SubscriptionOrder(
     usage: List<SubscriptionUsage>,
     tag: String,
     enabled: Boolean,
+    /** The first of each kind; shown as Current when [use] is set. */
+    current: Set<String> = emptySet(),
+    /** Puts a login first of its kind at once (ADR 0091 §4); null: no Current and no Use. */
+    use: ((String) -> Unit)? = null,
     change: (List<String>) -> Unit,
 ) {
     names.forEachIndexed { i, n ->
@@ -270,6 +274,13 @@ fun SubscriptionOrder(
             Column(Modifier.weight(1f)) {
                 Text(n, fontSize = 14.sp)
                 EntryDetail(PlanWindow.line(usage.firstOrNull { it.name == n }))
+            }
+            if (use != null) {
+                if (n in current) {
+                    Text("Current", Modifier.testTag("$tag.current.$n"), color = Palette.textSecondary, fontSize = 12.sp)
+                } else {
+                    LinkButton("Use", { use(n) }, Modifier.testTag("$tag.use.$n"), enabled = enabled)
+                }
             }
             LinkButton("Up", { change(names.toMutableList().apply { add(i - 1, removeAt(i)) }) }, Modifier.testTag("$tag.up.$n"), enabled = enabled && i > 0)
             LinkButton("Remove", { change(names - n) }, Modifier.testTag("$tag.remove.$n"), enabled = enabled)

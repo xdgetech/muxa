@@ -116,8 +116,14 @@ fn print(settings: &Value, json: bool) {
             .flatten()
             .map(text)
             .collect();
+        // Off: the first login of each kind only (ADR 0091 §4).
+        let fixed = if w["switch_subscriptions"] == false {
+            " (no switching)"
+        } else {
+            ""
+        };
         println!(
-            "{}\t{}\tenv:{}\tconnections:{}\tmcp:{}\troutines:{}\tsubscriptions:{}",
+            "{}\t{}\tenv:{}\tconnections:{}\tmcp:{}\troutines:{}\tsubscriptions:{}{fixed}",
             text(&w["name"]),
             text(&w["root"]),
             names(&w["agent"]["env"], "key"),

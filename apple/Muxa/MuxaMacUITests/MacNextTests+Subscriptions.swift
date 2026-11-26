@@ -18,6 +18,24 @@ extension MacNextTests {
         XCTAssertTrue(waitFor(personal, labelContaining: "82% of 5 h"))
     }
 
+    /// ADR 0091 §4, as on iOS.
+    @MainActor
+    func testUseMakesASubscriptionCurrentForNextTasks() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.agent", name: "Personal")
+        let use = app.buttons["ws.subs.use.claude-spare"]
+        XCTAssertTrue(use.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["ws.subs.current.claude-personal"].exists)
+        use.click()
+        XCTAssertTrue(app.descendants(matching: .any)["ws.subs.current.claude-spare"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["ws.subs.use.claude-personal"].exists, "claude-personal is no longer Current")
+        let control = app.checkBoxes["ws.subs.switch"].exists
+            ? app.checkBoxes["ws.subs.switch"] : app.switches["ws.subs.switch"]
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        control.click()
+        XCTAssertTrue(waitFor(control, valueContaining: "0"))
+    }
+
     @MainActor
     func testUsageShowsEachSubscriptionsLastReport() throws {
         let app = launch()

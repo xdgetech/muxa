@@ -117,6 +117,7 @@ internal class DemoSettings(initial: Settings) {
             claudeConnectors = op.claudeConnectors ?: w.claudeConnectors,
             botRules = op.botRules ?: w.botRules,
             subscriptions = op.subscriptions ?: w.subscriptions,
+            switchSubscriptions = op.switchSubscriptions ?: w.switchSubscriptions,
         )
         is SettingsOp.EnvSet -> w.copy(
             agent = w.agent.copy(env = (w.agent.env.filter { it.key != op.key } + EnvKey(op.key, true)).sortedBy { it.key }),

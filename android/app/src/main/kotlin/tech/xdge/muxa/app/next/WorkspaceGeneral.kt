@@ -80,7 +80,16 @@ private fun WorkspaceLogins(editor: SettingsEditor, ws: SettingsWorkspace, plans
     SettingsHeader("Subscriptions")
     SettingsCard {
         Column(Modifier.padding(14.dp).testTag("settings.subs"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SubscriptionOrder(names, editor.settings?.subscriptionNames().orEmpty(), plans, "settings.subs", on) { names = it }
+            val current = editor.settings?.currentOf(names).orEmpty()
+            SubscriptionOrder(
+                names, editor.settings?.subscriptionNames().orEmpty(), plans, "settings.subs", on, current,
+                use = { save(listOf(SettingsOp.WorkspaceUpdate(ws.name, subscriptions = firstIn(names, it)))) },
+            ) { names = it }
+            if (names.size > 1) {
+                SwitchField("Switch when full", "settings.subs.switch", ws.switchSubscriptions, on) {
+                    save(listOf(SettingsOp.WorkspaceUpdate(ws.name, switchSubscriptions = it)))
+                }
+            }
             if (names != ws.subscriptions) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PrimaryButton("Save", { save(listOf(SettingsOp.WorkspaceUpdate(ws.name, subscriptions = names))) },
@@ -94,7 +103,7 @@ private fun WorkspaceLogins(editor: SettingsEditor, ws: SettingsWorkspace, plans
         }
     }
     SettingsNote(
-        if (envLogins.isEmpty()) "Each agent takes the first subscription of its kind. Empty: the agent's default login."
+        if (envLogins.isEmpty()) switchNote(ws)
         else "Its env names a login. As a subscription, it shows its usage and the Workspace can list a second one.",
     )
 }

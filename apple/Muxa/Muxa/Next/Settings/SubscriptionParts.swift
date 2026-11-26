@@ -79,8 +79,12 @@ struct SubscriptionOrder: View {
     /// What may be added, in the host's order.
     let available: [String]
     let id: String
+    /// Puts a login first of its kind at once (ADR 0091 §4); nil: no
+    /// Current mark and no Use button.
+    var use: ((String) -> Void)?
 
     var body: some View {
+        let current = SubscriptionOrder.current(names, specs: model.settings.settings?.subscriptions ?? [])
         ForEach(Array(names.enumerated()), id: \.element) { index, name in
             HStack(spacing: 10) {
                 Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(Palette.textTertiary)
@@ -91,6 +95,20 @@ struct SubscriptionOrder: View {
                         .foregroundStyle(Palette.textTertiary)
                 }
                 Spacer()
+                if let use {
+                    if current.contains(name) {
+                        Text("Current")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Palette.textSecondary)
+                            .accessibilityIdentifier("\(id).current.\(name)")
+                    } else {
+                        Button("Use") { use(name) }
+                            .buttonStyle(.borderless)
+                            .disabled(model.settings.readOnly || model.settings.saving)
+                            .accessibilityLabel("Use \(name) for next Tasks")
+                            .accessibilityIdentifier("\(id).use.\(name)")
+                    }
+                }
                 Button { move(name, up: true) } label: { Image(systemName: "arrow.up") }
                     .buttonStyle(.borderless)
                     .disabled(index == 0)
@@ -101,7 +119,6 @@ struct SubscriptionOrder: View {
                     .accessibilityLabel("Remove \(name)")
                     .accessibilityIdentifier("\(id).remove.\(name)")
             }
-            .accessibilityIdentifier("\(id).\(name)")
         }
         let rest = available.filter { !names.contains($0) }
         Menu {
@@ -116,6 +133,21 @@ struct SubscriptionOrder: View {
     private func move(_ name: String, up: Bool) {
         guard let at = names.firstIndex(of: name), at > 0 else { return }
         names.swapAt(at, at - 1)
+    }
+
+    /// The first name of each agent kind: the login the next agent of that
+    /// kind takes while switching is off, or while it has room.
+    static func current(_ names: [String], specs: [SubscriptionSpec]) -> Set<String> {
+        var kinds = Set<String>()
+        return Set(names.filter { n in
+            guard let kind = specs.first(where: { $0.name == n })?.agent else { return false }
+            return kinds.insert(kind).inserted
+        })
+    }
+
+    /// `names` with `name` first: Use for next Tasks.
+    static func first(_ name: String, in names: [String]) -> [String] {
+        [name] + names.filter { $0 != name }
     }
 }
 

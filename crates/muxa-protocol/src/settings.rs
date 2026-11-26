@@ -129,6 +129,10 @@ pub struct SettingsWorkspace {
     /// The subscriptions its agents use, in order (ADR 0091).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subscriptions: Vec<String>,
+    /// False: its agents keep the first login of their kind, also when it
+    /// is full; the user switches by the order (ADR 0091 §4).
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub switch_subscriptions: bool,
     #[serde(default)]
     pub connections: Vec<SettingsConnection>,
     #[serde(default)]
@@ -404,6 +408,8 @@ pub enum SettingsOp {
         bot_rules: Option<BotRules>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         subscriptions: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        switch_subscriptions: Option<bool>,
     },
     WorkspaceRemove {
         workspace: String,
@@ -623,6 +629,14 @@ impl SettingsOp {
             | Self::WorkerRemove { .. } => None,
         }
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(v: &bool) -> bool {
+    *v
 }
 
 #[cfg(test)]

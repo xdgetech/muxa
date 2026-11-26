@@ -104,6 +104,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 claude_connectors: false,
                 bot_rules: Default::default(),
                 subscriptions: Vec::new(),
+                switch_subscriptions: true,
                 connections: Vec::new(),
                 mcp: Vec::new(),
                 routines: Vec::new(),
@@ -122,6 +123,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             claude_connectors,
             bot_rules,
             subscriptions,
+            switch_subscriptions,
         } => {
             if let Some(names) = &subscriptions {
                 known_subscriptions(s, names)?;
@@ -132,6 +134,9 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             }
             if let Some(on) = claude_connectors {
                 w.claude_connectors = on;
+            }
+            if let Some(on) = switch_subscriptions {
+                w.switch_subscriptions = on;
             }
             if let Some(rules) = bot_rules {
                 w.bot_rules = rules;

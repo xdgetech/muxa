@@ -157,6 +157,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
     public var botRules: BotRules
     /// The subscriptions its agents use, in order (ADR 0091).
     public var subscriptions: [String] = []
+    /// False: each agent keeps the first of its kind, full or not; the user
+    /// switches by moving one to the top (ADR 0091 §4).
+    public var switchSubscriptions: Bool = true
     public var connections: [SettingsConnection]
     public var mcp: [McpSpec]
     /// Also while `routinesEnabled` is false.
@@ -173,8 +176,9 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
                 connections: [SettingsConnection] = [], mcp: [McpSpec] = [], routines: [SettingsRoutine] = [],
                 routinesProblem: String? = nil, foundRepos: [String] = [], hiddenRepos: [String] = [],
                 botRules: BotRules = BotRules(), bots: [SettingsBot] = [], claudeConnectors: Bool = false,
-                subscriptions: [String] = []) {
+                subscriptions: [String] = [], switchSubscriptions: Bool = true) {
         self.subscriptions = subscriptions
+        self.switchSubscriptions = switchSubscriptions
         self.bots = bots
         self.botRules = botRules
         self.claudeConnectors = claudeConnectors
@@ -200,6 +204,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         case routinesEnabled = "routines_enabled"
         case directWrites = "direct_writes"
         case claudeConnectors = "claude_connectors"
+        case switchSubscriptions = "switch_subscriptions"
         case botRules = "bot_rules"
         case routinesProblem = "routines_problem"
         case foundRepos = "found_repos"
@@ -221,6 +226,7 @@ public struct SettingsWorkspace: Codable, Equatable, Sendable, Identifiable {
         claudeConnectors = try c.decode(.claudeConnectors, or: false)
         botRules = try c.decode(.botRules, or: BotRules())
         subscriptions = try c.decode(.subscriptions, or: [])
+        switchSubscriptions = try c.decode(.switchSubscriptions, or: true)
         connections = try c.decode(.connections, or: [])
         mcp = try c.decode(.mcp, or: [])
         routines = try c.decode(.routines, or: [])

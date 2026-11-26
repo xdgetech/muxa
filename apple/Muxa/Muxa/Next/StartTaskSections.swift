@@ -100,10 +100,14 @@ struct TaskToolsSection: View {
                         .accessibilityIdentifier("task.tools")
                 }
                 if let login {
-                    Text(login)
-                        .font(.callout)
-                        .foregroundStyle(Palette.textSecondary)
-                        .accessibilityIdentifier("task.subscription")
+                    HStack {
+                        Text(login)
+                            .font(.callout)
+                            .foregroundStyle(Palette.textSecondary)
+                            .accessibilityIdentifier("task.subscription")
+                        Spacer()
+                        change
+                    }
                 }
             } footer: {
                 Text("Change them in Settings.")
@@ -111,14 +115,39 @@ struct TaskToolsSection: View {
         }
     }
 
-    /// "Runs on claude-work · 82% of 5 h" (ADR 0091 §7): the first of the
-    /// Workspace's subscriptions for its agent, as the host picks it. No
-    /// picker: the order is the Workspace's.
-    static func login(for ws: Workspace, settings: SettingsModel) -> String? {
-        guard let names = settings.workspace(ws.name)?.subscriptions, !names.isEmpty else { return nil }
+    /// The Workspace's other logins of this agent's kind. Picking one makes
+    /// it Current for this Task and the next ones (ADR 0091 §4).
+    @ViewBuilder
+    private var change: some View {
+        let names = Self.names(for: workspace, settings: model.settings)
+        if names.count > 1, let all = model.settings.workspace(workspace.name)?.subscriptions {
+            Menu("Change") {
+                ForEach(names.dropFirst(), id: \.self) { name in
+                    Button(name) {
+                        let op = SettingsOp.workspaceUpdate(workspace: workspace.name,
+                                                            subscriptions: SubscriptionOrder.first(name, in: all))
+                        Task { _ = await model.settings.save([op]) }
+                    }
+                    .accessibilityIdentifier("task.subscription.use.\(name)")
+                }
+            }
+            .disabled(model.settings.readOnly || model.settings.saving)
+            .accessibilityIdentifier("task.subscription.change")
+        }
+    }
+
+    /// The Workspace's subscriptions of its agent's kind, in order.
+    static func names(for ws: Workspace, settings: SettingsModel) -> [String] {
+        let names = settings.workspace(ws.name)?.subscriptions ?? []
         let kind = ws.agent?.hasSuffix("codex") == true ? "codex" : "claude-code"
         let subs = settings.settings?.subscriptions ?? []
-        guard let name = names.first(where: { n in subs.contains { $0.name == n && $0.agent == kind } }) else { return nil }
+        return names.filter { n in subs.contains { $0.name == n && $0.agent == kind } }
+    }
+
+    /// "Runs on claude-work · 82% of 5 h" (ADR 0091 §7): the first of the
+    /// Workspace's subscriptions for its agent, as the host picks it.
+    static func login(for ws: Workspace, settings: SettingsModel) -> String? {
+        guard let name = names(for: ws, settings: settings).first else { return nil }
         return "Runs on \(name) · \(PlanWindow.line(settings.limits(name)))"
     }
 

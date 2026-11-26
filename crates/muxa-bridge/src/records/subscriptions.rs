@@ -217,6 +217,28 @@ pub fn holding(all: &[Subscription], names: &[String], dir: &Path) -> Option<Str
         .map(|s| s.name.clone())
 }
 
+/// `names` as a Workspace lets its agents use them (ADR 0091 §4): all of
+/// them in order, or with switching off only the first of each kind, which
+/// the user moves to the top to switch by hand.
+pub fn order(all: &[Subscription], names: &[String], switch: bool) -> Vec<String> {
+    if switch {
+        return names.to_vec();
+    }
+    let mut kinds: Vec<WorkerAgent> = Vec::new();
+    names
+        .iter()
+        .filter(|n| {
+            let Some(s) = all.iter().find(|s| &s.name == *n) else {
+                return false;
+            };
+            let first = !kinds.contains(&s.agent);
+            kinds.push(s.agent);
+            first
+        })
+        .cloned()
+        .collect()
+}
+
 /// The subscriptions in `names` for `agent`, in order.
 fn of_kind<'a, 'n>(
     all: &'a [Subscription],

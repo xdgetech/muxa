@@ -56,6 +56,8 @@ class SettingsTest {
                 """{"op":"subscription-adopt","workspace":"w","agent":"claude-code","name":"work","plan":"Max 20x"}""",
             SettingsOp.WorkspaceUpdate("w", subscriptions = listOf("work", "spare")) to
                 """{"op":"workspace-update","workspace":"w","subscriptions":["work","spare"]}""",
+            SettingsOp.WorkspaceUpdate("w", subscriptions = listOf("spare", "work"), switchSubscriptions = false) to
+                """{"op":"workspace-update","workspace":"w","subscriptions":["spare","work"],"switch_subscriptions":false}""",
             SettingsOp.BotUpdate("w", BotSpec("b", subscriptions = listOf("spare"))) to
                 """{"op":"bot-update","workspace":"w","bot":{"name":"b","enabled":true,"subscriptions":["spare"]}}""",
         )
