@@ -85,7 +85,10 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"close-terminal","terminal"}` | `{}`. Ends a Task's shell and removes its terminal; any other terminal is `bad-request` |
 | `{"type":"upload","terminal","name","data"}` | `{"path"}`: a file from the device into the Task's working place, at `path` relative to it. See Uploads |
 | `{"type":"close-task","terminal","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of the agent `terminal` as `inbox-approve` does, without an item, and marks the Task's open items Done. See Task actions |
-| `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
+| `{"type":"pause-task","terminal"}` | `{"paused":Paused}`. Stops the Task of the agent `terminal` and keeps it. See Paused Tasks |
+| `{"type":"resume-task","terminal"}` | `{"terminal":Terminal,"existing"}`: the agent that runs the paused Task `terminal` again. See Paused Tasks |
+| `{"type":"paused-tasks"}` | `{"paused":[Paused...]}`: the paused Tasks, oldest first |
+| `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync`, `inbox`, `loops` and `paused` notifications follow |
 | `{"type":"inbox"}` | `{"inbox":Inbox}` |
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
 | `{"type":"inbox-add","kind","title","note"?,"workspace"?,"due"?}` | `{"inbox":Inbox}`. The item goes on top |
@@ -179,12 +182,25 @@ ADR 0081. A client copies an image or a log from its device into a Task's workin
 | `{"type":"removed","terminal":"<id>"}` | After `watch`: the terminal is gone |
 | `{"type":"resync"}` | After `watch`: changes were lost. The client sends `terminals` again |
 | `{"type":"loops","loops":[Loop...]}` | After `watch`: a Task Loop changed. It carries every loop |
+| `{"type":"paused","paused":[Paused...]}` | After `watch`: a Task was paused, resumed or closed. It carries every paused Task |
 | `{"type":"chat","chat","update":ChatUpdate}` | A followed conversation changed |
 | `{"type":"chat-ended","chat","reason"}` | A followed conversation ended, e.g. the agent exited. The chat is closed |
 | `{"type":"reader","reader","content":ReaderContent}` | An open Reader file changed. It carries the whole file as it is now |
 | `{"type":"reader-ended","reader","reason"}` | An open Reader file is gone, no longer listed, or cannot be read. The reader is closed |
 
 A watch ends with the connection, and so do open Reader files. After a resume the client sends `watch` and `inbox` again, and opens its Reader files again.
+
+### Paused Tasks
+
+ADR 0102. A paused Task keeps its places and its open Inbox items, but no agent or shell runs.
+
+`Paused`: `{"terminal":Terminal,"paused_at","loop"?}`. `terminal` is the agent as it was at pause, with `live: false`, `status: null` and its labels; its `id` stays the paused Task's id, and the open items keep pointing at it. `paused_at` is Unix seconds. `loop` is the LoopSpec of the Task Loop that was active (armed, checking or paused), absent when none was.
+
+- `pause-task` takes a Task's agent (`muxa.kind` = `task`, `muxa.role` = `agent`), live or ended; another terminal is `bad-request`, one that is gone `not-found`. The host keeps the record in `<state dir>/paused.json` first. Then a live loop stops with reason `user`, the agent is killed and its terminal removed, and its shells end. A kill makes no Failed item. Places, branches and items stay.
+- `resume-task` runs the Workspace's agent again in the same places, with the same labels and title, as `inbox-retry` does for an ended agent: the continue prompt (ADR 0098), none for a talk, and no plan mode. Claude Code also gets `--continue` when its config dir holds a conversation for the working place. Another `claude` or `codex` process there is `conflict`. A working place that is gone is `bad-request`, and the Task stays paused. A loop that was active is armed again with its attempts kept. An id that is not paused is `not-found`.
+- Any agent that starts in a paused Task's working place (`resume-task`, `start-task` with an `existing` place, `inbox-retry`) ends the pause: the record goes, and open items with the paused id move to the new agent.
+- `close-task` with a paused id closes it as a live Task: the places are checked and removed (steps 1 and 3 of `inbox-approve`), the open items are Done, and the record goes.
+- A `paused` notification follows each change.
 
 ### Task Loop
 
@@ -332,14 +348,14 @@ ADR 0072. The actions of a Review or Failed item, and the Workspaces a client of
 
 A Review item with no `terminal`, or another kind, is `bad-request`. A terminal that is gone is `not-found`; the client offers Done instead.
 
-`close-task` runs steps 1 to 3 for the agent `terminal`, live or ended, then marks every open item with that `terminal` Done. A terminal that is not a Task's agent is `bad-request`; one that is gone is `not-found`.
+`close-task` runs steps 1 to 3 for the agent `terminal`, live, ended or paused, then marks every open item with that `terminal` Done. A terminal that is not a Task's agent is `bad-request`; one that is gone is `not-found`.
 
 `inbox-request-changes` types `comment` into the live agent of an open Review item as the user's input, then Enter, and marks the item Done. A comment is 1 to 8192 bytes, of text, newlines and tabs; `\r\n` counts as a newline. One line is typed as it is; several lines go as one bracketed paste (`ESC [200~` … `ESC [201~`). An ended agent is `bad-request`. The comment never reaches the server's log.
 
 `inbox-retry` marks an open Failed item Done after it runs again what made it:
 - `routine`: the Routine runs now, as `run-routine`; `conflict` while it already runs.
 - `terminal`, live agent: its Task Loop starts again with the same check and `reset` (a failed loop). No loop is `bad-request`.
-- `terminal`, ended agent: the Workspace's agent starts again in the same working place, with the same places, labels and connections, but not in plan mode. The ended terminal is removed. A working place that is gone is `bad-request`.
+- `terminal`, ended agent: the Workspace's agent starts again in the same working place, with the same places, labels and connections, but not in plan mode. Claude Code gets `--continue` when it kept a conversation there, and another `claude` or `codex` process there is `conflict` (ADR 0102). The ended terminal is removed. A working place that is gone is `bad-request`.
 - Neither, or another kind: `bad-request`.
 
 ### Settings
