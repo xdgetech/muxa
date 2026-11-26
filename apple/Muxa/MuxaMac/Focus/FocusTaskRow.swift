@@ -3,8 +3,10 @@ import SwiftUI
 
 /// One terminal in Focus's sidebar: its state dot, its title and the state the
 /// program reports. One accessibility element, `terminal.<id>`. A Task's row
-/// closes the Task, after asking, from its hover × or its context menu.
+/// closes the Task, after asking, from its hover × or its context menu, and
+/// pauses or resumes it from the menu. A paused Task's row is dimmed.
 struct FocusTaskRow: View {
+    @Environment(NextModel.self) private var model
     @Environment(MacChrome.self) private var chrome
     enum Style {
         /// On the amber ground, with the Workspace before the title.
@@ -48,6 +50,7 @@ struct FocusTaskRow: View {
             .onHover { hovered = $0 }
             .contextMenu {
                 if terminal.isTaskAgent {
+                    PauseMenuItems(terminal: terminal)
                     Button("Close Task…") { chrome.closingTask = terminal }
                 }
             }
@@ -56,7 +59,7 @@ struct FocusTaskRow: View {
     private var row: some View {
         Button(action: open) {
             HStack(spacing: 8) {
-                StateDot(color: terminal.state.color, size: 8)
+                StateDot(color: taskState.color, size: 8)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).lineLimit(1).truncationMode(.tail)
                     if let detail {
@@ -71,7 +74,7 @@ struct FocusTaskRow: View {
                 if let state, !closable {
                     Text(state)
                         .font(.system(size: 11))
-                        .foregroundStyle(style == .needsYou ? Palette.textSecondary : terminal.state.color)
+                        .foregroundStyle(style == .needsYou ? Palette.textSecondary : taskState.color)
                 }
             }
             .font(.system(size: 13))
@@ -81,6 +84,7 @@ struct FocusTaskRow: View {
             .padding(.vertical, style == .task || style == .loose ? 4 : 6)
             .background(style == .needsYou ? Palette.bannerBack : .clear, in: RoundedRectangle(cornerRadius: 7))
             .selectableRow(selected)
+            .opacity(taskState == .paused ? 0.6 : 1)
             .contentShape(Rectangle())
             .accessibilityElement(children: .combine)
         }
@@ -90,6 +94,8 @@ struct FocusTaskRow: View {
     }
 
     private var closable: Bool { terminal.isTaskAgent && hovered }
+
+    private var taskState: TaskState { model.taskState(terminal) }
 
     private var title: String {
         guard style == .needsYou, let ws = terminal.workspace else { return terminal.title }
@@ -104,9 +110,10 @@ struct FocusTaskRow: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// Only what the program reported (OSC 7501); a Needs-you row keeps its
-    /// own word, `waiting` or `blocked`.
+    /// Only what the program reported (OSC 7501), or `paused` (ADR 0102); a
+    /// Needs-you row keeps its own word, `waiting` or `blocked`.
     private var state: String? {
+        if taskState == .paused { return TaskState.paused.title.lowercased() }
         guard let reported = terminal.status?.state else { return nil }
         return style == .needsYou ? reported : TaskState(reported).title.lowercased()
     }

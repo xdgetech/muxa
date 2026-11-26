@@ -44,6 +44,11 @@ public enum V2Request: Sendable {
     case upload(terminal: String, name: String, data: Data)
     /// Closes the Task of the agent `terminal` as Approve does, and its open items.
     case closeTask(terminal: String, worktree: WorktreeChoice? = nil)
+    /// Stops the Task's agent and shells and keeps the Task (ADR 0102).
+    case pauseTask(terminal: String)
+    /// Runs the paused Task `terminal` again, in its places.
+    case resumeTask(terminal: String)
+    case pausedTasks
     case routines
     case runRoutine(workspace: String, name: String)
     case readerList(terminal: String, kind: ReaderKind, html: Bool = false)
@@ -103,6 +108,9 @@ public enum V2Request: Sendable {
             set("upload", ["terminal": terminal, "name": name, "data": data.base64EncodedString()])
         case let .closeTask(terminal, worktree):
             set("close-task", ["terminal": terminal, "worktree": worktree?.rawValue])
+        case let .pauseTask(terminal): set("pause-task", ["terminal": terminal])
+        case let .resumeTask(terminal): set("resume-task", ["terminal": terminal])
+        case .pausedTasks: set("paused-tasks", [:])
         case .routines: set("routines", [:])
         case let .runRoutine(workspace, name): set("run-routine", ["workspace": workspace, "name": name])
         case let .readerList(terminal, kind, html):

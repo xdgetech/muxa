@@ -47,7 +47,7 @@ struct FocusTabStrip: View {
         HStack(spacing: 0) {
             Button { nav.terminal = t.id } label: {
                 HStack(spacing: 8) {
-                    StateDot(color: t.state.color, size: 8)
+                    StateDot(color: model.taskState(t).color, size: 8)
                     Text(t.title).lineLimit(1).fixedSize()
                 }
                 .padding(.leading, 12)
@@ -76,7 +76,7 @@ struct FocusTabStrip: View {
         .frame(maxHeight: .infinity)
         .background(on ? Palette.ground : .clear, ignoresSafeAreaEdges: [])
         .overlay(alignment: .bottom) {
-            Rectangle().fill(on ? t.state.color : .clear).frame(height: 2)
+            Rectangle().fill(on ? model.taskState(t).color : .clear).frame(height: 2)
         }
         .onHover { hovered = $0 ? t.id : (hovered == t.id ? nil : hovered) }
     }

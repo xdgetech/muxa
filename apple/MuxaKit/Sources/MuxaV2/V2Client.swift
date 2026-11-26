@@ -102,15 +102,30 @@ public actor V2Client {
 
     // MARK: Requests
 
-    func request(_ r: V2Request, attach: Channel? = nil) async throws -> Data {
+    /// `timeout` gives up on the reply with `timedOut`; a late reply is dropped.
+    func request(_ r: V2Request, attach: Channel? = nil, timeout: Duration? = nil) async throws -> Data {
         if let gone { throw V2Error.lost(gone) }
         nextID += 1
         let id = nextID
         let body = try r.json(id: id)
+        if let timeout {
+            Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                await self?.expire(id)
+            }
+        }
         return try await withCheckedThrowingContinuation { cont in
             waiting[id] = (cont, attach)
             send(Frame.control(body))
         }
+    }
+
+    /// Requests still waiting for a reply.
+    var pendingRequests: Int { waiting.count }
+
+    private func expire(_ id: UInt64) {
+        guard let (cont, _) = waiting.removeValue(forKey: id) else { return }
+        cont.resume(throwing: V2Error.timedOut("no reply to request \(id)"))
     }
 
     public func terminals() async throws -> [Terminal] {
@@ -159,7 +174,7 @@ public actor V2Client {
         _ = try await request(.closeTerminal(terminal: terminal))
     }
 
-    /// Asks for `changed`, `removed`, `resync` and `inbox` events.
+    /// Asks for `changed`, `removed`, `resync`, `inbox`, `loops` and `paused` events.
     public func watch() async throws { _ = try await request(.watch) }
 
     public func parseCapture(_ text: String, today: String) async throws -> Capture {
@@ -258,6 +273,24 @@ public actor V2Client {
         try field("loop", of: await request(.loopStop(terminal: terminal)))
     }
 
+    // MARK: Paused Tasks
+
+    /// Stops the Task of the agent `terminal` and keeps it (ADR 0102).
+    public func pauseTask(_ terminal: String) async throws -> Paused {
+        try field("paused", of: await request(.pauseTask(terminal: terminal)))
+    }
+
+    /// The new agent of the paused Task `terminal`; its open items move to it.
+    public func resumeTask(_ terminal: String) async throws -> (Terminal, existing: Bool) {
+        let reply = try await request(.resumeTask(terminal: terminal))
+        return (try field("terminal", of: reply), try field("existing", of: reply))
+    }
+
+    /// `timeout`: an older server never answers `paused-tasks` (see `NextModel`).
+    public func pausedTasks(timeout: Duration? = nil) async throws -> [Paused] {
+        try field("paused", of: await request(.pausedTasks, timeout: timeout))
+    }
+
     // MARK: Terminal channels
 
     /// Sends input; it is kept until the server acknowledges it.
@@ -343,6 +376,8 @@ public actor V2Client {
             eventsOut.yield(.chatEnded(chat: n, reason: msg["reason"] as? String ?? ""))
         case "loops":
             if let l: [LoopInfo] = try? field("loops", of: data) { eventsOut.yield(.loops(l)) }
+        case "paused":
+            if let p: [Paused] = try? field("paused", of: data) { eventsOut.yield(.paused(p)) }
         case "reader":
             guard let n = (msg["reader"] as? NSNumber)?.uint32Value,
                   let content: ReaderContent = try? field("content", of: data) else { return }

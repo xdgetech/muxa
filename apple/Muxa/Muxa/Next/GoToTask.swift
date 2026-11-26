@@ -207,6 +207,7 @@ private extension TaskState {
         case .done: 1
         case .idle: 2
         case .working: 3
+        case .paused: 4
         }
     }
 }

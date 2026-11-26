@@ -9,7 +9,7 @@ extension DemoContent {
     /// its Routine `scan` (`t8`, ADR 0086). The Bot `scout` has no Routines
     /// and a live talk (`t9`). The Capture assistant suggests
     /// where `d13` goes (ADR 0084). Approving `d8` needs force: its worktree
-    /// holds work. `d9` came from muxa v1.
+    /// holds work. `d9` came from muxa v1. `t10` is a paused Task (ADR 0102).
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String, app: String = "claude-code") -> Terminal {
             Terminal(
@@ -194,7 +194,18 @@ extension DemoContent {
                     ])),
             ],
             losesWork: ["d8": "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"],
-            settings: settings)
+            settings: settings,
+            paused: [
+                Paused(
+                    terminal: Terminal(
+                        id: "t10", name: "api-review", live: false, status: nil,
+                        labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.branch": "api-review",
+                                 "muxa.workspace": "app", "muxa.repo": "/demo/app", "muxa.dir": "/demo/app-api-review",
+                                 "muxa.title": "Wait for the API review",
+                                 "muxa.places": #"[{"kind":"branch","path":"/demo/app-api-review","branch":"api-review"}]"#],
+                        cols: 80, rows: 24),
+                    pausedAt: 1_764_000_000),
+            ])
     }()
 
     /// What pr-watch proposed in a talk: a turned-off Routine of its own and

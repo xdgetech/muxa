@@ -122,6 +122,11 @@ struct PaneMenuItems: View {
         Button("Close Other Shells") { when(severalPanes) { pane(.closeOthers) } }
             .shortcut(.closeOtherPanes)
         Divider()
+        Button("Pause Task") {
+            guard let id = runningTask?.id else { return NSSound.beep() }
+            Task { await nav.pause(id, model: model) }
+        }
+        .shortcut(.pauseTask)
         Button("Close Task…") { when(focusedTask != nil) { chrome.closingTask = focusedTask } }
             .shortcut(.closeTask)
         Divider()
@@ -149,10 +154,16 @@ struct PaneMenuItems: View {
         PaneCommands.run(command, nav: nav, model: model)
     }
 
-    /// The Task Focus shows, while its agent runs.
+    /// The Task Focus shows: its agent, or the paused Task as it was.
     private var focusedTask: Terminal? {
         guard nav.focus else { return nil }
-        return model.terminals.first { $0.id == nav.terminal && $0.isTaskAgent }
+        return model.terminals.first { $0.id == nav.terminal && $0.isTaskAgent } ?? model.pausedRecord(nav.terminal)?.terminal
+    }
+
+    /// The Task Focus shows, while its agent runs.
+    private var runningTask: Terminal? {
+        guard nav.focus else { return nil }
+        return model.terminals.first { $0.id == nav.terminal && $0.isTaskAgent && $0.live }
     }
 }
 

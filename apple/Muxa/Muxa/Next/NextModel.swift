@@ -52,6 +52,8 @@ final class NextModel {
     private(set) var chatEnded: [UInt32: String] = [:]
     /// Task Loops by agent terminal.
     private(set) var loops: [String: LoopInfo] = [:]
+    /// The paused Tasks, oldest first (ADR 0102).
+    private(set) var paused: [Paused] = []
     /// The Workspaces with their repos and branches, for Focus's sidebar.
     private(set) var workspaceList: [Workspace] = []
     /// Open Reader files by reader number, as the server last sent them.
@@ -67,6 +69,10 @@ final class NextModel {
     private var sinks: [UInt32: @MainActor (V2Event) -> Void] = [:]
     /// The channel each shown terminal is attached on, for Chat's input.
     private var channelOf: [String: UInt32] = [:]
+
+    /// A host older than ADR 0102 answers `paused-tasks` with an error that has
+    /// no id, so the request would wait forever.
+    static let pausedLoadTimeout: Duration = .seconds(5)
 
     static let clientName = "muxa-ios \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")"
 
@@ -257,7 +263,9 @@ final class NextModel {
         case .changed(let t):
             if let at = terminals.firstIndex(where: { $0.id == t.id }) { terminals[at] = t } else { terminals.append(t) }
         case .removed(let id): terminals.removeAll { $0.id == id }
-        case .resync: terminals = (try? await c.terminals()) ?? terminals
+        case .resync:
+            terminals = (try? await c.terminals()) ?? terminals
+            loadPaused(from: c)
         case .output(let ch, _), .paint(let ch), .closed(let ch, _): sinks[ch]?(e)
         case .chat(let n, let update):
             guard let entries = chats[n] else { break }
@@ -268,6 +276,7 @@ final class NextModel {
             chatPrompts[n] = nil
             chatEnded[n] = reason
         case .loops(let all): loops = Dictionary(all.map { ($0.terminal, $0) }) { _, b in b }
+        case .paused(let all): paused = all
         case .reader(let n, let content):
             if readerContents[n] != nil { readerContents[n] = content }
         case .readerEnded(let n, let reason):
@@ -312,6 +321,13 @@ final class NextModel {
         } catch {
             requestError = Self.describe(error)
         }
+        loadPaused(from: c)
+    }
+
+    /// On its own, so a host that never answers holds up no other load or
+    /// event; it has no paused Tasks to show.
+    private func loadPaused(from c: V2Client) {
+        Task { self.paused = (try? await c.pausedTasks(timeout: Self.pausedLoadTimeout)) ?? [] }
     }
 
     private func drop() async {
@@ -334,6 +350,7 @@ final class NextModel {
         readerContents = [:]
         readerEnded = [:]
         loops = [:]
+        paused = []
         workspaceList = []
         chats = [:]
         chatPrompts = [:]
@@ -370,11 +387,41 @@ final class NextModel {
         await run { c in
             do {
                 self.inbox = try await c.inbox(.closeTask(terminal: terminal, worktree: force ? .force : nil))
+                self.paused.removeAll { $0.id == terminal }
             } catch V2Error.refused(let code, let message) where code == "would-lose-work" {
                 wouldLoseWork = message
             }
         }
         return wouldLoseWork
+    }
+
+    // MARK: Paused Tasks
+
+    /// Pauses the Task of the agent `terminal` (ADR 0102). The record is kept
+    /// at once, so an open Task shows its Paused view instead of closing.
+    @discardableResult
+    func pauseTask(_ terminal: String) async -> Bool {
+        var done = false
+        await run { c in
+            let p = try await c.pauseTask(terminal)
+            if !self.paused.contains(where: { $0.id == p.id }) { self.paused.append(p) }
+            self.terminals.removeAll { $0.id == terminal }
+            done = true
+        }
+        return done
+    }
+
+    /// Runs a paused Task's agent again; its new terminal, kept at once so the
+    /// Task can open on it.
+    func resumePaused(_ p: Paused) async -> Terminal? {
+        var started: Terminal?
+        await run { c in
+            let (t, _) = try await c.resumeTask(p.id)
+            self.paused.removeAll { $0.id == p.id }
+            if let at = self.terminals.firstIndex(where: { $0.id == t.id }) { self.terminals[at] = t } else { self.terminals.append(t) }
+            started = t
+        }
+        return started
     }
 
     // MARK: Uploads

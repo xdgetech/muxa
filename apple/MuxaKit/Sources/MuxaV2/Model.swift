@@ -514,6 +514,25 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// A paused Task (ADR 0102): its agent as it was at pause, with `live`
+/// false and no status. Its `id` stays the Task's id, and open Inbox items
+/// keep pointing at it.
+public struct Paused: Codable, Equatable, Sendable, Identifiable {
+    public var terminal: Terminal
+    /// Unix seconds.
+    public var pausedAt: Int64
+    /// The Task Loop that was active at pause; Resume arms it again.
+    public var loop: LoopSpec?
+
+    public var id: String { terminal.id }
+
+    public init(terminal: Terminal, pausedAt: Int64, loop: LoopSpec? = nil) {
+        self.terminal = terminal
+        self.pausedAt = pausedAt
+        self.loop = loop
+    }
+}
+
 /// What the Reader lists and opens (plan F2).
 public enum ReaderKind: String, Codable, Sendable, CaseIterable {
     case docs, changes, images
@@ -787,6 +806,8 @@ public enum V2Event: Equatable, Sendable {
     case chatEnded(chat: UInt32, reason: String)
     /// A Task Loop changed; every loop as it is now.
     case loops([LoopInfo])
+    /// A Task was paused, resumed or closed; every paused Task, oldest first.
+    case paused([Paused])
     /// An open Reader file changed.
     case reader(reader: UInt32, content: ReaderContent)
     /// An open Reader file ended; the reader is closed.
@@ -800,6 +821,8 @@ public enum V2Error: Error, Equatable, Sendable {
     case refused(code: String, message: String)
     case lost(String)
     case badMessage(String)
+    /// No reply within the request's timeout.
+    case timedOut(String)
 }
 
 enum Coding {

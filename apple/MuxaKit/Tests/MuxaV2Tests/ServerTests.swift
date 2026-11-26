@@ -206,6 +206,29 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aPausedTaskIsListedAndResumesWithItsItems() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        try await c.watch()
+        var events = c.events.makeAsyncIterator()
+        let (agent, _) = try await c.startTask(workspace: "w", title: "wait")
+        let review = try #require(try await c.inbox(.taskReview(terminal: agent.id)).items.first)
+        let paused = try await c.pauseTask(agent.id)
+        #expect(paused.id == agent.id && !paused.terminal.live && paused.terminal.taskTitle == "wait")
+        let seen = await Self.next(&events) { if case .paused = $0 { false } else { true } }
+        #expect(seen == .paused([paused]))
+        #expect(try await c.pausedTasks() == [paused])
+        #expect(try await !c.terminals().contains { $0.id == agent.id })
+
+        let (again, _) = try await c.resumeTask(agent.id)
+        #expect(again.live && again.taskTitle == "wait" && again.id != agent.id)
+        #expect(try await c.pausedTasks().isEmpty)
+        #expect(try await c.inbox().items.first { $0.id == review.id }?.terminal == again.id)
+        await #expect(throws: V2Error.self) { try await c.resumeTask(agent.id) }
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func aResumeContinuesWithoutAPaint() async throws {
         let server = try Server()
         let first = try await server.connect()
