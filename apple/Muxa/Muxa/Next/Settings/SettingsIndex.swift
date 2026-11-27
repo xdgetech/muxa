@@ -9,6 +9,8 @@ enum SettingsPlace: Hashable {
     case assistant
     /// The build disk (ADR 0102).
     case build
+    /// The host's CPU, memory and disks, and what uses them (ADR 0105).
+    case host
     /// How terminals look on this device.
     case terminal
 }
@@ -84,6 +86,9 @@ struct SettingsIndex: View {
                     LabeledContent("Build disk", value: Self.summary(build))
                 }
             }
+            row(.host, id: "settings.host") {
+                LabeledContent("Host resources") { HostAlertDot(alerts: model.host?.alerts ?? []) }
+            }
         }
         .listRowBackground(Palette.card)
     }
@@ -126,6 +131,7 @@ struct SettingsDetail: View {
         case .workers: WorkersSettings()
         case .assistant: AssistantSettings()
         case .build: BuildSettings()
+        case .host: HostSettings()
         case .terminal: TerminalSettingsForm().navigationTitle("Appearance")
         }
     }
@@ -133,6 +139,7 @@ struct SettingsDetail: View {
 
 /// Settings as one stack: the phone's tab. The Mac has its own window (`MacSettingsView`).
 struct SettingsStack: View {
+    @Environment(NextNavigation.self) private var nav
     @State private var path: [SettingsPlace] = []
 
     var body: some View {
@@ -143,5 +150,10 @@ struct SettingsStack: View {
                 .navigationDestination(for: SettingsPlace.self) { SettingsDetail(place: $0) }
         }
         .tint(Palette.accent)
+        .onChange(of: nav.settingsRequest, initial: true) { _, place in
+            guard let place else { return }
+            path = [place]
+            nav.settingsRequest = nil
+        }
     }
 }

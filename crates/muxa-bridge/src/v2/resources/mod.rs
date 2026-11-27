@@ -1,5 +1,5 @@
 //! `host`: a sample of the host's CPU, memory, disks and what uses them
-//! (ADR 0103). One sample serves every session for a few seconds.
+//! (ADR 0105). One sample serves every session for a few seconds.
 
 mod groups;
 mod limits;

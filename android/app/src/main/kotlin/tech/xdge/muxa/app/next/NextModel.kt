@@ -24,6 +24,8 @@ import tech.xdge.muxa.v2.KeyBytes
 import tech.xdge.muxa.v2.ChatPrompt
 import tech.xdge.muxa.v2.DemoChannel
 import tech.xdge.muxa.v2.DiffScope
+import tech.xdge.muxa.v2.DiskRow
+import tech.xdge.muxa.v2.HostReport
 import tech.xdge.muxa.v2.Inbox
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.LoopInfo
@@ -113,6 +115,17 @@ class NextModel(
     /** Why a Reader file ended, by reader number, until it is closed. */
     var readerEnded by mutableStateOf(emptyMap<Int, String>())
         private set
+
+    /** The host's resources as last reported (ADR 0105), while some screen watches them. */
+    var hostReport: HostReport? by mutableStateOf(null)
+        private set
+
+    /** Why the host sends no report, such as an older host; null while it does. */
+    var hostError: String? by mutableStateOf(null)
+        private set
+
+    /** Screens that show the host's resources; the host reports only while this is above 0. */
+    private var hostWatchers = 0
 
     /** The password of a key setup that waits for the user to trust the host key. */
     private var setUpAfterTrust: String? = null
@@ -292,6 +305,7 @@ class NextModel(
                 chatEnded = chatEnded + (e.chat to e.reason)
             }
             is V2Event.Loops -> loops = e.loops.associateBy { it.terminal }
+            is V2Event.Host -> hostReport = e.report
             is V2Event.Reader -> if (e.reader in readerContents) readerContents = readerContents + (e.reader to e.content)
             is V2Event.ReaderEnded -> {
                 readerContents = readerContents - e.reader
@@ -331,6 +345,8 @@ class NextModel(
         terminals = c.terminals()
         c.routines().let { (r, p) -> routines = r; routineProblems = p }
         loops = c.loops().associateBy { it.terminal }
+        // A watch ends with its connection.
+        if (hostWatchers > 0) startHostWatch(c)
     }
 
     private suspend fun drop() {
@@ -353,6 +369,8 @@ class NextModel(
         readerContents = emptyMap()
         readerEnded = emptyMap()
         loops = emptyMap()
+        hostReport = null
+        hostError = null
         chats = emptyMap()
         chatPrompts = emptyMap()
         chatEnded = emptyMap()
@@ -414,6 +432,48 @@ class NextModel(
         var list: List<Workspace>? = null
         request { list = it.workspaces() }
         return list
+    }
+
+    /** The disk use of Task places and leftovers (ADR 0102); a `du` on the host, so only on request. */
+    suspend fun disk(): List<DiskRow>? {
+        var rows: List<DiskRow>? = null
+        request { rows = it.disk() }
+        return rows
+    }
+
+    /** A screen that shows the host's resources appeared; pair with [unwatchHost]. */
+    fun watchHost() {
+        hostWatchers += 1
+        val c = client
+        if (hostWatchers == 1 && c != null) scope.launch { startHostWatch(c) }
+    }
+
+    fun unwatchHost() {
+        hostWatchers = maxOf(0, hostWatchers - 1)
+        val c = client
+        if (hostWatchers == 0 && c != null) {
+            scope.launch {
+                try {
+                    c.hostUnwatch()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The watch ends with the connection anyway.
+                    hostError = describe(e)
+                }
+            }
+        }
+    }
+
+    private suspend fun startHostWatch(c: V2Client) {
+        try {
+            c.hostWatch()
+            hostError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            hostError = describe(e)
+        }
     }
 
     /** The host's settings (ADR 0074) over this window's connection. */

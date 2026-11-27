@@ -62,6 +62,9 @@ final class NextNavigation {
     /// it keeps that terminal instead of landing.
     var botRoutedTo: String?
     var sidebar = NavigationSplitViewVisibility.all
+    /// A Settings page another place asked for, e.g. the host summary;
+    /// Settings shows it and clears this.
+    var settingsRequest: SettingsPlace?
 
     /// The open Task's terminal (its agent), whichever pane has the keyboard.
     /// Picking one of its shells makes that pane active; picking another

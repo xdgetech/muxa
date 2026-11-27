@@ -52,6 +52,12 @@ final class ScreenshotTests: XCTestCase {
         }
         XCTAssertTrue(any["routine.nightly-backup"].waitForExistence(timeout: 5))
         save(dir, "routines")
+        app.launch()
+        XCTAssertTrue(any["item.d1"].waitForExistence(timeout: 10))
+        save(dir, "host-summary")
+        app.buttons["host.summary"].tap()
+        XCTAssertTrue(any["host.task.t1"].waitForExistence(timeout: 10))
+        save(dir, "host")
     }
 
     /// The Reader's pages and the sheets, to check their colors against the mocks.

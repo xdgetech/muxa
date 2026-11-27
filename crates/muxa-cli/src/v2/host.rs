@@ -1,4 +1,4 @@
-//! `host` and `host watch` (ADR 0103): the host's CPU, memory and disks,
+//! `host` and `host watch` (ADR 0105): the host's CPU, memory and disks,
 //! and what uses them.
 
 use serde_json::{Value, json};

@@ -76,6 +76,13 @@ sealed interface V2Request {
     data object Disk : V2Request
     /** A dry run unless [dryRun] is false; [force] needs [paths]. */
     data class DiskClean(val paths: List<String> = emptyList(), val force: Boolean = false, val dryRun: Boolean = true) : V2Request
+
+    /** The host's resources once (ADR 0105). */
+    data object Host : V2Request
+
+    /** A `host` notification now and every 10 s, until [HostUnwatch] or the connection ends. */
+    data object HostWatch : V2Request
+    data object HostUnwatch : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request
     data class ReaderListOf(val terminal: String, val kind: ReaderKind, val html: Boolean = false) : V2Request
@@ -151,6 +158,9 @@ sealed interface V2Request {
                 put("force", r.force)
                 put("dry_run", r.dryRun)
             }
+            Host -> type("host")
+            HostWatch -> type("host-watch")
+            HostUnwatch -> type("host-unwatch")
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
             is ReaderListOf -> { type("reader-list"); put("terminal", r.terminal); put("kind", r.kind.wire); put("html", r.html) }

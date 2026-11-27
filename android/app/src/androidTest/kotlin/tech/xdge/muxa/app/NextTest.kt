@@ -58,8 +58,28 @@ class NextTest {
     @Test
     fun homeShowsTheInboxAndWhoNeedsYou() {
         launch()
-        for (id in listOf("d1", "d2", "d3", "d4", "d5", "d6")) compose.waitUntilAtLeastOneExists(hasTestTag("item.$id"), TIMEOUT)
+        // The host summary in the sidebar's footer leaves room for about five items on a tablet.
+        for (id in listOf("d1", "d2", "d3", "d4", "d5", "d6")) {
+            compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.$id"))
+            compose.waitUntilAtLeastOneExists(hasTestTag("item.$id"), TIMEOUT)
+        }
         compose.onNodeWithTag("needsyou.t2").assertExists()
+    }
+
+    @Test
+    fun theHostSummaryOpensHostResources() {
+        launch()
+        compose.waitUntilAtLeastOneExists(hasTestTag("host.summary"), TIMEOUT)
+        compose.onNodeWithTag("host.summary").assert(hasContentDescription("memory 96 percent used, warning", substring = true))
+        compose.onNodeWithTag("host.summary").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.host.page"), TIMEOUT)
+        compose.onNodeWithTag("host.tile.memory").assert(hasContentDescription("pressure warn, warning", substring = true))
+        compose.onNodeWithTag("host.group.t1").performScrollTo().assert(hasText("fix-login", substring = true))
+        compose.onNodeWithTag("host.task.t1.open").assertExists()
+        compose.onNodeWithTag("host.group.simulator").performScrollTo().assert(hasText("Booted by Xcode or a test", substring = true))
+        compose.onNodeWithTag("host.scan").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("host.disk.task.t1"), TIMEOUT)
+        compose.onNodeWithTag("host.disk.leftover.claude-worktree").performScrollTo().assert(hasText("1 cleanable", substring = true))
     }
 
     @Test
@@ -536,6 +556,7 @@ class NextTest {
     @Test
     fun startTaskOnAnItemTakesItsTitle() {
         launch()
+        compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d6"))
         compose.onNodeWithTag("item.d6").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("detail.starttask"), TIMEOUT)
         compose.onNodeWithTag("detail.starttask").performClick()

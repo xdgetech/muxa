@@ -37,6 +37,11 @@ struct TabletRoot: View {
             botPath = route.terminal.map { [.conversation(terminal: $0)] } ?? []
             nav.botRoute = nil
         }
+        .onChange(of: nav.settingsRequest, initial: true) { _, place in
+            guard let place else { return }
+            selectedSetting = place
+            nav.settingsRequest = nil
+        }
     }
 
     /// The sidebar's segment: Tasks while a Task is open, else the Inbox, Bots or Settings.

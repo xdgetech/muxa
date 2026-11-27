@@ -34,6 +34,7 @@ struct PhoneInbox: View {
                 InboxFilterMenu(filter: $filter, items: model.inbox.items, reordering: $reordering,
                                 deleteOlder: $deleteOlder)
             }
+            if model.isConnected { HostSummary(look: .chip) }
             NeedsYouBanner(open: nav.open) { nav.tab = .tasks }
             CaptureField()
         }

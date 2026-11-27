@@ -365,7 +365,7 @@ ADR 0102. `disk` lists, with sizes in bytes (`du -sk`, links not followed):
 
 ### Host
 
-ADR 0103. `HostReport`:
+ADR 0105. `HostReport`:
 
 ```json
 {"sampled_ms":1795700000000,

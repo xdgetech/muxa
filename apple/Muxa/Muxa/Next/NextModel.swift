@@ -58,6 +58,10 @@ final class NextModel {
     private(set) var readerContents: [UInt32: ReaderContent] = [:]
     /// Why a Reader file ended, by reader number, until it is closed.
     private(set) var readerEnded: [UInt32: String] = [:]
+    /// The host's resources, kept current while a view watches them (ADR 0105).
+    private(set) var host: HostReport?
+    /// Views showing `host`: the first starts the watch, the last ends it.
+    private var hostWatchers = 0
 
     private var client: V2Client?
     private var resume = V2Client.State()
@@ -234,6 +238,8 @@ final class NextModel {
             try await c.watch()
             link = .connected
             await reload()
+            // A watch ends with its connection.
+            if hostWatchers > 0 { await run { try await $0.hostWatch() } }
         } catch let TransportError.hostKeyMismatch(presented) {
             untrustedKey = presented
             link = .failed("Check the host key before you trust it.")
@@ -268,6 +274,7 @@ final class NextModel {
             chatPrompts[n] = nil
             chatEnded[n] = reason
         case .loops(let all): loops = Dictionary(all.map { ($0.terminal, $0) }) { _, b in b }
+        case .host(let report): host = report
         case .reader(let n, let content):
             if readerContents[n] != nil { readerContents[n] = content }
         case .readerEnded(let n, let reason):
@@ -335,6 +342,7 @@ final class NextModel {
         readerEnded = [:]
         loops = [:]
         workspaceList = []
+        host = nil
         chats = [:]
         chatPrompts = [:]
         chatEnded = [:]
@@ -536,6 +544,28 @@ final class NextModel {
         } catch {
             requestError = Self.describe(error)
         }
+    }
+
+    // MARK: Host resources
+
+    /// A view shows the host's resources; call `unwatchHost` when it goes.
+    func watchHost() {
+        hostWatchers += 1
+        guard hostWatchers == 1, client != nil else { return }
+        Task { await run { try await $0.hostWatch() } }
+    }
+
+    func unwatchHost() {
+        hostWatchers = max(0, hostWatchers - 1)
+        guard hostWatchers == 0, client != nil else { return }
+        Task { await run { try await $0.hostUnwatch() } }
+    }
+
+    /// The disk use of Task places and leftovers; nil after an error, shown in `requestError`.
+    func scanDisk() async -> [DiskRow]? {
+        var rows: [DiskRow]?
+        await run { rows = try await $0.disk() }
+        return rows
     }
 
     // MARK: Chat

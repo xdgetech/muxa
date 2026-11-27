@@ -184,6 +184,17 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** The host's Task places, other worktrees and build folders (ADR 0102). */
     suspend fun disk(): List<DiskRow> = field("rows", request(V2Request.Disk))
 
+    suspend fun host(): HostReport = field("host", request(V2Request.Host))
+
+    /** Sends [V2Event.Host] now and every 10 s, until [hostUnwatch] or the connection ends. */
+    suspend fun hostWatch() {
+        request(V2Request.HostWatch)
+    }
+
+    suspend fun hostUnwatch() {
+        request(V2Request.HostUnwatch)
+    }
+
     /** Removes rows of [disk]; a dry run unless [dryRun] is false. */
     suspend fun diskClean(paths: List<String> = emptyList(), force: Boolean = false, dryRun: Boolean = true): DiskCleaned {
         val reply = request(V2Request.DiskClean(paths, force, dryRun))
@@ -348,6 +359,7 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
                 out.trySend(V2Event.ChatEnded(n, msg.str("reason") ?: ""))
             }
             "loops" -> runCatching { field<List<LoopInfo>>("loops", msg) }.getOrNull()?.let { out.trySend(V2Event.Loops(it)) }
+            "host" -> runCatching { field<HostReport>("host", msg) }.getOrNull()?.let { out.trySend(V2Event.Host(it)) }
             "reader" -> {
                 val n = (msg["reader"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
                 runCatching { field<ReaderContent>("content", msg) }.getOrNull()?.let { out.trySend(V2Event.Reader(n, it)) }

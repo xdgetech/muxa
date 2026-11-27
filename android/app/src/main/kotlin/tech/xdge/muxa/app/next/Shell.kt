@@ -59,6 +59,8 @@ class Nav(
     val newTask: (TaskSeed) -> Unit,
     val open: (Terminal) -> Unit,
     val bots: BotNav,
+    /** Settings › Host resources: the phone's Settings tab on that page. */
+    val hostResources: () -> Unit = { go(Section.SETTINGS) },
 )
 
 private data class Tab(val section: Section, val title: String, val icon: ImageVector, val tag: String)
@@ -115,6 +117,7 @@ fun Sidebar(
     val parts = listOf(Section.INBOX, Section.TASKS, Section.BOTS)
     val open = model.inbox.items.size
     var settings by remember { mutableStateOf(false) }
+    var hostPage by remember { mutableStateOf(false) }
     Column(modifier.width(SIDEBAR_WIDTH.dp).fillMaxHeight().background(Palette.surface).endBorder()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -136,11 +139,20 @@ fun Sidebar(
         }
         Column(Modifier.weight(1f).fillMaxWidth(), content = content)
         HorizontalDivider(color = Palette.border)
+        HostSummary(model, {
+            hostPage = true
+            settings = true
+        }, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp), card = true)
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             HostMenu(model) { settings = true }
         }
     }
-    if (settings) SettingsDialog(model, nav) { settings = false }
+    if (settings) {
+        SettingsDialog(model, nav, hostPage, { hostPage = it }) {
+            settings = false
+            hostPage = false
+        }
+    }
 }
 
 private fun sectionTitle(s: Section) = when (s) {

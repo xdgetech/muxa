@@ -32,7 +32,9 @@ struct HomeView: View {
                 (Shortcut.later.display, "later"),
                 (Shortcut.done.display, "done"),
                 (Shortcut.capture.display, "capture"),
-            ])
+            ]) {
+                if model.isConnected { HostSummary(look: .strip) }
+            }
         }
         .background(Palette.ground)
         .onAppear {

@@ -248,6 +248,16 @@ actor DemoServer {
             answerSuggestion(id, item, accept: m["accept"] as? Bool ?? false)
         case "workspaces":
             reply(id, ["workspaces": json(content.taskWorkspaces.map(withTasks))])
+        case "host":
+            reply(id, ["host": json(DemoHost.report(terminals: content.terminals))])
+        case "host-watch":
+            // One report at once; the demo's figures do not change.
+            reply(id, [:])
+            send(["type": "host", "host": json(DemoHost.report(terminals: content.terminals))])
+        case "host-unwatch":
+            reply(id, [:])
+        case "disk":
+            reply(id, ["rows": json(DemoHost.diskRows)])
         case "settings":
             reply(id, ["settings": plain(content.settings)])
         case "settings-update":

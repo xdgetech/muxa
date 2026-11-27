@@ -192,7 +192,7 @@ pub trait Host: Send + Sync {
     }
 
     /// A sample of the host's CPU, memory and disks, with the processes of
-    /// `owners`' terminals grouped under them (ADR 0103).
+    /// `owners`' terminals grouped under them (ADR 0105).
     fn host_report(
         &self,
         _owners: &[crate::owners::UsageOwner],

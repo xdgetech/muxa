@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,9 @@ fun NextRoot(model: NextModel) {
     var section by rememberSaveable { mutableStateOf(Section.INBOX) }
     var terminal by rememberSaveable { mutableStateOf<String?>(null) }
     var newTask by remember { mutableStateOf<TaskSeed?>(null) }
+    // The phone's Settings tab shows Host resources; leaving the tab closes it.
+    var hostPage by remember { mutableStateOf(false) }
+    LaunchedEffect(section) { if (section != Section.SETTINGS) hostPage = false }
     val bots = remember(model) { BotNav() }
     // A Bot's talk, run or member opens on its page; any other terminal in Focus (ADR 0086).
     fun open(t: Terminal) {
@@ -92,12 +96,15 @@ fun NextRoot(model: NextModel) {
                     NextModel.Link.Connected, is NextModel.Link.Reconnecting -> {
                         // A tablet has no Settings tab: the host in its sidebar's footer opens Settings as a sheet.
                         val shown = if (layout != WindowLayout.Phone && section == Section.SETTINGS) Section.INBOX else section
-                        val nav = Nav(shown, { section = it }, { newTask = it }, ::open, bots)
+                        val nav = Nav(shown, { section = it }, { newTask = it }, ::open, bots) {
+                            hostPage = true
+                            section = Section.SETTINGS
+                        }
                         when (shown) {
                             Section.INBOX -> Home(model, nav, ::open)
                             Section.BOTS -> BotsScreen(model, nav)
                             Section.TASKS -> Focus(model, nav, terminal) { terminal = it }
-                            Section.SETTINGS -> SettingsScreen(model, nav)
+                            Section.SETTINGS -> SettingsScreen(model, nav, hostPage) { hostPage = it }
                         }
                     }
                     else -> Hosts(model)

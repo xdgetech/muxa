@@ -27,6 +27,42 @@ class DemoTest {
     }
 
     @Test
+    fun theHostReportsTheDemoTasksAndAWatchSendsItAtOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val report = c.host()
+            val tasks = report.groups.filter { it.usageKind == UsageKind.TASK }
+            assertEquals(listOf("t1", "t2", "t7"), tasks.map { it.terminal })
+            assertEquals(null, tasks[0].idleSinceMs)
+            assertEquals(2 * 86_400_000L, report.sampledMs - tasks[2].idleSinceMs!!)
+            val kinds = report.groups.map { it.usageKind }.toSet()
+            for (k in listOf(UsageKind.SIMULATOR, UsageKind.APP, UsageKind.DOCKER, UsageKind.CLAUDE_OUTSIDE, UsageKind.OTHER)) {
+                assertTrue("$k", k in kinds)
+            }
+            assertEquals("warn", report.memory.pressure)
+            assertEquals(listOf("memory"), report.alerts)
+            c.hostWatch()
+            val e = c.events.receive()
+            assertEquals(report.groups.map { it.name }, (e as V2Event.Host).report.groups.map { it.name })
+            c.hostUnwatch()
+            c.close()
+        }
+    }
+
+    @Test
+    fun diskListsTheTaskPlacesAndLeftovers() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val rows = c.disk()
+            val dirs = c.terminals().filter { it.isTaskAgent }.mapNotNull { it.taskDir }.toSet()
+            assertEquals(2, rows.count { it.kind == "task-worktree" && it.path in dirs })
+            assertTrue(rows.any { it.kind == "claude-worktree" && it.cleanable })
+            assertTrue(rows.any { it.kind == "build-folder" })
+            c.close()
+        }
+    }
+
+    @Test
     fun aCaptureGoesOnTopAndWatchersSeeIt() = runBlocking {
         withTimeout(10_000) {
             val c = open()

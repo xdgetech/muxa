@@ -32,6 +32,7 @@ struct FocusSidebar: View {
                 .padding(.vertical, 10)
             }
             RoutinesFooter()
+            if model.isConnected { HostSummary(look: .sidebarFoot).padding(.bottom, 4) }
         }
         .frame(width: 280)
         .frame(maxHeight: .infinity)

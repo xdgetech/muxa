@@ -61,6 +61,11 @@ public enum V2Request: Sendable {
     case disk
     /// A dry run unless `dryRun` is false; `force` needs `paths`.
     case diskClean(paths: [String] = [], force: Bool = false, dryRun: Bool = true)
+    /// The host's CPU, memory, disks and what uses them (ADR 0105).
+    case host
+    /// `host` notifications at once and every 10 s, until `hostUnwatch`.
+    case hostWatch
+    case hostUnwatch
     /// The host's editable settings (ADR 0074).
     case settings
     /// `revision` must be the current one; the ops apply all or none.
@@ -126,6 +131,9 @@ public enum V2Request: Sendable {
         case .disk: set("disk", [:])
         case let .diskClean(paths, force, dryRun):
             set("disk-clean", ["paths": paths, "force": force, "dry_run": dryRun])
+        case .host: set("host", [:])
+        case .hostWatch: set("host-watch", [:])
+        case .hostUnwatch: set("host-unwatch", [:])
         case .settings: set("settings", [:])
         case let .settingsUpdate(revision, ops):
             set("settings-update", ["revision": revision, "ops": try ops.map { try $0.jsonObject() }])

@@ -191,15 +191,20 @@ struct TabletSidebar: View {
     }
 
     private var footer: some View {
-        HStack {
-            HostMenu()
-            Spacer()
-            Button("Settings", systemImage: "gearshape") { mode.wrappedValue = .hosts }
-                .labelStyle(.iconOnly)
-                .buttonStyle(BareIconStyle(color: mode.wrappedValue == .hosts ? Palette.text : Palette.textTertiary))
-                .accessibilityIdentifier("home.settings")
+        VStack(spacing: 0) {
+            if model.isConnected {
+                HostSummary(look: .card).padding(.horizontal, 12).padding(.top, 8)
+            }
+            HStack {
+                HostMenu()
+                Spacer()
+                Button("Settings", systemImage: "gearshape") { mode.wrappedValue = .hosts }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(BareIconStyle(color: mode.wrappedValue == .hosts ? Palette.text : Palette.textTertiary))
+                    .accessibilityIdentifier("home.settings")
+            }
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
         .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
         .overlay(alignment: .bottom) { LinkBanner() }
     }

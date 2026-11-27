@@ -240,6 +240,14 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             "inbox-apply" -> applyProposal(id, item)
             "inbox-suggestion" -> suggestion(id, item, (m["accept"] as? JsonPrimitive)?.booleanOrNull == true)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
+            "disk" -> reply(id, "rows" to enc(DemoHost.DISK))
+            "host" -> reply(id, "host" to enc(hostReport()))
+            "host-watch" -> {
+                // The demo never changes, so one notification is all a 10 s timer would add.
+                reply(id)
+                send(buildJsonObject { put("type", "host"); put("host", enc(hostReport())) })
+            }
+            "host-unwatch" -> reply(id)
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {}, "off" to enc(routinesOff()))
             "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
             "reader-list" -> {
@@ -292,6 +300,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             else -> send(error(id, "bad-request", "unknown request"))
         }
     }
+
+    private fun hostReport() = DemoHost.report(terminals, System.currentTimeMillis())
 
     private fun setLoop(lp: LoopInfo) {
         loops[lp.terminal] = lp

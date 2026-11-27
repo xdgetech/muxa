@@ -1,4 +1,4 @@
-//! Groups the host's processes by what the user can act on (ADR 0103 §4):
+//! Groups the host's processes by what the user can act on (ADR 0105 §4):
 //! each muxa owner takes its terminals' process trees, the rest go by name.
 
 use std::collections::HashMap;

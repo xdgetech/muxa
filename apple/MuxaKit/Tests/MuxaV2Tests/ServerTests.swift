@@ -116,6 +116,26 @@ struct ServerTests {
         await c.close()
     }
 
+    /// The fake host's fixed sample, with a group for each live Task agent (ADR 0105).
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func hostReportsAndWatchSendsAtOnce() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let report = try await c.host()
+        #expect(report.alerts == ["memory"])
+        #expect(report.memory.pressure == .warn)
+        #expect(report.systemDisk?.name == "system")
+        #expect(report.groups.contains { $0.kind == .simulator && $0.processes == 240 })
+        #expect(report.groups.filter { $0.kind == .task }.allSatisfy { $0.terminal != nil })
+        var events = c.events.makeAsyncIterator()
+        try await c.hostWatch()
+        let sent = await Self.next(&events) { if case .host = $0 { false } else { true } }
+        guard case .host(let watched)? = sent else { return #expect(Bool(false)) }
+        #expect(watched.alerts == ["memory"])
+        try await c.hostUnwatch()
+        await c.close()
+    }
+
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func workspacesListTheHostsWorkspaces() async throws {
         let server = try Server()

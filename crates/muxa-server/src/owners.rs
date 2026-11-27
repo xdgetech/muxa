@@ -1,4 +1,4 @@
-//! Which muxa terminals a host resource report groups together (ADR 0103):
+//! Which muxa terminals a host resource report groups together (ADR 0105):
 //! a Task is its agent and its shells. The host maps processes onto these.
 
 use muxa_backend::TerminalInfo;

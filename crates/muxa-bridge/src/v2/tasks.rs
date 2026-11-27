@@ -35,7 +35,7 @@ pub struct BridgeHost {
     claude_dirs: Vec<PathBuf>,
     /// Finds an agent that already works in an adopted place.
     agents_in: Arc<AgentLookup>,
-    /// Samples the host for `host` (ADR 0103).
+    /// Samples the host for `host` (ADR 0105).
     resources: Arc<super::resources::Resources>,
 }
 

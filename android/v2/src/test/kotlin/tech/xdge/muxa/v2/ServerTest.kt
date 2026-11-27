@@ -186,6 +186,26 @@ class ServerTest {
     }
 
     @Test
+    fun theHostReportsATaskGroupAndAWatchSendsAReport() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val (agent, _) = c.startTask("w", "resources")
+            val report = c.host()
+            assertEquals(listOf("memory"), report.alerts)
+            assertEquals("warn", report.memory.pressure)
+            assertEquals("system", report.systemDisk?.name)
+            val task = report.groups.single { it.terminal == agent.id }
+            assertEquals(UsageKind.TASK, task.usageKind)
+            assertTrue(report.groups.any { it.usageKind == UsageKind.SIMULATOR })
+            c.hostWatch()
+            val e = c.next { it !is V2Event.Host }
+            assertEquals(report.groups, (e as V2Event.Host).report.groups)
+            c.hostUnwatch()
+            c.close()
+        }
+    }
+
+    @Test
     fun diskAsksTheHostAndForceNeedsPaths() = runBlocking {
         withTimeout(10_000) {
             val c = connect()

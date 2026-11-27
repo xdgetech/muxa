@@ -91,7 +91,7 @@ final class NextTests: XCTestCase {
     func testResumeTaskStartsAV1TaskWhereItWorked() throws {
         let app = launch()
         let item = app.descendants(matching: .any)["item.d9"]
-        scrollTo(item, in: app)
+        scrollInbox(to: item, in: app)
         item.tap()
         let resume = app.buttons["detail.resumetask"]
         XCTAssertTrue(resume.waitForExistence(timeout: 5))
@@ -147,7 +147,9 @@ final class NextTests: XCTestCase {
     @MainActor
     func testRetryRunsTheFailedRoutineAgain() throws {
         let app = launch()
-        app.descendants(matching: .any)["item.d5"].tap()
+        let item = app.descendants(matching: .any)["item.d5"]
+        scrollInbox(to: item, in: app)
+        item.tap()
         let retry = app.buttons["detail.retry"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
         retry.tap()

@@ -1,4 +1,4 @@
-//! Reads the host's processes, memory, swap, load and disks (ADR 0103).
+//! Reads the host's processes, memory, swap, load and disks (ADR 0105).
 //! Commands and `/proc` only: no extra crate, no `unsafe`. The parsers are
 //! pure so tests run them on captured text.
 

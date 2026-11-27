@@ -187,6 +187,16 @@ public actor V2Client {
         try Coding.decoder.decode(DiskCleaned.self, from: await request(.diskClean(paths: paths, force: force, dryRun: dryRun)))
     }
 
+    /// The host's resources now (ADR 0105).
+    public func host() async throws -> HostReport {
+        try field("host", of: await request(.host))
+    }
+
+    /// Asks for `host` events: one at once, then every 10 s.
+    public func hostWatch() async throws { _ = try await request(.hostWatch) }
+
+    public func hostUnwatch() async throws { _ = try await request(.hostUnwatch) }
+
     /// The host's editable settings.
     public func settings() async throws -> Settings {
         try field("settings", of: await request(.settings), decoder: Coding.plainDecoder)
@@ -353,6 +363,8 @@ public actor V2Client {
             eventsOut.yield(.chatEnded(chat: n, reason: msg["reason"] as? String ?? ""))
         case "loops":
             if let l: [LoopInfo] = try? field("loops", of: data) { eventsOut.yield(.loops(l)) }
+        case "host":
+            if let h: HostReport = try? field("host", of: data) { eventsOut.yield(.host(h)) }
         case "reader":
             guard let n = (msg["reader"] as? NSNumber)?.uint32Value,
                   let content: ReaderContent = try? field("content", of: data) else { return }

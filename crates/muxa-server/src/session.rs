@@ -32,7 +32,7 @@ const MAX_HISTORY: u32 = 10_000;
 
 /// How often followed conversations are read again.
 const CHAT_TICK: Duration = Duration::from_millis(700);
-/// How often a `host-watch` gets a new sample (ADR 0103).
+/// How often a `host-watch` gets a new sample (ADR 0105).
 const HOST_TICK: Duration = Duration::from_secs(10);
 
 /// How long a client's attachments wait for its resume.

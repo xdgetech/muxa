@@ -1,4 +1,4 @@
-//! When a host value is worth a warning (ADR 0103 §6). The host decides, so
+//! When a host value is worth a warning (ADR 0105 §6). The host decides, so
 //! every app colors the same values.
 
 use muxa_protocol::v2::{HostDisk, HostMemory, Pressure};

@@ -1,4 +1,4 @@
-# 0103: Host resources in Settings and the status bar
+# 0105: Host resources in Settings and the status bar
 
 Status: proposed (2026-11-26).
 

@@ -140,6 +140,10 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
                         HostMenu(model) { nav.go(Section.SETTINGS) }
                         tools()
                     }
+                    // Under the host menu: the title row has no room for it on a phone.
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.End) {
+                        HostSummary(model, nav.hostResources)
+                    }
                     list()
                 }
             } else {

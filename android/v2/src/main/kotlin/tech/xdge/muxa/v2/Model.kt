@@ -510,6 +510,9 @@ sealed interface V2Event {
     /** A Task Loop changed; every loop as it is now. */
     data class Loops(val loops: List<LoopInfo>) : V2Event
 
+    /** The host's resources, while [V2Client.hostWatch] holds. */
+    data class Host(val report: HostReport) : V2Event
+
     /** An open Reader file changed. */
     data class Reader(val reader: Int, val content: ReaderContent) : V2Event
 

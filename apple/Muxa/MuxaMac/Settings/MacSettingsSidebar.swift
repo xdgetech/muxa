@@ -35,6 +35,11 @@ struct MacSettingsSidebar: View {
                         row("Build disk", meta: SettingsIndex.summary(build), place: .build, id: "settings.build")
                     }
                 }
+                if model.isConnected {
+                    row("Host resources", meta: "", place: .host, id: "settings.host") {
+                        HostAlertDot(alerts: model.host?.alerts ?? [])
+                    }
+                }
                 row(model.connectionTitle, meta: status, place: .connection, id: "settings.connection")
                 label("This Mac", top: 16)
                 row("Keyboard", meta: Shortcut.shortcuts.display, place: .keyboard, id: "settings.keyboard")
@@ -53,12 +58,14 @@ struct MacSettingsSidebar: View {
             .padding(.bottom, 4)
     }
 
-    private func row(_ title: String, meta: String, place: MacSettingsPlace, id: String) -> some View {
+    private func row(_ title: String, meta: String, place: MacSettingsPlace, id: String,
+                     @ViewBuilder mark: () -> some View = { EmptyView() }) -> some View {
         Button { pick(place) } label: {
             HStack(spacing: 8) {
                 Text(title).font(.system(size: 13.5)).lineLimit(1)
                 Spacer(minLength: 4)
                 Text(meta).font(.system(size: 12)).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                mark()
             }
             .foregroundStyle(current == place ? Palette.text : Palette.textMid)
             .padding(.horizontal, 10)

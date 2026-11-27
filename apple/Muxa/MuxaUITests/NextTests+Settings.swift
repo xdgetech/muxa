@@ -238,4 +238,14 @@ extension NextTests {
         }
         XCTAssertTrue(e.waitForExistence(timeout: 5))
     }
+
+    /// Swipes the Inbox list itself: on a tablet the middle of the app is the detail pane.
+    func scrollInbox(to e: XCUIElement, in app: XCUIApplication) {
+        let list = app.descendants(matching: .any)["inbox.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !(e.exists && e.isHittable) {
+            list.swipeUp()
+        }
+        XCTAssertTrue(e.waitForExistence(timeout: 5))
+    }
 }

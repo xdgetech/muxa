@@ -787,6 +787,8 @@ public enum V2Event: Equatable, Sendable {
     case chatEnded(chat: UInt32, reason: String)
     /// A Task Loop changed; every loop as it is now.
     case loops([LoopInfo])
+    /// The host's resources, after `hostWatch`.
+    case host(HostReport)
     /// An open Reader file changed.
     case reader(reader: UInt32, content: ReaderContent)
     /// An open Reader file ended; the reader is closed.

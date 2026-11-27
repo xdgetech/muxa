@@ -49,6 +49,11 @@ object Palette {
     val destructive: Color get() = token(ThemeToken.failure)
     val destructiveFill: Color get() = token(ThemeToken.destructiveBack)
     val destructiveBorder: Color get() = token(ThemeToken.destructiveBorder)
+
+    /** A value past the host's limits, such as memory under pressure. */
+    val warnBack: Color get() = token(ThemeToken.warnBack)
+    val warnBorder: Color get() = token(ThemeToken.warnBorder)
+    val warnText: Color get() = token(ThemeToken.warnText)
 }
 
 /** A Task's state as its program reports it (OSC 7501), by color. */

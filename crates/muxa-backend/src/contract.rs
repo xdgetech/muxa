@@ -138,7 +138,7 @@ async fn scenario<B: SessionBackend>(
         Some(s) if s.state == "done" && s.app.as_deref() == Some(APP) => {}
         other => return Err(format!("OSC 7501 state not reported: {other:?}")),
     }
-    // The host's resource report groups processes by these (ADR 0103).
+    // The host's resource report groups processes by these (ADR 0105).
     if !matches!(done.pid, Some(p) if p > 0) {
         return Err(format!("a live terminal has no pid: {:?}", done.pid));
     }

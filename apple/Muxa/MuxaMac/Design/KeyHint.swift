@@ -19,8 +19,10 @@ struct KeyHint: View {
 }
 
 /// The strip of keys under a pane or a panel: `⌘P go to Task  ⌘D split …`.
-struct KeyLegend: View {
+struct KeyLegend<Trailing: View>: View {
     let items: [(key: String, label: String)]
+    /// What sits at the strip's right end, e.g. the host summary.
+    @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(spacing: 16) {
@@ -31,6 +33,7 @@ struct KeyLegend: View {
                 }
             }
             Spacer(minLength: 0)
+            trailing
         }
         .font(.system(size: 12))
         .foregroundStyle(Palette.textSecondary)
@@ -38,5 +41,11 @@ struct KeyLegend: View {
         .frame(height: 30)
         .background(Palette.pane)
         .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
+    }
+}
+
+extension KeyLegend where Trailing == EmptyView {
+    init(items: [(key: String, label: String)]) {
+        self.init(items: items) { EmptyView() }
     }
 }

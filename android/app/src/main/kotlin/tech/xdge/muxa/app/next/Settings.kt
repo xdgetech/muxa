@@ -39,18 +39,18 @@ import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
 
-/** The phone's Settings tab: the host this window is connected to and its settings. */
+/** The phone's Settings tab: the host this window is connected to and its settings; [hostPage] shows Host resources. */
 @Composable
-fun SettingsScreen(model: NextModel, nav: Nav) {
+fun SettingsScreen(model: NextModel, nav: Nav, hostPage: Boolean, showHost: (Boolean) -> Unit) {
     PhoneTabs(nav) {
         LargeTitle("Settings")
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { SettingsContent(model, nav.open) }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { SettingsContent(model, nav.open, hostPage, showHost) }
     }
 }
 
 /** A tablet's Settings, opened from the host in the sidebar's footer: the phone tab's content as a sheet. */
 @Composable
-fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
+fun SettingsDialog(model: NextModel, nav: Nav, hostPage: Boolean, showHost: (Boolean) -> Unit, close: () -> Unit) {
     Dialog(close, DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             Modifier.widthIn(max = SHEET_WIDTH.dp).heightIn(max = SHEET_HEIGHT.dp).testTag("settings.sheet"),
@@ -68,7 +68,7 @@ fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
                     close()
                     nav.open(t)
                 }
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { SettingsContent(model, open) }
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { SettingsContent(model, open, hostPage, showHost) }
             }
         }
     }
@@ -76,10 +76,10 @@ fun SettingsDialog(model: NextModel, nav: Nav, close: () -> Unit) {
 
 /**
  * The host, then its settings (ADR 0074): the Workspaces list or one Workspace, the workers and the
- * Capture assistant and the build disk (ADR 0102); last, this device's Appearance (ADR 0091). A talk with a Bot opens its Task with [open].
+ * Capture assistant, Host resources (ADR 0105) and the build disk (ADR 0102); last, this device's Appearance (ADR 0091). A talk with a Bot opens its Task with [open].
  */
 @Composable
-private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
+private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit, hostPage: Boolean, showHost: (Boolean) -> Unit) {
     val editor = remember(model) { SettingsEditor(model.settingsHost) }
     var usage by remember { mutableStateOf<List<Workspace>>(emptyList()) }
     var openWorkspace by remember { mutableStateOf<String?>(null) }
@@ -92,6 +92,10 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
 
     if (appearance) {
         Column(Modifier.padding(bottom = 16.dp)) { AppearanceSettings { appearance = false } }
+        return
+    }
+    if (hostPage) {
+        Column(Modifier.padding(bottom = 16.dp)) { HostSettings(model, open) { showHost(false) } }
         return
     }
     val build = editor.settings?.build
@@ -118,6 +122,7 @@ private fun SettingsContent(model: NextModel, open: (Terminal) -> Unit) {
                 WorkspaceList(editor) { openWorkspace = it }
                 WorkersSection(editor, settings.workspaces.map { it.name })
                 AssistantSection(editor)
+                HostRow(model) { showHost(true) }
                 BuildRow(editor) { buildPage = true }
             }
         }

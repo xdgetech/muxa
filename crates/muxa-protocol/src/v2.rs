@@ -479,7 +479,7 @@ pub enum ClientMsg {
     Disk {
         id: u64,
     },
-    /// The host's CPU, memory and disks, and what uses them (ADR 0103).
+    /// The host's CPU, memory and disks, and what uses them (ADR 0105).
     Host {
         id: u64,
     },
@@ -607,7 +607,7 @@ pub struct DiskRow {
     pub cleanable: bool,
 }
 
-/// A sample of the host's resources (ADR 0103). Sizes are bytes; CPU is a
+/// A sample of the host's resources (ADR 0105). Sizes are bytes; CPU is a
 /// percent of all cores together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HostReport {
@@ -1342,7 +1342,7 @@ pub enum ServerMsg {
     Loops {
         loops: Vec<LoopInfo>,
     },
-    /// After `host-watch`: a new sample of the host (ADR 0103).
+    /// After `host-watch`: a new sample of the host (ADR 0105).
     Host {
         host: HostReport,
     },
