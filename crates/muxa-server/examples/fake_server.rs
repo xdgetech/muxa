@@ -6,7 +6,8 @@
 //! has one fixed exchange and waits on a permission. `workspaces` lists one
 //! fixed Workspace, `Personal`, whose `github` connection the Routine
 //! `digest` uses and the live Tasks get by default. Approve closes a Task
-//! with no worktree check. `settings` starts as the fixed view of
+//! with no worktree check. Pause keeps paused Tasks in memory, and Resume
+//! runs `agent` again in the paused folder. `settings` starts as the fixed view of
 //! [`start_settings`], revision `1`, and `settings-update` applies ops in
 //! memory (`muxa_server::memory_settings`). `host` is a fixed sample with
 //! memory pressure past its limit, the live Tasks first and a simulator.
@@ -23,22 +24,23 @@ use muxa_protocol::ChangeStatus;
 use muxa_protocol::settings::{
     Access, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SecretState, Settings, SettingsAgent,
     SettingsBuild, SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine,
-    SettingsWorkspace, WorkerSpec,
+    SettingsWorkspace, SubscriptionSpec, WorkerSpec,
 };
 use muxa_protocol::v2::{
     ChatUpdate, HostCpu, HostDisk, HostMemory, HostReport, HostSwap, LoopChecks, LoopInfo,
-    LoopSpec, Pressure, ReaderContent, ReaderEntry, ReaderKind, ReaderList, UsageGroup, UsageKind,
-    UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
+    LoopSpec, Paused, Pressure, ReaderContent, ReaderEntry, ReaderKind, ReaderList, UsageGroup,
+    UsageKind, UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
 };
 use muxa_server::memory_settings::MemorySettings;
 use muxa_server::{
-    Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
-    TaskSpec, serve,
+    Config, Host, Inbox, MemoryPaused, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions,
+    TaskError, TaskSpec, serve,
 };
 use tokio::net::UnixListener;
 
 struct FakeHost {
     settings: MemorySettings,
+    paused: MemoryPaused,
 }
 
 impl Host for FakeHost {
@@ -73,7 +75,38 @@ impl Host for FakeHost {
             connections: spec.connections.clone(),
             mcp: spec.mcp.clone(),
             bot: spec.bot.clone(),
+            subscription: None,
         })
+    }
+
+    /// Runs `agent` again in the ended agent's folder, under its title.
+    async fn restart(&self, ended: &TerminalInfo) -> Result<Prepared, TaskError> {
+        let label = |k: &str| ended.labels.get(k).cloned();
+        Ok(Prepared {
+            dir: label("muxa.dir").unwrap_or_default().into(),
+            workspace: label("muxa.workspace").unwrap_or_default(),
+            title: label("muxa.title").unwrap_or_default(),
+            branch: label("muxa.branch"),
+            repo: label("muxa.repo").map(Into::into),
+            argv: vec!["agent".into()],
+            ..Prepared::default()
+        })
+    }
+
+    async fn paused(&self) -> Vec<Paused> {
+        self.paused.list()
+    }
+
+    async fn pause_keep(&self, paused: Paused) -> Result<(), TaskError> {
+        self.paused.keep(paused, |_| Ok(()))
+    }
+
+    async fn pause_drop(&self, id: &str) -> Result<(), TaskError> {
+        self.paused.remove(id, |_| Ok(()))
+    }
+
+    fn paused_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        Some(self.paused.changes())
     }
 
     async fn workspaces(&self) -> Vec<String> {
@@ -136,6 +169,71 @@ impl Host for FakeHost {
         })
     }
 
+    async fn login_launch(
+        &self,
+        subscription: &str,
+    ) -> Result<muxa_server::LoginLaunch, TaskError> {
+        if subscription != "claude-work" {
+            return Err(TaskError::Invalid(format!(
+                "no subscription named {subscription:?}"
+            )));
+        }
+        Ok(muxa_server::LoginLaunch {
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "echo log in; sleep 600".into(),
+            ],
+            ..Default::default()
+        })
+    }
+
+    async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
+        Ok(vec![muxa_protocol::v2::SubscriptionUsage {
+            name: "claude-work".into(),
+            agent: "claude-code".into(),
+            plan: Some("Max 20x".into()),
+            windows: vec![
+                muxa_protocol::v2::UsageWindow {
+                    minutes: 300,
+                    used_percent: 82,
+                    resets_at: 1_764_014_400,
+                },
+                muxa_protocol::v2::UsageWindow {
+                    minutes: 10_080,
+                    used_percent: 31,
+                    resets_at: 1_764_320_400,
+                },
+            ],
+            as_of: Some(1_764_000_120),
+        }])
+    }
+
+    async fn token_usage(
+        &self,
+        day: Option<String>,
+    ) -> Result<muxa_protocol::v2::TokenUsage, TaskError> {
+        use muxa_protocol::v2::{TaskTokens, TokenUsage, Tokens, WorkspaceTokens};
+        let tokens = |input, cached, output| Tokens {
+            input,
+            cached,
+            output,
+        };
+        Ok(TokenUsage {
+            day: day.unwrap_or_else(|| "2026-11-25".into()),
+            workspaces: vec![WorkspaceTokens {
+                workspace: "Personal".into(),
+                tokens: tokens(1_200_000, 9_000_000, 84_000),
+            }],
+            tasks: vec![TaskTokens {
+                workspace: "Personal".into(),
+                dir: "/work/demo".into(),
+                title: "demo".into(),
+                tokens: tokens(800_000, 6_000_000, 60_000),
+            }],
+        })
+    }
+
     async fn workspace_list(&self) -> Result<Vec<Workspace>, TaskError> {
         Ok(vec![Workspace {
             name: "Personal".into(),
@@ -177,9 +275,17 @@ impl Host for FakeHost {
             last: None,
             bot: None,
             on: None,
+            waiting_until: None,
         };
         Ok(RoutineList {
-            routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
+            routines: vec![
+                // Its logins are full: the due run waits for the reset (ADR 0103 §9).
+                muxa_protocol::v2::Routine {
+                    waiting_until: Some(1_700_003_600),
+                    ..routine("digest", Some("09:00"))
+                },
+                routine("audit", None),
+            ],
             problems: vec![],
             off: vec![muxa_protocol::v2::RoutinesOff {
                 workspace: "lab".into(),
@@ -347,6 +453,7 @@ fn fake_loop(terminal: &str, state: &str, reason: Option<&str>) -> LoopInfo {
         since: 1,
         reason: reason.map(str::to_owned),
         last_check: None,
+        resumes_at: None,
     }
 }
 
@@ -356,6 +463,18 @@ fn start_settings() -> Settings {
         revision: "1".into(),
         read_only: false,
         problem: None,
+        // Personal's env names its login (`CLAUDE_CONFIG_DIR`); onboarding offers it.
+        found_logins: vec![muxa_protocol::settings::FoundLogin {
+            agent: "claude-code".into(),
+            home: None,
+            workspace: Some("Personal".into()),
+        }],
+        subscriptions: vec![SubscriptionSpec {
+            name: "claude-work".into(),
+            agent: "claude-code".into(),
+            home: "~/.claude-work".into(),
+            plan: Some("Max 20x".into()),
+        }],
         workers: vec![WorkerSpec {
             name: "reviewer".into(),
             description: Some("Reviews diffs".into()),
@@ -386,6 +505,8 @@ fn start_settings() -> Settings {
             direct_writes: false,
             claude_connectors: false,
             bot_rules: Default::default(),
+            subscriptions: Vec::new(),
+            switch_subscriptions: true,
             connections: vec![SettingsConnection {
                 spec: ConnectionSpec {
                     name: "github".into(),
@@ -453,6 +574,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let inbox = Arc::new(Inbox::memory());
     let host = Arc::new(FakeHost {
         settings: MemorySettings::new(start_settings()),
+        paused: MemoryPaused::default(),
     });
     println!("ready");
     loop {

@@ -57,6 +57,13 @@ sealed interface V2Request {
     /** Closes the Task of the agent [terminal] as Approve does, and marks its open items Done. */
     data class CloseTask(val terminal: String, val worktree: WorktreeChoice? = null) : V2Request
 
+    /** Stops the Task of the agent [terminal] and keeps it, with its places and items (ADR 0104). */
+    data class PauseTask(val terminal: String) : V2Request
+
+    /** Runs the paused Task [terminal] again, in the same places with the same labels. */
+    data class ResumeTask(val terminal: String) : V2Request
+    data object PausedTasks : V2Request
+
     /** Closes the Task of a Review item. Refused with `would-lose-work` unless [worktree] is [WorktreeChoice.FORCE]. */
     data class InboxApprove(val item: String, val worktree: WorktreeChoice? = null) : V2Request
 
@@ -72,6 +79,15 @@ sealed interface V2Request {
     /** Accepts or dismisses the item's suggestion (ADR 0084). */
     data class InboxSuggestion(val item: String, val accept: Boolean) : V2Request
     data object Workspaces : V2Request
+
+    /** Each subscription and its agents' last report of the plan limits (ADR 0103). */
+    data object Subscriptions : V2Request
+
+    /** Opens the agent's own login for [subscription] in a host terminal, or the one already open (ADR 0103 §7). */
+    data class LoginStart(val subscription: String) : V2Request
+
+    /** The tokens agents used on [day] (`YYYY-MM-DD`, null for today), by Workspace and by Task (ADR 0103 §6). */
+    data class TokenUsage(val day: String? = null) : V2Request
     /** The disk use of Task places and leftovers (ADR 0102). */
     data object Disk : V2Request
     /** A dry run unless [dryRun] is false; [force] needs [paths]. */
@@ -145,12 +161,18 @@ sealed interface V2Request {
                 put("data", java.util.Base64.getEncoder().encodeToString(r.data))
             }
             is CloseTask -> { type("close-task"); put("terminal", r.terminal); opt("worktree", r.worktree?.wire) }
+            is PauseTask -> { type("pause-task"); put("terminal", r.terminal) }
+            is ResumeTask -> { type("resume-task"); put("terminal", r.terminal) }
+            PausedTasks -> type("paused-tasks")
             is InboxApprove -> { type("inbox-approve"); put("item", r.item); opt("worktree", r.worktree?.wire) }
             is InboxRequestChanges -> { type("inbox-request-changes"); put("item", r.item); put("comment", r.comment) }
             is InboxRetry -> { type("inbox-retry"); put("item", r.item) }
             is InboxApply -> { type("inbox-apply"); put("item", r.item) }
             is InboxSuggestion -> { type("inbox-suggestion"); put("item", r.item); put("accept", r.accept) }
             Workspaces -> type("workspaces")
+            Subscriptions -> type("subscriptions")
+            is LoginStart -> { type("login-start"); put("subscription", r.subscription) }
+            is TokenUsage -> { type("token-usage"); opt("day", r.day) }
             Disk -> type("disk")
             is DiskClean -> {
                 type("disk-clean")

@@ -53,6 +53,10 @@ sealed class SettingsOp(val op: String) {
         val claudeConnectors: Boolean? = null,
         /** Replaces both lists of `[workspace.bots]`; null keeps them. */
         val botRules: BotRules? = null,
+        /** The subscriptions its agents use, in order (ADR 0103); null keeps them. */
+        val subscriptions: List<String>? = null,
+        /** Whether a full login gives way to the next of its kind (ADR 0103 §4); null keeps it. */
+        val switchSubscriptions: Boolean? = null,
     ) : SettingsOp("workspace-update")
 
     /** Also removes the Keychain secrets of its connections; its folder and `.muxa/` stay. */
@@ -115,7 +119,26 @@ sealed class SettingsOp(val op: String) {
     data class BotMemoryRestore(val workspace: String, val name: String, val version: Int) : SettingsOp("bot-memory-restore")
 
     /** The Capture assistant (ADR 0084). Null [worker]: the default agent. [soulText] replaces its `soul.md`. */
-    data class AssistantUpdate(val enabled: Boolean, val worker: String? = null, val soulText: String? = null) : SettingsOp("assistant-update")
+    data class AssistantUpdate(
+        val enabled: Boolean,
+        val worker: String? = null,
+        val soulText: String? = null,
+        /** Null keeps the list (ADR 0103). */
+        val subscriptions: List<String>? = null,
+    ) : SettingsOp("assistant-update")
+
+    /** A named agent login (ADR 0103). The login itself stays with the agent. */
+    data class SubscriptionAdd(val subscription: SubscriptionSpec) : SettingsOp("subscription-add")
+
+    /** Replaces the subscription named `subscription.name`. */
+    data class SubscriptionUpdate(val subscription: SubscriptionSpec) : SettingsOp("subscription-update")
+
+    /** Refused while a Workspace lists it. */
+    data class SubscriptionRemove(val name: String) : SettingsOp("subscription-remove")
+
+    /** Makes the login [workspace]'s env names a subscription called [name], takes the variable out of the env, and puts it first in the Workspace's list. */
+    data class SubscriptionAdopt(val workspace: String, val agent: String, val name: String, val plan: String? = null) :
+        SettingsOp("subscription-adopt")
 
     /** `[build]` (ADR 0102). Cleared [dir]: the build disk is off. Cleared [dropAfter]: three days. Null [extraPaths] keeps them. */
     data class BuildUpdate(
@@ -154,7 +177,9 @@ sealed class SettingsOp(val op: String) {
             is BotRemove -> workspace
             is BotRename -> workspace
             is BotMemoryRestore -> workspace
-            is AssistantUpdate, is BuildUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
+            is SubscriptionAdopt -> workspace
+            is AssistantUpdate, is BuildUpdate, is WorkerAdd, is WorkerUpdate, is WorkerRemove,
+            is SubscriptionAdd, is SubscriptionUpdate, is SubscriptionRemove -> null
         }
 
     fun json(): JsonObject = buildJsonObject {
@@ -170,6 +195,8 @@ sealed class SettingsOp(val op: String) {
                 patch("park_after", o.parkAfter)
                 o.claudeConnectors?.let { put("claude_connectors", it) }
                 o.botRules?.let { put("bot_rules", enc(it)) }
+                o.subscriptions?.let { put("subscriptions", enc(it)) }
+                o.switchSubscriptions?.let { put("switch_subscriptions", it) }
             }
             is WorkspaceRemove -> put("workspace", o.workspace)
             is EnvSet -> { put("workspace", o.workspace); put("key", o.key); put("value", o.value) }
@@ -198,6 +225,14 @@ sealed class SettingsOp(val op: String) {
                 put("enabled", o.enabled)
                 o.worker?.let { put("worker", it) }
                 o.soulText?.let { put("soul_text", it) }
+                o.subscriptions?.let { put("subscriptions", enc(it)) }
+            }
+            is SubscriptionAdd -> put("subscription", enc(o.subscription))
+            is SubscriptionUpdate -> put("subscription", enc(o.subscription))
+            is SubscriptionRemove -> put("name", o.name)
+            is SubscriptionAdopt -> {
+                put("workspace", o.workspace); put("agent", o.agent); put("name", o.name)
+                o.plan?.let { put("plan", it) }
             }
             is BuildUpdate -> {
                 patch("dir", o.dir); patch("drop_after", o.dropAfter)
@@ -230,6 +265,7 @@ sealed class SettingsOp(val op: String) {
                 "workspace-update" -> WorkspaceUpdate(
                     ws(), s("root"), strings("repos"), patch("agent_command"), patch("park_after"), strings("hidden_repos"),
                     bool("claude_connectors"), o["bot_rules"]?.let { opsJson.decodeFromJsonElement<BotRules>(it) },
+                    strings("subscriptions"), bool("switch_subscriptions"),
                 )
                 "workspace-remove" -> WorkspaceRemove(ws())
                 "env-set" -> EnvSet(ws(), req("key"), req("value"))
@@ -255,7 +291,12 @@ sealed class SettingsOp(val op: String) {
                 )
                 "assistant-update" -> AssistantUpdate(
                     bool("enabled") ?: throw IllegalArgumentException("no enabled"), s("worker"), s("soul_text"),
+                    strings("subscriptions"),
                 )
+                "subscription-add" -> SubscriptionAdd(obj("subscription") { opsJson.decodeFromJsonElement(it) })
+                "subscription-update" -> SubscriptionUpdate(obj("subscription") { opsJson.decodeFromJsonElement(it) })
+                "subscription-remove" -> SubscriptionRemove(req("name"))
+                "subscription-adopt" -> SubscriptionAdopt(ws(), req("agent"), req("name"), s("plan"))
                 "build-update" -> BuildUpdate(patch("dir"), patch("drop_after"), strings("extra_paths"))
                 "worker-add" -> WorkerAdd(obj("worker") { opsJson.decodeFromJsonElement(it) })
                 "worker-update" -> WorkerUpdate(obj("worker") { opsJson.decodeFromJsonElement(it) })

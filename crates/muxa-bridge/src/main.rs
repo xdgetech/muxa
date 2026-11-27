@@ -10,10 +10,14 @@ mod connections;
 mod daemon;
 mod docs;
 mod launch;
+mod limits;
 mod loops;
 mod records;
 mod routines;
 mod settings;
+mod status_line;
+mod thresholds;
+mod tokens;
 mod usage;
 mod utc;
 mod v2;
@@ -37,6 +41,10 @@ fn main() -> ExitCode {
         }
         Ok(Action::Daemon(d)) => daemon::main(d),
         Ok(Action::Connect(a)) => connect(a),
+        Ok(Action::StatusLine {
+            subscription,
+            state_dir,
+        }) => status_line::main(&subscription, &state_dir),
         Ok(Action::Version) => {
             println!("muxa-bridge {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -78,23 +86,28 @@ impl Setup {
             }),
             home: home.clone(),
         };
-        // Read once at start: restart the daemon after a change (ADR 0016).
-        let workspace_agents: Vec<records::AgentSettings> = config
-            .workspaces
-            .as_deref()
-            .map(|path| match records::Workspaces::load(path, home.as_deref()) {
-                Ok(w) => w.all().iter().filter_map(|w| w.agent.clone()).collect(),
-                Err(e) => {
-                    tracing::warn!(error = %e, "cannot load workspaces; adapters use the default agent dirs");
-                    Vec::new()
-                }
+        // Read at start and after each settings change: Workspace env and
+        // subscription folders (ADR 0016, 0103).
+        let (flags, path, home_dir) = (
+            args.agent_dirs.clone(),
+            config.workspaces.clone(),
+            home.clone(),
+        );
+        let agents = agents::Registry::reloadable(Box::new(move || {
+            let workspaces = path
+                .as_deref()
+                .map(|p| match records::Workspaces::load(p, home_dir.as_deref()) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "cannot load workspaces; adapters use the default agent dirs");
+                        records::Workspaces::default()
+                    }
+                })
+                .unwrap_or_default();
+            agents::data_dirs(&flags, home_dir.as_deref(), |key| {
+                workspaces.agent_dirs(key)
             })
-            .unwrap_or_default();
-        let agents = agents::Registry::standard(&agents::data_dirs(
-            &args.agent_dirs,
-            home.as_deref(),
-            |key| records::agent_env::dirs_of(workspace_agents.iter(), key),
-        ));
+        }));
         let claude_dirs = agents::data_dirs(&args.agent_dirs, home.as_deref(), |_| Vec::new())
             .remove(agents::claude::ID)
             .unwrap_or_default();

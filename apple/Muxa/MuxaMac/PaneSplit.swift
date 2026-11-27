@@ -36,9 +36,9 @@ struct PaneSplit: View {
     }
 
     /// The panes follow the host: a shell another device started shows here,
-    /// and one that ended goes.
+    /// and one that ended goes. A paused Task stays open, on its Paused view.
     private func sync() {
-        guard let task = nav.terminal else { return }
+        guard let task = nav.terminal, model.pausedRecord(task) == nil else { return }
         guard model.terminals.contains(where: { $0.id == task && $0.live }) else { return nav.closeTask() }
         nav.sync(shells: model.shells(of: task).map(\.id))
     }

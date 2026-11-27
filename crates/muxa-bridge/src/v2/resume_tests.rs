@@ -347,3 +347,209 @@ async fn migrate_adds_each_open_task_once_and_resume_adopts_its_place() {
     assert_eq!(found["existing"], true, "{found}");
     assert_eq!(backend.list().await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn a_paused_task_outlives_its_daemon_and_resumes_its_conversation() {
+    let f = Fixture::new("pause");
+    let place = f.root.join("tasks/fix-login-t-00000e");
+    std::fs::create_dir_all(&place).unwrap();
+    f.conversation(&place);
+    let (inbox, backend) = (Arc::new(Inbox::memory()), FakeBackend::new());
+    let mut c = connect(f.host(None), Arc::clone(&inbox), backend.clone()).await;
+    let started = request(
+        &mut c,
+        json!({"type": "start-task", "id": 1, "workspace": "w", "title": "Fix login",
+               "places": [{"kind": "existing", "path": place.to_string_lossy()}]}),
+    )
+    .await;
+    let agent = started["terminal"]["id"].as_str().unwrap().to_owned();
+    let paused = request(
+        &mut c,
+        json!({"type": "pause-task", "id": 2, "terminal": agent}),
+    )
+    .await;
+    assert_eq!(
+        paused["paused"]["terminal"]["id"],
+        agent.as_str(),
+        "{paused}"
+    );
+
+    // A new daemon reads the same state dir.
+    let mut c = connect(f.host(None), Arc::clone(&inbox), backend.clone()).await;
+    let listed = request(&mut c, json!({"type": "paused-tasks", "id": 3})).await;
+    assert_eq!(
+        listed["paused"][0]["terminal"]["id"],
+        agent.as_str(),
+        "{listed}"
+    );
+    let resumed = request(
+        &mut c,
+        json!({"type": "resume-task", "id": 4, "terminal": agent}),
+    )
+    .await;
+    assert_eq!(
+        resumed["terminal"]["labels"]["muxa.title"], "Fix login",
+        "{resumed}"
+    );
+    let launch = backend.launches().last().cloned().unwrap();
+    assert_eq!(
+        launch.argv[2],
+        "claude --continue -- 'Read .muxa/TASK.md and continue the Task.'"
+    );
+    let listed = request(&mut c, json!({"type": "paused-tasks", "id": 5})).await;
+    assert_eq!(listed["paused"], json!([]));
+}
+
+#[tokio::test]
+async fn resume_is_refused_while_another_agent_works_in_the_place() {
+    let f = Fixture::new("pause-busy");
+    let place = f.root.join("tasks/fix-login-t-00000f");
+    std::fs::create_dir_all(&place).unwrap();
+    let (inbox, backend) = (Arc::new(Inbox::memory()), FakeBackend::new());
+    let mut c = connect(f.host(None), Arc::clone(&inbox), backend.clone()).await;
+    let started = request(
+        &mut c,
+        json!({"type": "start-task", "id": 1, "workspace": "w", "title": "Fix login",
+               "places": [{"kind": "existing", "path": place.to_string_lossy()}]}),
+    )
+    .await;
+    let agent = started["terminal"]["id"].as_str().unwrap().to_owned();
+    request(
+        &mut c,
+        json!({"type": "pause-task", "id": 2, "terminal": agent}),
+    )
+    .await;
+
+    let mut c = connect(f.host(Some(&place)), Arc::clone(&inbox), backend.clone()).await;
+    let busy = request(
+        &mut c,
+        json!({"type": "resume-task", "id": 3, "terminal": agent}),
+    )
+    .await;
+    assert_eq!(busy["code"], "conflict", "{busy}");
+    let listed = request(&mut c, json!({"type": "paused-tasks", "id": 4})).await;
+    assert_eq!(
+        listed["paused"][0]["terminal"]["id"],
+        agent.as_str(),
+        "it stays paused"
+    );
+}
+
+/// `w` with two Claude logins (ADR 0103) and an agent of `claude`.
+fn with_logins(f: &Fixture) -> (String, String) {
+    let home = |n: &str| f.base.join(n).to_string_lossy().into_owned();
+    std::fs::write(
+        f.base.join("workspaces.toml"),
+        format!(
+            "[[subscription]]\nname = \"work\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[subscription]]\nname = \"spare\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[workspace]]\nname = \"w\"\nroot = \"{}\"\nsubscriptions = [\"work\", \"spare\"]\n",
+            home("claude-work"),
+            home("claude-spare"),
+            f.root.display()
+        ),
+    )
+    .unwrap();
+    (home("claude-work"), home("claude-spare"))
+}
+
+#[tokio::test]
+async fn a_task_runs_on_its_workspaces_first_login() {
+    let f = Fixture::new("login");
+    let (work, _) = with_logins(&f);
+    let dir = f.root.join("tasks/fix-login-t-00000c");
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = f.host(None).prepare(&existing(&dir)).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("work"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&work));
+}
+
+#[tokio::test]
+async fn an_adopted_place_resumes_on_the_login_that_holds_its_conversation() {
+    let f = Fixture::new("login-adopt");
+    let (_, spare) = with_logins(&f);
+    let dir = f.root.join("tasks/fix-login-t-00000d");
+    std::fs::create_dir_all(&dir).unwrap();
+    let escaped: String = dir
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let kept = PathBuf::from(&spare).join("projects").join(escaped);
+    std::fs::create_dir_all(&kept).unwrap();
+    std::fs::write(kept.join("c.jsonl"), "{}\n").unwrap();
+    let p = f.host(None).prepare(&existing(&dir)).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("spare"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&spare));
+    assert!(p.argv[2].contains(" --continue"), "{:?}", p.argv);
+}
+
+#[tokio::test]
+async fn a_restart_keeps_its_login_and_falls_back_when_it_is_gone() {
+    let f = Fixture::new("login-restart");
+    let (work, spare) = with_logins(&f);
+    let dir = f.root.join("tasks/fix-login-t-00000e");
+    std::fs::create_dir_all(&dir).unwrap();
+    let ended = |login: &str| muxa_backend::TerminalInfo {
+        id: muxa_backend::TerminalId::new("t9"),
+        name: Some("Fix login".into()),
+        live: false,
+        labels: muxa_backend::Labels::from([
+            (muxa_server::tasks::WORKSPACE.to_owned(), "w".to_owned()),
+            (
+                muxa_server::tasks::DIR.to_owned(),
+                dir.display().to_string(),
+            ),
+            (
+                muxa_server::tasks::SUBSCRIPTION.to_owned(),
+                login.to_owned(),
+            ),
+        ]),
+        status: None,
+        size: muxa_backend::Size { cols: 80, rows: 24 },
+        exit: None,
+        pid: None,
+        status_since_ms: None,
+    };
+    let host = f.host(None);
+    let p = host.restart(&ended("spare")).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("spare"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&spare));
+    let p = host.restart(&ended("removed")).await.unwrap();
+    assert_eq!(p.subscription.as_deref(), Some("work"));
+    assert_eq!(p.env.get("CLAUDE_CONFIG_DIR"), Some(&work));
+}
+
+#[tokio::test]
+async fn each_subscription_shows_its_last_report_and_one_without_shows_none() {
+    let f = Fixture::new("login-usage");
+    with_logins(&f);
+    let now = crate::records::now();
+    let window = |minutes, used, resets_at| crate::limits::Window {
+        minutes,
+        used_percent: used,
+        resets_at,
+    };
+    crate::limits::record(
+        &f.base.join("state"),
+        "work",
+        &[window(300, 81.6, now + 600)],
+        now,
+    )
+    .unwrap();
+    let listed = f.host(None).subscriptions().await.unwrap();
+    assert_eq!(
+        listed.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+        ["work", "spare"]
+    );
+    assert_eq!(listed[0].as_of, Some(now));
+    assert_eq!(
+        listed[0].windows,
+        [muxa_protocol::v2::UsageWindow {
+            minutes: 300,
+            used_percent: 82,
+            resets_at: now + 600
+        }]
+    );
+    assert!(listed[1].windows.is_empty() && listed[1].as_of.is_none());
+}

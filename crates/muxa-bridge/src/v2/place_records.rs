@@ -97,23 +97,30 @@ pub fn note(state_dir: Option<&Path>, f: impl FnOnce(&mut Places)) {
 }
 
 /// After a Task's places are made: links each worktree's build paths to
-/// the build disk and records the worktrees and folders. Blocking.
+/// the build disk and records the worktrees and folders. Returns why the
+/// build disk could not be used; the places then build in place. Blocking.
 pub fn after_make(
     state_dir: Option<&Path>,
     disk: Option<&BuildDisk>,
     workspace: &str,
     places: &[Place],
     now: u64,
-) {
+) -> Option<String> {
+    let mut problem = None;
     let records: Vec<PlaceRecord> = places
         .iter()
         .filter(|p| matches!(p.kind, PlaceKind::Branch | PlaceKind::Folder))
         .map(|p| {
             let path = PathBuf::from(&p.path);
-            let build = match (p.kind, disk) {
+            let linked = match (p.kind, disk) {
                 (PlaceKind::Branch, Some(d)) => super::build_dirs::link(d, workspace, &path),
-                _ => Vec::new(),
+                _ => Ok(Vec::new()),
             };
+            let build = linked.unwrap_or_else(|why| {
+                tracing::warn!(path = %path.display(), error = %why, "builds stay in the place");
+                problem.get_or_insert(why);
+                Vec::new()
+            });
             PlaceRecord {
                 workspace: workspace.to_owned(),
                 kind: p.kind,
@@ -131,6 +138,7 @@ pub fn after_make(
             list.put(PlaceRecord { made, ..r });
         }
     });
+    problem
 }
 
 /// After Close Task: forgets the worktrees that are gone, and removes their

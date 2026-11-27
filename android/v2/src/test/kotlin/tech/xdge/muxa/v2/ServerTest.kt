@@ -264,12 +264,43 @@ class ServerTest {
     }
 
     @Test
+    fun aPausedTaskKeepsItsItemAndResumes() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            c.watch()
+            val (agent, _) = c.startTask("w", "pause me")
+            val review = c.inbox(V2Request.TaskReview(agent.id)).items.first { it.terminal == agent.id }
+            val record = c.pauseTask(agent.id)
+            assertEquals(agent.id to false, record.terminal.id to record.terminal.live)
+            assertEquals("pause me", record.terminal.taskTitle)
+            assertTrue(c.terminals().none { it.id == agent.id })
+            assertEquals(listOf(record), c.pausedTasks())
+            val pushed = c.next { it !is V2Event.PausedChanged }
+            assertEquals(V2Event.PausedChanged(listOf(record)), pushed)
+
+            val (again, existing) = c.resumeTask(agent.id)
+            assertEquals(false, existing)
+            assertEquals("pause me", again.taskTitle)
+            assertEquals(again.id, c.inbox().items.first { it.id == review.id }.terminal)
+            assertTrue(c.pausedTasks().isEmpty())
+
+            c.pauseTask(again.id)
+            val closed = c.inbox(V2Request.CloseTask(again.id))
+            assertTrue(closed.done.any { it.id == review.id })
+            assertTrue(c.pausedTasks().isEmpty())
+            c.close()
+        }
+    }
+
+    @Test
     fun routinesListAndRunOnce() = runBlocking {
         withTimeout(10_000) {
             val c = connect()
             val (routines, problems, off) = c.routines()
             assertEquals(listOf("digest", "audit"), routines.map { it.name })
             assertEquals("09:00", routines[0].at)
+            assertEquals(1_700_003_600L, routines[0].waitingUntil)
+            assertEquals(null, routines[1].waitingUntil)
             assertTrue(problems.isEmpty())
             assertEquals(listOf(RoutinesOff("lab", 2)), off)
             c.runRoutine("Personal", "audit")
@@ -279,6 +310,40 @@ class ServerTest {
             } catch (e: V2Error.Refused) {
                 assertEquals("conflict", e.code)
             }
+            c.close()
+        }
+    }
+
+    @Test
+    fun subscriptionsComeWithTheirLimits() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(
+                listOf(
+                    SubscriptionUsage(
+                        "claude-work", "claude-code", "Max 20x",
+                        listOf(UsageWindow(300, 82, 1_764_014_400), UsageWindow(10_080, 31, 1_764_320_400)),
+                        1_764_000_120,
+                    ),
+                ),
+                c.subscriptions(),
+            )
+            c.close()
+        }
+    }
+
+    @Test
+    fun tokenUsageComesByWorkspaceAndTask() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            assertEquals(
+                TokenUsage(
+                    "2026-11-24",
+                    listOf(WorkspaceTokens("Personal", 1_200_000, 9_000_000, 84_000)),
+                    listOf(TaskTokens("Personal", "/work/demo", "demo", 800_000, 6_000_000, 60_000)),
+                ),
+                c.tokenUsage("2026-11-24"),
+            )
             c.close()
         }
     }
@@ -307,6 +372,8 @@ class ServerTest {
                     ),
                 ),
                 workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
+                subscriptions = listOf(SubscriptionSpec("claude-work", "claude-code", "~/.claude-work", plan = "Max 20x")),
+                foundLogins = listOf(FoundLogin("claude-code", workspace = "Personal")),
                 build = SettingsBuild(dir = "/ssd/build", dropAfter = null, dirFound = true),
             )
             assertEquals(expected, c.settings())

@@ -7,10 +7,24 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import tech.xdge.muxa.transport.ByteChannel
+import kotlin.time.Duration.Companion.milliseconds
+
+/** [inner], except that requests whose JSON holds [marker] get no reply, as from an older host. */
+private class Unanswered(private val inner: ByteChannel, private val marker: String) : ByteChannel by inner {
+    override suspend fun send(data: ByteArray) {
+        if (marker !in data.toString(Charsets.UTF_8)) inner.send(data)
+    }
+}
 
 /** The client against the in-memory demo server. */
 class DemoTest {
     private suspend fun open() = V2Client.open(DemoChannel(), "test")
+
+    /** The next `paused` notification's list. */
+    private suspend fun V2Client.nextPaused(): List<Paused> {
+        while (true) (events.receive() as? V2Event.PausedChanged)?.let { return it.paused }
+    }
 
     @Test
     fun aTerminalShowsItsScreenAndEchoes() = runBlocking {
@@ -309,6 +323,75 @@ class DemoTest {
             val inbox = c.inbox(V2Request.CloseTask("t1"))
             assertEquals("d1", inbox.done.first().id)
             assertEquals(true, c.terminals().none { it.taskDir == "/demo/app-fix-login" })
+            c.close()
+        }
+    }
+
+    @Test
+    fun aPausedTaskKeepsItsItemsAndResumesWithItsTitle() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            assertEquals(listOf("t9"), c.pausedTasks().map { it.terminal.id })
+            c.watch()
+            c.taskShell("t1")
+            c.loopStart("t1", LoopSpec(check = "make lint"))
+            val record = c.pauseTask("t1")
+            assertEquals(false to null, record.terminal.live to record.terminal.status)
+            assertEquals("make lint", record.loop?.check)
+            assertTrue("the agent and its shells end", c.terminals().none { it.taskDir == "/demo/app-fix-login" })
+            assertEquals("t1", c.inbox().items.first { it.id == "d1" }.terminal)
+            assertEquals(record, c.pauseTask("t1"))
+            val seen = c.nextPaused()
+            assertEquals(listOf("t9", "t1"), seen.map { it.terminal.id })
+
+            val (agent, existing) = c.resumeTask("t1")
+            assertEquals(false, existing)
+            assertEquals(true, agent.live)
+            assertEquals(record.terminal.labels to record.terminal.name, agent.labels to agent.name)
+            assertEquals(agent.id, c.inbox().items.first { it.id == "d1" }.terminal)
+            assertEquals("armed" to "make lint", c.loops().first { it.terminal == agent.id }.let { it.state to it.check })
+            assertEquals(listOf("t9"), c.nextPaused().map { it.terminal.id })
+            try {
+                c.resumeTask("t1")
+                fail("t1 is no longer paused")
+            } catch (e: V2Error.Refused) {
+                assertEquals("not-found", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
+    fun aHostThatNeverAnswersPausedTasksHasNone() = runBlocking {
+        withTimeout(10_000) {
+            val c = V2Client.open(Unanswered(DemoChannel(), "\"type\":\"paused-tasks\""), "test")
+            assertEquals(null, c.pausedTasks(200.milliseconds))
+            // The connection goes on: later requests are answered.
+            assertTrue(c.terminals().any { it.id == "t1" })
+            c.close()
+        }
+    }
+
+    @Test
+    fun closeTaskClosesAPausedTask() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            c.pauseTask("t2")
+            try {
+                c.inbox(V2Request.CloseTask("t2"))
+                fail("d8's worktree holds work")
+            } catch (e: V2Error.Refused) {
+                assertEquals("would-lose-work", e.code)
+            }
+            val inbox = c.inbox(V2Request.CloseTask("t2", WorktreeChoice.FORCE))
+            assertEquals("d8", inbox.done.first().id)
+            assertEquals(listOf("t9"), c.pausedTasks().map { it.terminal.id })
+            try {
+                c.pauseTask("t3")
+                fail("a shell does not pause")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
             c.close()
         }
     }
@@ -633,6 +716,80 @@ class DemoTest {
             assertEquals(SettingsAssistant(false, "reviewer", "Be brief.\n", before?.memoryText), s.assistant)
             val kept = c.settingsUpdate(s.revision, listOf(SettingsOp.AssistantUpdate(true)))
             assertEquals(Triple(true, null, "Be brief.\n"), Triple(kept.assistant?.enabled, kept.assistant?.worker, kept.assistant?.soulText))
+            c.close()
+        }
+    }
+
+    /** ADR 0103: each subscription with its last report; one never used has none. */
+    @Test
+    fun subscriptionsShowTheirLastReport() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val usage = c.subscriptions()
+            assertEquals(listOf("claude-personal", "claude-spare", "chatgpt"), usage.map { it.name })
+            assertEquals(listOf(82, 31), usage[0].windows.map { it.usedPercent })
+            assertEquals(false, usage[0].windows.any { it.hasReset() })
+            assertEquals(Pair(emptyList<UsageWindow>(), null), Pair(usage[1].windows, usage[1].asOf))
+            c.close()
+        }
+    }
+
+    /** ADR 0103 §6: today's tokens, whose Task folders are the demo agents'. */
+    @Test
+    fun tokenUsageNamesTheTasksFolders() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val usage = c.tokenUsage()
+            assertEquals(listOf("app", "Personal"), usage.workspaces.map { it.workspace })
+            assertEquals("/demo/app-fix-login", usage.tasks.first().dir)
+            assertEquals("2026-11-01", c.tokenUsage("2026-11-01").day)
+            c.close()
+        }
+    }
+
+    /** ADR 0103 §7: onboarding adopts app's env login, and a login terminal opens once per subscription. */
+    @Test
+    fun aFoundLoginIsAdoptedAndItsLoginTerminalOpensOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            assertEquals(listOf(FoundLogin("claude-code", workspace = "app")), c.settings().foundLogins)
+            val s = c.settingsUpdate("1", listOf(SettingsOp.SubscriptionAdopt("app", "claude-code", "claude-app")))
+            assertEquals(listOf("claude-app"), s.workspaces[0].subscriptions)
+            assertEquals(false, s.workspaces[0].agent.env.any { it.key == "CLAUDE_CONFIG_DIR" })
+            assertEquals(emptyList<FoundLogin>(), s.foundLogins)
+            val (t, existing) = c.loginStart("claude-app")
+            assertEquals(Triple(false, "login", "claude-app"), Triple(existing, t.labels["muxa.kind"], t.labels["muxa.subscription"]))
+            val (again, open) = c.loginStart("claude-app")
+            assertEquals(true to t.id, open to again.id)
+            assertEquals("bad-request", refusal { c.loginStart("nope") }.code)
+            c.close()
+        }
+    }
+
+    /** ADR 0103: a login is named once and Workspaces list it; one a Workspace lists cannot go. */
+    @Test
+    fun subscriptionsAreAddedListedAndKeptWhileListed() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings()
+            assertEquals(listOf("claude-personal", "claude-spare", "chatgpt"), before.subscriptions.map { it.name })
+            assertEquals(listOf("claude-personal", "claude-spare"), before.workspaces[1].subscriptions)
+            val s = c.settingsUpdate(
+                "1",
+                listOf(
+                    SettingsOp.SubscriptionAdd(SubscriptionSpec("claude-work", "claude-code", "~/.claude-work")),
+                    SettingsOp.EnvUnset("app", "CLAUDE_CONFIG_DIR"),
+                    SettingsOp.WorkspaceUpdate("app", subscriptions = listOf("claude-work")),
+                    SettingsOp.AssistantUpdate(true, subscriptions = listOf("claude-spare")),
+                ),
+            )
+            assertEquals(listOf("claude-work"), s.workspaces[0].subscriptions)
+            assertEquals(listOf("claude-spare"), s.assistant?.subscriptions)
+            assertEquals("bad-request", refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.SubscriptionRemove("claude-work"))) }.code)
+            assertEquals(
+                "bad-request",
+                refusal { c.settingsUpdate(s.revision, listOf(SettingsOp.WorkspaceUpdate("app", subscriptions = listOf("nope")))) }.code,
+            )
             c.close()
         }
     }

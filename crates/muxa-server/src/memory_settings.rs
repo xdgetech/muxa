@@ -103,6 +103,8 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
                 direct_writes: false,
                 claude_connectors: false,
                 bot_rules: Default::default(),
+                subscriptions: Vec::new(),
+                switch_subscriptions: true,
                 connections: Vec::new(),
                 mcp: Vec::new(),
                 routines: Vec::new(),
@@ -120,10 +122,21 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             park_after,
             claude_connectors,
             bot_rules,
+            subscriptions,
+            switch_subscriptions,
         } => {
+            if let Some(names) = &subscriptions {
+                known_subscriptions(s, names)?;
+            }
             let w = workspace(s, &name)?;
+            if let Some(names) = subscriptions {
+                w.subscriptions = names;
+            }
             if let Some(on) = claude_connectors {
                 w.claude_connectors = on;
+            }
+            if let Some(on) = switch_subscriptions {
+                w.switch_subscriptions = on;
             }
             if let Some(rules) = bot_rules {
                 w.bot_rules = rules;
@@ -357,6 +370,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             enabled,
             worker,
             soul_text,
+            subscriptions,
         } => {
             let a = s.assistant.get_or_insert_with(Default::default);
             a.enabled = enabled;
@@ -364,7 +378,63 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             if let Some(text) = soul_text {
                 a.soul_text = Some(text);
             }
+            if let Some(names) = subscriptions {
+                a.subscriptions = names;
+            }
             Ok(())
+        }
+        SettingsOp::SubscriptionAdd { subscription } => {
+            subscription_shape(&subscription)?;
+            put(&mut s.subscriptions, subscription, true, |x| &x.name)
+        }
+        SettingsOp::SubscriptionUpdate { subscription } => {
+            subscription_shape(&subscription)?;
+            put(&mut s.subscriptions, subscription, false, |x| &x.name)
+        }
+        // In memory the env value is not kept, so the folder is a stand-in.
+        SettingsOp::SubscriptionAdopt {
+            workspace: ws,
+            agent,
+            name,
+            plan,
+        } => {
+            let key = match agent.as_str() {
+                "claude-code" => "CLAUDE_CONFIG_DIR",
+                "codex" => "CODEX_HOME",
+                _ => return Err("agent must be \"claude-code\" or \"codex\"".into()),
+            };
+            let w = workspace(s, &ws)?;
+            if !w.agent.env.iter().any(|e| e.key == key) {
+                return Err(format!("workspace {ws:?} has no env {key}"));
+            }
+            w.agent.env.retain(|e| e.key != key);
+            w.subscriptions.retain(|n| n != &name);
+            w.subscriptions.insert(0, name.clone());
+            s.found_logins
+                .retain(|f| f.workspace.as_deref() != Some(ws.as_str()));
+            if !s.subscriptions.iter().any(|x| x.name == name) {
+                s.subscriptions
+                    .push(muxa_protocol::settings::SubscriptionSpec {
+                        name,
+                        agent,
+                        home: format!("~/.{key}-{ws}").to_lowercase(),
+                        plan,
+                    });
+            }
+            Ok(())
+        }
+        SettingsOp::SubscriptionRemove { name } => {
+            if let Some(w) = s
+                .workspaces
+                .iter()
+                .find(|w| w.subscriptions.contains(&name))
+            {
+                return Err(format!(
+                    "workspace {:?}: subscriptions: {name:?} is not a [[subscription]]",
+                    w.name
+                ));
+            }
+            remove(&mut s.subscriptions, &name, |x| &x.name)
         }
         SettingsOp::BuildUpdate {
             dir,
@@ -387,5 +457,27 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
         SettingsOp::WorkerAdd { worker } => put(&mut s.workers, worker, true, |w| &w.name),
         SettingsOp::WorkerUpdate { worker } => put(&mut s.workers, worker, false, |w| &w.name),
         SettingsOp::WorkerRemove { name } => remove(&mut s.workers, &name, |w| &w.name),
+    }
+}
+
+/// What the host's loader checks first, so the demo answers alike: the agent.
+fn subscription_shape(sub: &muxa_protocol::settings::SubscriptionSpec) -> Result<(), String> {
+    if sub.agent != "claude-code" && sub.agent != "codex" {
+        return Err(format!(
+            "subscription {:?}: agent must be \"claude-code\" or \"codex\"",
+            sub.name
+        ));
+    }
+    Ok(())
+}
+
+/// A Workspace may list only subscriptions that exist (ADR 0103).
+fn known_subscriptions(s: &Settings, names: &[String]) -> Result<(), String> {
+    match names
+        .iter()
+        .find(|n| !s.subscriptions.iter().any(|x| &x.name == *n))
+    {
+        Some(n) => Err(format!("subscriptions: {n:?} is not a [[subscription]]")),
+        None => Ok(()),
     }
 }

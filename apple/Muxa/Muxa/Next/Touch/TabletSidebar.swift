@@ -210,8 +210,10 @@ struct TabletSidebar: View {
     }
 }
 
-/// A Task in the sidebar: its dot, where it runs, and its title.
+/// A Task in the sidebar: its dot, where it runs, and its title. A paused
+/// Task's row is dimmed; a Task's row has Pause or Resume in its menu.
 private struct SidebarTaskRow: View {
+    @Environment(NextModel.self) private var model
     let terminal: Terminal
     let color: Color
     let picked: Bool
@@ -233,7 +235,10 @@ private struct SidebarTaskRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(model.pausedRecord(terminal.id) != nil ? 0.6 : 1)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(model.pausedRecord(terminal.id) != nil ? "paused" : "")
         .accessibilityIdentifier("terminal.\(terminal.id)")
+        .pauseMenu(terminal)
     }
 }

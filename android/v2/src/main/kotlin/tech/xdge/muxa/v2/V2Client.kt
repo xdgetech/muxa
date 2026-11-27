@@ -10,6 +10,7 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -23,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import tech.xdge.muxa.transport.ByteChannel
+import kotlin.time.Duration
 
 /**
  * A protocol v2 connection (`protocol/PROTOCOL-v2.md`). It keeps what a resume
@@ -117,16 +119,24 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
 
     // Requests
 
-    private suspend fun request(r: V2Request, attach: ChannelState? = null): JsonObject {
-        val waiter = lock.withLock {
-            gone?.let { throw V2Error.Lost(it) }
-            nextId += 1
-            val w = Waiter(CompletableDeferred(), attach)
-            waiting[nextId] = w
-            send(Frame.control(r.json(nextId).toString()))
-            w
+    private suspend fun request(r: V2Request, attach: ChannelState? = null): JsonObject = enqueue(r, attach).second.reply.await()
+
+    /** As [request], or null when no reply came [within]; the request is then forgotten. */
+    private suspend fun requestWithin(r: V2Request, within: Duration): JsonObject? {
+        val (id, waiter) = enqueue(r, null)
+        return withTimeoutOrNull(within) { waiter.reply.await() } ?: run {
+            lock.withLock { waiting.remove(id) }
+            null
         }
-        return waiter.reply.await()
+    }
+
+    private suspend fun enqueue(r: V2Request, attach: ChannelState?): Pair<Long, Waiter> = lock.withLock {
+        gone?.let { throw V2Error.Lost(it) }
+        nextId += 1
+        val w = Waiter(CompletableDeferred(), attach)
+        waiting[nextId] = w
+        send(Frame.control(r.json(nextId).toString()))
+        nextId to w
     }
 
     suspend fun terminals(): List<Terminal> = field("terminals", request(V2Request.Terminals))
@@ -156,6 +166,12 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 
+    /** The login terminal of [subscription] (ADR 0103 §7), and whether it was open already. */
+    suspend fun loginStart(subscription: String): Pair<Terminal, Boolean> {
+        val reply = request(V2Request.LoginStart(subscription))
+        return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
+    }
+
     /** A new shell beside the Task's agent [terminal]; refused with `conflict` when it has 3. */
     suspend fun taskShell(terminal: String): Terminal = field("terminal", request(V2Request.TaskShell(terminal)))
 
@@ -168,7 +184,28 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         request(V2Request.CloseTerminal(terminal))
     }
 
-    /** Asks for `changed`, `removed`, `resync` and `inbox` events. */
+    // Paused Tasks (ADR 0104)
+
+    /** Pauses the Task of the agent [terminal]; pausing a paused Task again changes nothing. */
+    suspend fun pauseTask(terminal: String): Paused = field("paused", request(V2Request.PauseTask(terminal)))
+
+    /** The agent that runs the paused Task [terminal] again, and whether it was already running. */
+    suspend fun resumeTask(terminal: String): Pair<Terminal, Boolean> {
+        val reply = request(V2Request.ResumeTask(terminal))
+        return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
+    }
+
+    /** The paused Tasks, oldest first. */
+    suspend fun pausedTasks(): List<Paused> = field("paused", request(V2Request.PausedTasks))
+
+    /**
+     * As [pausedTasks], or null when no reply came [within]: a host before ADR 0104
+     * answers the unknown request with an error that carries no id.
+     */
+    suspend fun pausedTasks(within: Duration): List<Paused>? =
+        requestWithin(V2Request.PausedTasks, within)?.let { field("paused", it) }
+
+    /** Asks for `changed`, `removed`, `resync`, `inbox`, `loops` and `paused` events. */
     suspend fun watch() {
         request(V2Request.Watch)
     }
@@ -180,6 +217,12 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
 
     /** The host's Workspaces, with what starting a Task in each may use. */
     suspend fun workspaces(): List<Workspace> = field("workspaces", request(V2Request.Workspaces))
+
+    /** Each subscription with the limits its agents last reported (ADR 0103). An older server refuses the request. */
+    suspend fun subscriptions(): List<SubscriptionUsage> = field("subscriptions", request(V2Request.Subscriptions))
+
+    /** The tokens agents used on [day] (`YYYY-MM-DD`; null for today on the host's clock). An older server refuses it. */
+    suspend fun tokenUsage(day: String? = null): TokenUsage = field("token_usage", request(V2Request.TokenUsage(day)))
 
     /** The host's Task places, other worktrees and build folders (ADR 0102). */
     suspend fun disk(): List<DiskRow> = field("rows", request(V2Request.Disk))
@@ -360,6 +403,7 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
             }
             "loops" -> runCatching { field<List<LoopInfo>>("loops", msg) }.getOrNull()?.let { out.trySend(V2Event.Loops(it)) }
             "host" -> runCatching { field<HostReport>("host", msg) }.getOrNull()?.let { out.trySend(V2Event.Host(it)) }
+            "paused" -> runCatching { field<List<Paused>>("paused", msg) }.getOrNull()?.let { out.trySend(V2Event.PausedChanged(it)) }
             "reader" -> {
                 val n = (msg["reader"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
                 runCatching { field<ReaderContent>("content", msg) }.getOrNull()?.let { out.trySend(V2Event.Reader(n, it)) }

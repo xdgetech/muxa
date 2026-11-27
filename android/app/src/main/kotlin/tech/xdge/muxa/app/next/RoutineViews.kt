@@ -36,11 +36,12 @@ val Routine.whenText: String
         return schedule?.let { "$base · $it" } ?: base
     }
 
-private enum class Health { RUNNING, FAILED, OK, NEVER }
+private enum class Health { RUNNING, WAITING, FAILED, OK, NEVER }
 
 private val Routine.health: Health
     get() = when {
         runningSince != null -> Health.RUNNING
+        waitingUntil != null -> Health.WAITING
         last == null -> Health.NEVER
         last?.ok == true -> Health.OK
         else -> Health.FAILED
@@ -61,6 +62,7 @@ fun RoutineRow(routine: Routine, modifier: Modifier = Modifier) {
         }
         when (routine.health) {
             Health.RUNNING -> Text("Running", color = Theme.accent, style = MaterialTheme.typography.labelMedium)
+            Health.WAITING -> Text("Waiting", color = Theme.attention, style = MaterialTheme.typography.labelMedium)
             Health.FAILED -> Text("Failed", color = Theme.failure, style = MaterialTheme.typography.labelMedium)
             Health.OK -> Icon(Icons.done, "OK", tint = Theme.connected)
             Health.NEVER -> {}
@@ -80,6 +82,8 @@ fun RoutinePane(model: NextModel, routine: Routine) {
         Fact("Runs", routine.whenText)
         routine.nextDue?.let { Fact("Next run", time(it)) }
         routine.runningSince?.let { Fact("Running since", time(it)) }
+        // ADR 0103 §9: every subscription it may use is at its limit.
+        routine.waitingUntil?.let { Fact("Waiting for a limit reset", time(it)) }
         routine.last?.let { last ->
             HorizontalDivider()
             Text("Last run", style = MaterialTheme.typography.titleSmall)

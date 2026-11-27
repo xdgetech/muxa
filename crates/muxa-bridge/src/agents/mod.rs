@@ -70,14 +70,49 @@ pub enum ChatEvent {
 /// The id of the adapter that opened a source, and the source.
 pub type Opened = (&'static str, Box<dyn ChatSource>);
 
+/// Where the standard adapters' data directories come from, read again on
+/// [`Registry::reload`].
+pub type DirSource = Box<dyn Fn() -> HashMap<String, Vec<PathBuf>> + Send + Sync>;
+
 /// The adapters, asked in order; the first that opens a source wins.
 pub struct Registry {
-    adapters: Vec<Box<dyn AgentAdapter>>,
+    adapters: std::sync::RwLock<Vec<Box<dyn AgentAdapter>>>,
+    source: Option<DirSource>,
 }
 
 impl Registry {
     pub fn new(adapters: Vec<Box<dyn AgentAdapter>>) -> Self {
-        Self { adapters }
+        Self {
+            adapters: std::sync::RwLock::new(adapters),
+            source: None,
+        }
+    }
+
+    /// The standard set from `source`, which [`Registry::reload`] reads
+    /// again: a settings change can add a subscription's folder (ADR 0103).
+    pub fn reloadable(source: DirSource) -> Self {
+        let adapters = Self::standard(&source()).take();
+        Self {
+            adapters: std::sync::RwLock::new(adapters),
+            source: Some(source),
+        }
+    }
+
+    /// Reads the directories again. Open Chat sources keep theirs.
+    pub fn reload(&self) {
+        let Some(source) = &self.source else { return };
+        let fresh = Self::standard(&source()).take();
+        let mut adapters = self
+            .adapters
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *adapters = fresh;
+    }
+
+    fn take(self) -> Vec<Box<dyn AgentAdapter>> {
+        self.adapters
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// The default set, each adapter with its data directories (`data_dirs`).
@@ -98,7 +133,11 @@ impl Registry {
     /// The first adapter that sees its agent working in `dir`.
     pub fn open_folder(&self, dir: &std::path::Path) -> Result<Option<Opened>, Error> {
         let procs = Processes::list()?;
-        for adapter in &self.adapters {
+        let adapters = self
+            .adapters
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for adapter in adapters.iter() {
             if let Some(source) = adapter.open_folder(dir, &procs)? {
                 return Ok(Some((adapter.id(), source)));
             }
@@ -311,6 +350,8 @@ fn parse_lsof_cwds(text: &str) -> HashMap<u32, PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     /// The registry asks the adapters in order, fresh for each folder.
@@ -375,6 +416,22 @@ mod tests {
         assert_eq!(age, Duration::from_secs(3605));
         assert_eq!(elapsed("2-00:00:01"), Some(Duration::from_secs(172_801)));
         assert_eq!(elapsed("junk"), None);
+    }
+
+    #[test]
+    fn a_reload_reads_the_folders_again() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let reads = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&reads);
+        let registry = Registry::reloadable(Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            HashMap::new()
+        }));
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        registry.reload();
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
+        // A fixed registry has nothing to read again.
+        Registry::new(Vec::new()).reload();
     }
 
     #[test]

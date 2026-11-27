@@ -2,18 +2,18 @@ import MuxaV2
 import SwiftUI
 
 extension NextModel {
-    /// The live Tasks by Workspace, in name order; Tasks without one last. A
-    /// Bot's talks are on its page instead (ADR 0086).
+    /// The live and paused Tasks by Workspace, in name order; Tasks without
+    /// one last. A Bot's talks are on its page instead (ADR 0086).
     var tasksByWorkspace: [(name: String, tasks: [Terminal])] {
         let groups = Dictionary(grouping: focusTasks) { $0.workspace ?? "" }
         return groups.keys.sorted { a, b in a.isEmpty ? false : b.isEmpty ? true : a < b }
             .map { (name: $0.isEmpty ? "Other Tasks" : $0, tasks: groups[$0] ?? []) }
     }
 
-    /// The live Tasks by what their agents report, in the mocks' order.
+    /// The Tasks by what their agents report, in the mocks' order; paused last.
     var tasksByState: [(state: TaskState, tasks: [Terminal])] {
         TaskState.allCases.compactMap { state in
-            let tasks = focusTasks.filter { $0.state == state }
+            let tasks = focusTasks.filter { taskState($0) == state }
             return tasks.isEmpty ? nil : (state: state, tasks: tasks)
         }
     }
@@ -133,13 +133,15 @@ private struct OtherTerminalsCard: View {
     }
 }
 
-/// A Task in a Workspace's card: its state dot, title, place and state.
+/// A Task in a Workspace's card: its state dot, title, place and state. A
+/// paused Task's row is dimmed; a Task's row has Pause or Resume in its menu.
 private struct TaskRow: View {
+    @Environment(NextModel.self) private var model
     let terminal: Terminal
     var open: () -> Void
 
     var body: some View {
-        let state = terminal.state
+        let state = model.taskState(terminal)
         Button(action: open) {
             HStack(spacing: 10) {
                 StateDot(color: state.color)
@@ -151,7 +153,7 @@ private struct TaskRow: View {
                 }
                 .padding(.vertical, 6)
                 Spacer()
-                if terminal.status != nil {
+                if terminal.status != nil || state == .paused {
                     Text(state.title.lowercased()).font(.system(size: 12.5)).foregroundStyle(state.color)
                 }
                 Image(systemName: "chevron.right")
@@ -163,7 +165,10 @@ private struct TaskRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(state == .paused ? 0.6 : 1)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(state == .paused ? "paused" : "")
         .accessibilityIdentifier("terminal.\(terminal.id)")
+        .pauseMenu(terminal)
     }
 }

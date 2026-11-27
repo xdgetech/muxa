@@ -7,6 +7,10 @@ enum SettingsPlace: Hashable {
     case workers
     /// The Capture assistant (ADR 0084).
     case assistant
+    /// Agent logins and onboarding (ADR 0103).
+    case subscriptions
+    /// The plan limits of each subscription.
+    case usage
     /// The build disk (ADR 0102).
     case build
     /// The host's CPU, memory and disks, and what uses them (ADR 0105).
@@ -74,6 +78,17 @@ struct SettingsIndex: View {
             Text("The host's workspaces.toml and each .muxa/routines.toml. Edits by hand on the host still work.")
         }
         .listRowBackground(Palette.card)
+        Section {
+            row(.subscriptions, id: "settings.subscriptions") {
+                LabeledContent("Subscriptions", value: Self.subscriptionsSummary(s.settings))
+            }
+            row(.usage, id: "settings.usage") {
+                LabeledContent("Usage", value: PlanWindow.line(s.planUsage.first))
+            }
+        } header: {
+            Text("Subscriptions")
+        }
+        .listRowBackground(Palette.card)
         Section("Workers") {
             row(.workers, id: "settings.workers") {
                 LabeledContent("Workers", value: "\(s.settings?.workers.count ?? 0)")
@@ -107,6 +122,13 @@ struct SettingsIndex: View {
         .accessibilityIdentifier(id)
     }
 
+    /// `2`, or `1 login found` while onboarding has something to add.
+    static func subscriptionsSummary(_ s: MuxaV2.Settings?) -> String {
+        let found = s?.foundLogins.count ?? 0
+        if found > 0 { return found == 1 ? "1 login found" : "\(found) logins found" }
+        return "\(s?.subscriptions.count ?? 0)"
+    }
+
     static func summary(_ b: SettingsBuild) -> String {
         guard b.dir != nil else { return "off" }
         return b.dirFound ? "on" : "not found"
@@ -130,6 +152,8 @@ struct SettingsDetail: View {
         case .workspace(let name): WorkspaceSettings(name: name)
         case .workers: WorkersSettings()
         case .assistant: AssistantSettings()
+        case .subscriptions: SubscriptionsSettings()
+        case .usage: PlanUsageView()
         case .build: BuildSettings()
         case .host: HostSettings()
         case .terminal: TerminalSettingsForm().navigationTitle("Appearance")

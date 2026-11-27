@@ -275,6 +275,8 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         mcp: Vec::new(),
         claude_connectors: false,
         bot_rules: Default::default(),
+        subscriptions: Vec::new(),
+        switch_subscriptions: true,
         build: Default::default(),
     };
     (dir, ws)

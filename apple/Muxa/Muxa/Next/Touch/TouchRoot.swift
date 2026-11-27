@@ -29,6 +29,8 @@ struct PhoneRoot: View {
         Group {
             if nav.focus, let t = model.terminals.first(where: { $0.id == nav.terminal }) {
                 PhoneTaskView(terminal: t)
+            } else if nav.focus, let p = model.pausedRecord(nav.terminal) {
+                PausedTaskScreen(paused: p, showsBack: true)
             } else {
                 tabs
             }

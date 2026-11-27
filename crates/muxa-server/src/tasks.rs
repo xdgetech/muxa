@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
 use muxa_protocol::v2::{
-    ChatUpdate, LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList,
-    Routine, RoutineProblem, Settings, SettingsOp, V1Task, Workspace, WorktreeMode,
+    ChatUpdate, LoopInfo, LoopSpec, Paused, Place, PlaceSpec, ReaderContent, ReaderKind,
+    ReaderList, Routine, RoutineProblem, Settings, SettingsOp, V1Task, Workspace, WorktreeMode,
 };
 use tokio::sync::watch;
 
@@ -39,6 +39,9 @@ pub const MCP: &str = "muxa.mcp";
 pub const CHECKOUT: &str = "muxa.checkout";
 /// The Bot a talk Task talks with (ADR 0083).
 pub const BOT: &str = "muxa.bot";
+/// The subscription, a named login, the agent runs on (ADR 0103). A restart
+/// keeps it: the conversation lives in that login's folder.
+pub const SUBSCRIPTION: &str = "muxa.subscription";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
@@ -104,6 +107,8 @@ pub struct Prepared {
     pub env: BTreeMap<String, String>,
     /// The Bot of a talk Task (ADR 0083).
     pub bot: Option<String>,
+    /// The subscription the agent runs on (ADR 0103).
+    pub subscription: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -182,6 +187,31 @@ pub trait Host: Send + Sync {
         async { Ok(Vec::new()) }
     }
 
+    /// What runs for `subscription`'s login terminal (ADR 0103 §7).
+    fn login_launch(
+        &self,
+        _subscription: &str,
+    ) -> impl Future<Output = Result<crate::logins::LoginLaunch, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no subscriptions".into())) }
+    }
+
+    /// Each subscription and the limits its agents last reported (ADR 0103).
+    fn subscriptions(
+        &self,
+    ) -> impl Future<Output = Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError>> + Send
+    {
+        async { Ok(Vec::new()) }
+    }
+
+    /// The tokens agents used on `day` (`YYYY-MM-DD`, else today), by
+    /// Workspace and by Task (ADR 0103 §6).
+    fn token_usage(
+        &self,
+        _day: Option<String>,
+    ) -> impl Future<Output = Result<muxa_protocol::v2::TokenUsage, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host counts no tokens".into())) }
+    }
+
     /// The disk use of Task places and leftovers (ADR 0102). `holds` says
     /// which places terminals hold.
     fn disk(
@@ -243,6 +273,27 @@ pub trait Host: Send + Sync {
         _ended: &TerminalInfo,
     ) -> impl Future<Output = Result<Prepared, TaskError>> + Send {
         async { Err(TaskError::Invalid("this host cannot restart Tasks".into())) }
+    }
+
+    /// The paused Tasks (ADR 0104), oldest first.
+    fn paused(&self) -> impl Future<Output = Vec<Paused>> + Send {
+        async { Vec::new() }
+    }
+
+    /// Keeps `paused`, replacing a record with its id. It must last before
+    /// the agent ends, so a host that cannot keep it refuses the pause.
+    fn pause_keep(&self, _paused: Paused) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host cannot pause Tasks".into())) }
+    }
+
+    /// Drops the record `id`; an id that is not paused is no error.
+    fn pause_drop(&self, _id: &str) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Bumped when a Task is paused or a pause ends, for `watch`.
+    fn paused_changes(&self) -> Option<watch::Receiver<u64>> {
+        None
     }
 
     fn routines(&self) -> impl Future<Output = Result<RoutineList, TaskError>> + Send {
@@ -429,6 +480,9 @@ fn labels(p: &Prepared) -> Labels {
     }
     if let Some(bot) = &p.bot {
         labels.insert(BOT.to_owned(), bot.clone());
+    }
+    if let Some(name) = &p.subscription {
+        labels.insert(SUBSCRIPTION.to_owned(), name.clone());
     }
     if let Ok(places) = serde_json::to_string(&p.places) {
         labels.insert(PLACES.to_owned(), places);

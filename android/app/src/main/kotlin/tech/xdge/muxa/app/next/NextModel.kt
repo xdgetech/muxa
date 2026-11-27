@@ -30,13 +30,16 @@ import tech.xdge.muxa.v2.Inbox
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.LoopInfo
 import tech.xdge.muxa.v2.LoopSpec
+import tech.xdge.muxa.v2.Paused
 import tech.xdge.muxa.v2.ReaderContent
 import tech.xdge.muxa.v2.ReaderKind
 import tech.xdge.muxa.v2.ReaderList
 import tech.xdge.muxa.v2.Routine
 import tech.xdge.muxa.v2.RoutineProblem
 import tech.xdge.muxa.v2.SettingsOp
+import tech.xdge.muxa.v2.SubscriptionUsage
 import tech.xdge.muxa.v2.Terminal
+import tech.xdge.muxa.v2.TokenUsage
 import tech.xdge.muxa.v2.V2Client
 import tech.xdge.muxa.v2.V2Error
 import tech.xdge.muxa.v2.V2Event
@@ -85,6 +88,10 @@ class NextModel(
     var inbox by mutableStateOf(Inbox.EMPTY)
         private set
     var terminals by mutableStateOf(emptyList<Terminal>())
+        private set
+
+    /** The paused Tasks (ADR 0104), oldest first. */
+    var paused by mutableStateOf(emptyList<Paused>())
         private set
     var routines by mutableStateOf(emptyList<Routine>())
         private set
@@ -306,6 +313,7 @@ class NextModel(
             }
             is V2Event.Loops -> loops = e.loops.associateBy { it.terminal }
             is V2Event.Host -> hostReport = e.report
+            is V2Event.PausedChanged -> paused = e.paused
             is V2Event.Reader -> if (e.reader in readerContents) readerContents = readerContents + (e.reader to e.content)
             is V2Event.ReaderEnded -> {
                 readerContents = readerContents - e.reader
@@ -347,6 +355,7 @@ class NextModel(
         loops = c.loops().associateBy { it.terminal }
         // A watch ends with its connection.
         if (hostWatchers > 0) startHostWatch(c)
+        paused = c.pausedTasks(PAUSED_WAIT) ?: emptyList()
     }
 
     private suspend fun drop() {
@@ -364,6 +373,7 @@ class NextModel(
         sinks.clear()
         inbox = Inbox.EMPTY
         terminals = emptyList()
+        paused = emptyList()
         routines = emptyList()
         routineProblems = emptyList()
         readerContents = emptyMap()
@@ -403,18 +413,51 @@ class NextModel(
      * Closes a Review item's Task. Returns the server's message when closing it
      * would lose work and [force] was not given; other failures go to [requestError].
      */
-    suspend fun approve(item: String, force: Boolean): String? {
+    suspend fun approve(item: String, force: Boolean): String? =
+        closing(V2Request.InboxApprove(item, if (force) WorktreeChoice.FORCE else WorktreeChoice.REMOVE))
+
+    /** Closes a Task by its agent [terminal], as [approve] does; open items end Done. */
+    suspend fun closeTask(terminal: String, force: Boolean): String? {
+        val loss = closing(V2Request.CloseTask(terminal, if (force) WorktreeChoice.FORCE else WorktreeChoice.REMOVE))
+        if (loss == null && requestError == null) paused = paused.filter { it.terminal.id != terminal }
+        return loss
+    }
+
+    /** Runs a request that closes a Task; the server's message when it would lose work. */
+    private suspend fun closing(r: V2Request): String? {
         var loss: String? = null
-        val choice = if (force) WorktreeChoice.FORCE else WorktreeChoice.REMOVE
         request { c ->
             try {
-                inbox = c.inbox(V2Request.InboxApprove(item, choice))
+                inbox = c.inbox(r)
             } catch (e: V2Error.Refused) {
                 if (e.code != WOULD_LOSE_WORK) throw e
                 loss = e.message?.removeSuffix(" (${e.code})") ?: e.code
             }
         }
         return loss
+    }
+
+    // Paused Tasks (ADR 0104)
+
+    /** Stops a Task's agent and its shells, and keeps the Task with its places and items. */
+    fun pauseTask(terminal: String) = scope.launch {
+        request { c ->
+            val record = c.pauseTask(terminal)
+            if (paused.none { it.terminal.id == terminal }) paused = paused + record
+            terminals = terminals.filter { it.id != terminal }
+        }
+    }
+
+    /** Runs a paused Task's agent again; the new agent, or null with [requestError] set. */
+    suspend fun resumePaused(terminal: String): Terminal? {
+        var started: Terminal? = null
+        request { c ->
+            val (t, _) = c.resumeTask(terminal)
+            paused = paused.filter { it.terminal.id != terminal }
+            if (terminals.none { it.id == t.id }) terminals = terminals + t
+            started = t
+        }
+        return started
     }
 
     /** Runs a Failed item's Routine or Task again; true when it did. */
@@ -483,6 +526,47 @@ class NextModel(
     }
 
     private fun connected(): V2Client = client ?: throw IllegalStateException("Not connected.")
+
+    /** Each subscription with the limits its agents last reported (ADR 0103), as [loadPlanUsage] last read them. */
+    var planUsage: List<SubscriptionUsage> by mutableStateOf(emptyList())
+        private set
+
+    /** Today's tokens by Workspace and Task (ADR 0103 §6); null from a host without `token-usage`. */
+    var tokenUsage: TokenUsage? by mutableStateOf(null)
+        private set
+
+    /**
+     * Reads [planUsage] again. A failure keeps the last copy and leaves [requestError] alone: an older host
+     * refuses the request, and its screens then show "no data yet".
+     */
+    suspend fun loadPlanUsage() {
+        val c = client ?: return
+        try {
+            planUsage = c.subscriptions()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Kept: the screens show the last copy, or "no data yet".
+        }
+        try {
+            tokenUsage = c.tokenUsage()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // An older host refuses `token-usage`: Usage then shows the limits only.
+        }
+    }
+
+    /** Opens the login terminal of [subscription] (ADR 0103 §7); null with [requestError] set. */
+    suspend fun startLogin(subscription: String): Terminal? {
+        var started: Terminal? = null
+        request { c ->
+            val (t, _) = c.loginStart(subscription)
+            if (terminals.none { it.id == t.id }) terminals = terminals + t
+            started = t
+        }
+        return started
+    }
 
     /** Starts a Task; its agent terminal, or null with [requestError] set. */
     suspend fun startTask(draft: TaskDraft): Terminal? {
@@ -712,6 +796,9 @@ class NextModel(
         private const val WOULD_LOSE_WORK = "would-lose-work"
         private const val CONFLICT = "conflict"
         private const val CHAT_WAIT_SECONDS = 20
+
+        /** A host before ADR 0104 never answers `paused-tasks`; it has no paused Task. */
+        private val PAUSED_WAIT = 5.seconds
 
         /** The host's words for an agent whose session has not shown up yet. */
         private const val NOT_STARTED = "no Claude Code or Codex runs"

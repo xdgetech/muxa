@@ -154,6 +154,8 @@ data class Routine(
     val bot: String? = null,
     /** The event that runs it, e.g. `review` (ADR 0084). */
     val on: String? = null,
+    /** Unix seconds: a due run waits until then, while every subscription it may use is at its limit (ADR 0103 §9). */
+    @SerialName("waiting_until") val waitingUntil: Long? = null,
 ) {
     val id: String get() = "$workspace/$name"
 }
@@ -325,6 +327,18 @@ data class Terminal(
         get() = labels["muxa.places"]?.let { runCatching { json.decodeFromString<List<Place>>(it) }.getOrNull() } ?: emptyList()
 }
 
+/**
+ * A paused Task (ADR 0104): its agent as it was at pause, not live, with its labels. The id stays the
+ * Task's, and its open items keep pointing at it. [pausedAt] is Unix seconds.
+ */
+@Serializable
+data class Paused(
+    val terminal: Terminal,
+    @SerialName("paused_at") val pausedAt: Long,
+    /** The Task Loop that was active at pause; Resume arms it again. */
+    val loop: LoopSpec? = null,
+)
+
 /** What the Reader lists and opens (plan F2). */
 enum class ReaderKind(val wire: String) { DOCS("docs"), CHANGES("changes"), IMAGES("images") }
 
@@ -460,9 +474,11 @@ data class LoopInfo(
     val attempts: Int,
     @SerialName("armed_at") val armedAt: Long,
     val since: Long,
-    /** `waiting`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
+    /** `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
     val reason: String? = null,
     @SerialName("last_check") val lastCheck: LastCheck? = null,
+    /** Paused for `limit-reset`: when the fix prompt is typed (ADR 0103 §9). */
+    @SerialName("resumes_at") val resumesAt: Long? = null,
 ) {
     /** It still works on the Task. */
     val isActive: Boolean get() = state in setOf("armed", "checking", "paused")
@@ -512,6 +528,8 @@ sealed interface V2Event {
 
     /** The host's resources, while [V2Client.hostWatch] holds. */
     data class Host(val report: HostReport) : V2Event
+    /** A Task was paused, resumed or closed; every paused Task as it is now. */
+    data class PausedChanged(val paused: List<Paused>) : V2Event
 
     /** An open Reader file changed. */
     data class Reader(val reader: Int, val content: ReaderContent) : V2Event

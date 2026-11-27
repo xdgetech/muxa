@@ -91,6 +91,30 @@
 #                  (default false). Turn it on only after the developer
 #                  checklist in docs/adr/0028 passes.
 #
+# [[subscription]]  optional; a named agent login, such as a Claude Max or a
+#   ChatGPT plan (ADR 0103). One account has one limit, whichever workspace
+#   uses it, so subscriptions sit beside the workspaces.
+#   name   lowercase letters, digits, - or _.
+#   agent  "claude-code" or "codex".
+#   home   the login's folder: its CLAUDE_CONFIG_DIR or CODEX_HOME.
+#          ~/.claude and ~/.codex are the default logins and set nothing.
+#          Log in once with it: CLAUDE_CONFIG_DIR=~/.claude-work claude
+#   plan   optional; a label only.
+#   muxa keeps the name and the folder. The login stays with the agent.
+#
+#   A workspace lists the ones its agents use, in order:
+#     subscriptions = ["claude-work", "chatgpt"]
+#   Each agent takes the first one of its kind. A workspace with
+#   subscriptions may not also set CLAUDE_CONFIG_DIR or CODEX_HOME in its
+#   env. A Bot may list its own, from its workspace's list, in
+#   .muxa/routines.toml; the Capture assistant in [assistant].
+#
+# [[subscription]]
+# name = "claude-work"
+# agent = "claude-code"
+# home = "~/.claude-work"
+# plan = "Max 20x"
+#
 # Unknown keys are refused, so a typo fails loudly instead of being ignored.
 
 # ~/work/company holds api/, web/ and clients/portal/: all three are its repos.

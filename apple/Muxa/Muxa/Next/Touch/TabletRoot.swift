@@ -64,6 +64,8 @@ struct TabletRoot: View {
         case .tasks:
             if let t = model.terminals.first(where: { $0.id == nav.terminal }) {
                 TabletTaskView(terminal: t).id(t.id)
+            } else if let p = model.pausedRecord(nav.terminal) {
+                PausedTaskScreen(paused: p).id(p.id)
             } else {
                 ContentUnavailableView("Select a Task", systemImage: "terminal")
             }

@@ -22,6 +22,10 @@ struct LoopSheet: View {
                         if let last = lp.lastCheck {
                             LabeledContent("Last check", value: LoopText.last(last))
                         }
+                        if let at = lp.resumesAt {
+                            LabeledContent("Fix prompt at", value: Date(timeIntervalSince1970: TimeInterval(at)).formatted())
+                                .accessibilityIdentifier("loop.resumes")
+                        }
                     }
                     .accessibilityIdentifier("loop.now")
                 }
@@ -79,6 +83,7 @@ enum LoopText {
         switch (lp.state, lp.reason) {
         case ("armed", _): "Waits for the turn's end"
         case ("checking", _): "Checking"
+        case ("paused", "limit-reset"): "Paused: its subscription is at its limit"
         case ("paused", _): "Paused: the agent waits for you"
         case ("passed", _): "Passed"
         case ("stopped", "limit"): "Stopped: too many failed checks"

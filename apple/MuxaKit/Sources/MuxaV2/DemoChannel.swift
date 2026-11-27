@@ -39,10 +39,19 @@ public struct DemoContent: Sendable {
     public var losesWork: [String: String]
     /// What `settings` answers first; `settings-update` changes it in memory.
     public var settings: Settings
+    /// The paused Tasks (ADR 0104).
+    public var paused: [Paused]
+    /// What `subscriptions` answers (ADR 0103).
+    public var subscriptions: [SubscriptionUsage]
+    /// What `token-usage` answers, for any day (ADR 0103 §6).
+    public var tokenUsage: TokenUsage
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
                 taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:],
-                losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1")) {
+                losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1"),
+                subscriptions: [SubscriptionUsage] = [], tokenUsage: TokenUsage = TokenUsage(day: ""), paused: [Paused] = []) {
+        self.subscriptions = subscriptions
+        self.tokenUsage = tokenUsage
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
@@ -53,6 +62,7 @@ public struct DemoContent: Sendable {
         self.chats = chats
         self.losesWork = losesWork
         self.settings = settings
+        self.paused = paused
     }
 }
 
@@ -81,6 +91,7 @@ actor DemoServer {
     private var nextChannel: UInt32 = 1
     private var nextReader: UInt32 = 1
     private var loops: [String: LoopInfo] = [:]
+    private var paused: [Paused]
     private var nextChat: UInt32 = 1
     private var nextTerminal = 1
     private var watching = false
@@ -88,6 +99,7 @@ actor DemoServer {
     init(content: DemoContent, out: AsyncThrowingStream<Data, any Error>.Continuation) {
         self.content = content
         self.out = out
+        paused = content.paused
         inbox = Inbox(revision: 1, items: content.inbox, done: [])
         // pr-watch has used two of its three items today, as a host counts them.
         let today = Date.now.formatted(.iso8601.year().month().day())
@@ -222,6 +234,8 @@ actor DemoServer {
             resolve(id, item)
         case "task-shell":
             taskShell(id, m["terminal"] as? String)
+        case "login-start":
+            loginStart(id, m["subscription"] as? String)
         case "close-terminal":
             guard let t = content.terminals.first(where: { $0.id == m["terminal"] as? String }), t.isTaskShell else {
                 return send(["type": "error", "id": id, "code": "bad-request", "message": "only a Task's shell closes this way"])
@@ -230,6 +244,12 @@ actor DemoServer {
             reply(id, [:])
         case "close-task":
             closeTask(id, m)
+        case "pause-task":
+            pauseTask(id, m["terminal"] as? String ?? "")
+        case "resume-task":
+            resumeTask(id, m["terminal"] as? String ?? "")
+        case "paused-tasks":
+            reply(id, ["paused": json(paused)])
         case "upload":
             upload(id, m)
         case "inbox-request-changes":
@@ -258,6 +278,12 @@ actor DemoServer {
             reply(id, [:])
         case "disk":
             reply(id, ["rows": json(DemoHost.diskRows)])
+        case "subscriptions":
+            reply(id, ["subscriptions": plain(content.subscriptions)])
+        case "token-usage":
+            var usage = content.tokenUsage
+            usage.day = m["day"] as? String ?? usage.day
+            reply(id, ["token_usage": plain(usage)])
         case "settings":
             reply(id, ["settings": plain(content.settings)])
         case "settings-update":
@@ -511,6 +537,27 @@ actor DemoServer {
         if watching { send(["type": "changed", "terminal": json(t)]) }
     }
 
+    /// A subscription's login terminal (ADR 0103 §7): one per subscription; the
+    /// demo's screen shows where the agent asks to log in.
+    private func loginStart(_ id: UInt64, _ name: String?) {
+        guard let name, let sub = content.settings.subscriptions.first(where: { $0.name == name }) else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "no subscription named \(name ?? "")"])
+        }
+        if let live = content.terminals.first(where: {
+            $0.live && $0.labels["muxa.kind"] == "login" && $0.labels["muxa.subscription"] == name
+        }) {
+            return reply(id, ["terminal": json(live), "existing": true])
+        }
+        let t = Terminal(id: newTerminalID(), name: "login-\(name)", live: true, status: nil,
+                         labels: ["muxa.kind": "login", "muxa.subscription": name], cols: 80, rows: 24)
+        content.terminals.append(t)
+        content.screens[t.id] = sub.agent == "codex"
+            ? "$ codex login\r\nOpen this link to sign in with ChatGPT.\r\n"
+            : "$ claude\r\nSelect login method:\r\n › 1. Claude account with subscription\r\n"
+        reply(id, ["terminal": json(t), "existing": false])
+        if watching { send(["type": "changed", "terminal": json(t)]) }
+    }
+
     /// Keeps an upload's name, as the host would write it (ADR 0081); nothing is saved.
     private func upload(_ id: UInt64, _ m: [String: Any]) {
         func refuse(_ message: String) { send(["type": "error", "id": id, "code": "bad-request", "message": message]) }
@@ -533,17 +580,25 @@ actor DemoServer {
         reply(id, ["path": ".muxa/uploads/\(file)"])
     }
 
-    /// Closes a Task without its item, as Approve does, with its shells and open items.
+    /// Closes a Task without its item, as Approve does, with its shells and open
+    /// items. A paused Task's record goes instead.
     private func closeTask(_ id: UInt64, _ m: [String: Any]) {
-        guard let agent = content.terminals.first(where: { $0.id == m["terminal"] as? String && $0.isTaskAgent }) else {
+        let target = m["terminal"] as? String
+        let isPaused = paused.contains { $0.id == target }
+        guard let target, isPaused || content.terminals.contains(where: { $0.id == target && $0.isTaskAgent }) else {
             return send(["type": "error", "id": id, "code": "bad-request", "message": "only a Task closes this way"])
         }
-        let open = inbox.items.filter { $0.terminal == agent.id }.map(\.id)
+        let open = inbox.items.filter { $0.terminal == target }.map(\.id)
         if m["worktree"] as? String != WorktreeChoice.force.rawValue,
            let why = open.lazy.compactMap({ self.content.losesWork[$0] }).first {
             return send(["type": "error", "id": id, "code": "would-lose-work", "message": why])
         }
-        closeWithShells(agent.id)
+        if isPaused {
+            paused.removeAll { $0.id == target }
+            sendPaused()
+        } else {
+            closeWithShells(target)
+        }
         change(id) { inbox in
             for item in open {
                 guard let at = inbox.items.firstIndex(where: { $0.id == item }) else { continue }
@@ -551,6 +606,69 @@ actor DemoServer {
             }
             return true
         }
+    }
+
+    /// Keeps the Task's agent as it was, stops its loop, then ends the agent and
+    /// its shells (ADR 0104). Its places and items stay.
+    private func pauseTask(_ id: UInt64, _ terminal: String) {
+        guard let agent = content.terminals.first(where: { $0.id == terminal }) else {
+            return send(["type": "error", "id": id, "code": "not-found", "message": "no terminal \(terminal)"])
+        }
+        guard agent.isTaskAgent else {
+            return send(["type": "error", "id": id, "code": "bad-request", "message": "only a Task's agent pauses"])
+        }
+        let now = Int64(Date().timeIntervalSince1970)
+        let active = loops[terminal].flatMap { $0.isActive ? $0 : nil }
+        var kept = agent
+        kept.live = false
+        kept.status = nil
+        let record = Paused(terminal: kept, pausedAt: now,
+                            loop: active.map { LoopSpec(check: $0.check, maxAttempts: $0.maxAttempts, timeout: $0.timeout) })
+        paused.append(record)
+        if var lp = active {
+            lp.state = "stopped"
+            lp.reason = "user"
+            lp.since = now
+            setLoop(lp)
+        }
+        reply(id, ["paused": json(record)])
+        closeWithShells(terminal)
+        sendPaused()
+    }
+
+    /// Runs a paused Task's agent again with its labels, and its loop with the
+    /// attempts kept.
+    private func resumeTask(_ id: UInt64, _ terminal: String) {
+        guard let record = paused.first(where: { $0.id == terminal }) else {
+            return send(["type": "error", "id": id, "code": "not-found", "message": "\(terminal) is not a paused Task"])
+        }
+        var t = record.terminal
+        t.id = newTerminalID()
+        t.live = true
+        t.status = TerminalStatus(state: "working", app: "claude-code")
+        content.terminals.append(t)
+        content.screens[t.id] = "Resuming \(t.taskTitle ?? t.name ?? "the Task")…\r\n"
+        if let spec = record.loop { setLoop(newLoop(t.id, spec.json, previous: loops[record.id])) }
+        reply(id, ["terminal": json(t), "existing": false])
+        if watching { send(["type": "changed", "terminal": json(t)]) }
+        endPause(record.id, movingTo: t.id)
+    }
+
+    /// An agent runs the paused Task again: the record goes, and its open items
+    /// move to the new agent.
+    private func endPause(_ old: String, movingTo new: String) {
+        paused.removeAll { $0.id == old }
+        let moving = inbox.items.indices.filter { inbox.items[$0].terminal == old }
+        for i in moving { inbox.items[i].terminal = new }
+        if !moving.isEmpty {
+            inbox.revision += 1
+            if watching { send(["type": "inbox", "inbox": inbox.wireObject]) }
+        }
+        sendPaused()
+    }
+
+    private func sendPaused() {
+        if watching { send(["type": "paused", "paused": json(paused)]) }
     }
 
     /// Closes a Task's agent, then the shells in its folder, as the server does.
@@ -681,6 +799,8 @@ actor DemoServer {
         if let loopSpec { setLoop(newLoop(t.id, loopSpec, previous: nil)) }
         reply(id, ["terminal": json(t), "existing": false])
         if watching { send(["type": "changed", "terminal": json(t)]) }
+        // An agent in a paused Task's working place ends the pause (ADR 0104).
+        if let record = paused.first(where: { $0.terminal.taskDir == dir }) { endPause(record.id, movingTo: t.id) }
     }
 
     /// `ws` with its live Task agents under every connection and MCP server,
@@ -712,9 +832,10 @@ actor DemoServer {
         }
     }
 
-    /// A terminal id not used yet, also after a Task closed.
+    /// A terminal id not used yet, also after a Task closed, nor by a paused Task.
     private func newTerminalID() -> String {
-        while content.terminals.contains(where: { $0.id == "t\(nextTerminal)" }) { nextTerminal += 1 }
+        func used(_ id: String) -> Bool { content.terminals.contains { $0.id == id } || paused.contains { $0.id == id } }
+        while used("t\(nextTerminal)") { nextTerminal += 1 }
         defer { nextTerminal += 1 }
         return "t\(nextTerminal)"
     }

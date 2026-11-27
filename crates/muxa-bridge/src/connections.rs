@@ -118,6 +118,8 @@ mod tests {
             mcp: Vec::new(),
             claude_connectors: false,
             bot_rules: Default::default(),
+            subscriptions: Vec::new(),
+            switch_subscriptions: true,
             build: Default::default(),
         }
     }

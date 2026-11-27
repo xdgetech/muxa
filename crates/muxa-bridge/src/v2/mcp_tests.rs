@@ -67,6 +67,8 @@ fn ws(root: &Path) -> Workspace {
         mcp: vec![linear, docs, slack],
         claude_connectors: false,
         bot_rules: Default::default(),
+        subscriptions: Vec::new(),
+        switch_subscriptions: true,
         build: Default::default(),
     }
 }

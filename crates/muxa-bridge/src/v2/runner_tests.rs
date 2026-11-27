@@ -544,3 +544,139 @@ async fn a_bots_run_is_claude_code_with_its_workspaces_bot_rules() {
     assert!(deny.contains(&json!("Bash")), "{deny:?}");
     assert!(deny.len() > 1, "muxa's own deny rule stays: {deny:?}");
 }
+
+/// ADR 0103: a run takes its Workspace's first login, a Bot's run its own
+/// list's, with the login's variable and a `muxa.subscription` label.
+#[tokio::test]
+async fn a_run_gets_its_login_and_a_bot_run_its_bots_login() {
+    let h = Host::with(
+        "login",
+        "[[routine]]\nname = \"Watch\"\ninstructions = \"brief.md\"\nenabled = true\nbot = \"triage\"\n\
+         [[bot]]\nname = \"triage\"\nenabled = true\nsubscriptions = [\"spare\"]\n",
+    );
+    let home = |n: &str| h.base.join(n).to_string_lossy().into_owned();
+    std::fs::write(
+        h.base.join("workspaces.toml"),
+        format!(
+            "[[subscription]]\nname = \"work\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[subscription]]\nname = \"spare\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[workspace]]\nname = \"w\"\nroot = \"{}\"\nsubscriptions = [\"work\", \"spare\"]\n\
+             [workspace.routines]\nenabled = true\n",
+            home(".claude-work"),
+            home(".claude-spare"),
+            h.base.join("root").display()
+        ),
+    )
+    .unwrap();
+    let backend = FakeBackend::new();
+    let plain = h.started(&backend).await;
+    assert_eq!(plain.labels[SUBSCRIPTION], "work");
+    assert_eq!(
+        backend.launches()[0].env.get("CLAUDE_CONFIG_DIR"),
+        Some(&home(".claude-work"))
+    );
+    h.runner
+        .start(&backend, "w", "Watch", When::Now(now()))
+        .await
+        .unwrap();
+    let launches = backend.launches();
+    let bot = launches
+        .iter()
+        .find(|l| l.labels.get(BOT).map(String::as_str) == Some("triage"))
+        .unwrap();
+    assert_eq!(bot.labels[SUBSCRIPTION], "spare");
+    assert_eq!(
+        bot.env.get("CLAUDE_CONFIG_DIR"),
+        Some(&home(".claude-spare"))
+    );
+    // Each records its login's usage through its status line, beside the
+    // Bot's permission rules.
+    for (launch, name) in [(&launches[0], "work"), (bot, "spare")] {
+        let dir = launch.cwd.clone().unwrap();
+        let settings = std::fs::read_to_string(dir.join(".muxa/claude-settings.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&settings).unwrap();
+        let line = value["statusLine"]["command"].as_str().unwrap();
+        assert!(
+            line.contains(&format!("statusline --subscription '{name}'")),
+            "{line}"
+        );
+        assert!(
+            launch.argv.join(" ").contains("--settings"),
+            "{:?}",
+            launch.argv
+        );
+    }
+    let bot_settings = bot.cwd.clone().unwrap().join(".muxa/claude-settings.json");
+    assert!(
+        std::fs::read_to_string(bot_settings)
+            .unwrap()
+            .contains("permissions")
+    );
+}
+
+/// ADR 0103 §9: from 95% new runs take the next login; when every login is
+/// full, a scheduled run waits unclaimed, and Run now still starts.
+#[tokio::test]
+async fn a_full_login_is_skipped_and_scheduled_runs_wait_when_all_are_full() {
+    let h = Host::new("full");
+    let home = |n: &str| h.base.join(n).to_string_lossy().into_owned();
+    std::fs::write(
+        h.base.join("workspaces.toml"),
+        format!(
+            "[[subscription]]\nname = \"work\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[subscription]]\nname = \"spare\"\nagent = \"claude-code\"\nhome = \"{}\"\n\
+             [[workspace]]\nname = \"w\"\nroot = \"{}\"\nsubscriptions = [\"work\", \"spare\"]\n\
+             [workspace.routines]\nenabled = true\n",
+            home(".claude-work"),
+            home(".claude-spare"),
+            h.base.join("root").display()
+        ),
+    )
+    .unwrap();
+    let state = h.base.join("state");
+    let at = now();
+    let full = |name: &str, percent: f64| {
+        let w = crate::limits::Window {
+            minutes: 300,
+            used_percent: percent,
+            resets_at: at + 3600,
+        };
+        crate::limits::record(&state, name, &[w], at).unwrap();
+    };
+    full("work", 97.0);
+    let backend = FakeBackend::new();
+    let t = h.started(&backend).await;
+    assert_eq!(t.labels[SUBSCRIPTION], "spare");
+    end_terminal(&backend, &t.id).await;
+    h.runner.agent_ended(&t).await;
+
+    full("spare", 99.0);
+    let slot = jiff::civil::date(2026, 11, 25).at(9, 0, 0, 0);
+    let waited = h
+        .runner
+        .start(&backend, "w", "Brief", When::Scheduled(slot))
+        .await;
+    assert!(
+        matches!(waited, Err(StartError::Waiting(u)) if u == at + 3600),
+        "{waited:?}"
+    );
+    assert!(h.state().running.is_none(), "a waiting run is not claimed");
+    let listed = crate::routines::list(&h.runner.config()).unwrap();
+    let mut info = listed.routines[0].clone();
+    info.next_due = Some(at - 60);
+    let waits = waits(&h.runner.config(), &[info]);
+    assert_eq!(
+        waits.get(&("w".to_owned(), "Brief".to_owned())),
+        Some(&(at + 3600))
+    );
+    // The user's own Run now starts, on the first login.
+    let started = h
+        .runner
+        .start(&backend, "w", "Brief", When::Now(now()))
+        .await;
+    assert!(started.is_ok(), "{started:?}");
+    assert_eq!(
+        backend.launches().last().unwrap().labels[SUBSCRIPTION],
+        "work"
+    );
+}

@@ -109,6 +109,12 @@ struct FrameTests {
         #expect(back?["used_by"] != nil)
     }
 
+    @Test func aLoopHeldForALimitSaysWhenItGoesOn() throws {
+        let wire = #"{"loop":{"terminal":"t1","check":"make test","max_attempts":3,"timeout":600,"state":"paused","attempts":1,"armed_at":1,"since":2,"reason":"limit-reset","resumes_at":1700003600}}"#
+        let lp: LoopInfo = try field("loop", of: Data(wire.utf8))
+        #expect(lp.reason == "limit-reset" && lp.resumesAt == 1_700_003_600 && lp.isActive)
+    }
+
     @Test func itemsDecodeFromTheWire() throws {
         // An older server may still send `later_until`; it is ignored (ADR 0096).
         let wire = #"{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"#

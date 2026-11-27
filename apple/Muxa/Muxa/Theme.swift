@@ -101,9 +101,10 @@ extension Color {
 }
 
 /// What a Task's agent reports about itself (OSC 7501), as the mocks color it.
-/// No report is idle: muxa invents no state.
+/// No report is idle: muxa invents no state. `paused` is muxa's own: the Task
+/// has no agent (ADR 0104), and no report maps to it.
 enum TaskState: CaseIterable {
-    case needsYou, done, working, idle
+    case needsYou, done, working, idle, paused
 
     init(_ state: String?) {
         switch state {
@@ -120,6 +121,7 @@ enum TaskState: CaseIterable {
         case .done: "Done"
         case .working: "Working"
         case .idle: "Idle"
+        case .paused: "Paused"
         }
     }
 
@@ -129,6 +131,7 @@ enum TaskState: CaseIterable {
         case .done: ThemeStore.shared.color(.done)
         case .working: ThemeStore.shared.color(.working)
         case .idle: ThemeStore.shared.color(.idle)
+        case .paused: Palette.textTertiary
         }
     }
 }
@@ -167,6 +170,8 @@ enum Icon {
     static let add = "plus"
     static let newTask = "plus.square.on.square"
     static let closeTask = "xmark.square"
+    static let pause = "pause.circle"
+    static let resume = "play.circle"
     static let tasks = "checklist"
     static let changes = "plusminus"
     static let edit = "pencil"

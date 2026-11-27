@@ -5,6 +5,7 @@ pub mod agent_env;
 pub mod assistant;
 pub mod bots;
 pub mod build;
+pub mod build_access;
 pub mod connections;
 pub mod cron;
 pub mod lock;
@@ -12,6 +13,7 @@ pub mod loops;
 pub mod mcp;
 pub mod repos;
 pub mod routines;
+pub mod subscriptions;
 pub mod workers;
 pub mod workspaces;
 

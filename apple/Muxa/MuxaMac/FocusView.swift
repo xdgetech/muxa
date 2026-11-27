@@ -7,6 +7,7 @@ import SwiftUI
 struct FocusView: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
+    @Environment(MacChrome.self) private var chrome
     @Binding var selected: String?
 
     /// The Task whose loop sheet is open.
@@ -18,7 +19,7 @@ struct FocusView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            FocusHeader(active: active)
+            FocusHeader(active: active ?? model.pausedRecord(selected)?.terminal)
             HStack(spacing: 0) {
                 if nav.sidebar != .detailOnly {
                     FocusSidebar(selected: $selected)
@@ -26,6 +27,8 @@ struct FocusView: View {
                 VStack(spacing: 0) {
                     if active != nil {
                         PaneSplit { loopFor = $0 }
+                    } else if let p = model.pausedRecord(selected) {
+                        PausedTaskView(paused: p) { chrome.closingTask = p.terminal }
                     } else {
                         ContentUnavailableView("Select a Task", systemImage: "terminal")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

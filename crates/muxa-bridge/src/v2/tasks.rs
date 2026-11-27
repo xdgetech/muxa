@@ -5,18 +5,23 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use muxa_protocol::v2::{Place, PlaceKind};
-use muxa_server::tasks::{BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, WORKSPACE};
+use muxa_inbox::{Inbox, NewItem};
+use muxa_protocol::v2::{ItemKind, Place, PlaceKind};
+use muxa_server::tasks::{
+    BOT, BRANCH, CHECKOUT, DIR, PLACES, REPO, SUBSCRIPTION, TITLE, WORKSPACE,
+};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::adopt::{self, AgentLookup};
 use super::chat::Chats;
 use super::mcp;
+use super::paused::PausedStore;
 use super::places;
 use super::runner::Runner;
 use super::task_loop::TaskLoops;
 use crate::records::Workspace;
 use crate::records::mcp::McpServer;
+use crate::records::subscriptions::{self, Login};
 use crate::records::workers::LaunchCommand;
 use crate::routines::runs::{StartError, When};
 use crate::settings::{SettingsError, SettingsStore};
@@ -37,13 +42,15 @@ pub struct BridgeHost {
     agents_in: Arc<AgentLookup>,
     /// Samples the host for `host` (ADR 0105).
     resources: Arc<super::resources::Resources>,
+    paused: Arc<PausedStore>,
+    /// Where Task start says why the build disk was not used.
+    inbox: Option<Arc<Inbox>>,
 }
 
 impl BridgeHost {
     pub fn new(command: String, records: Arc<crate::config::Config>) -> Self {
         BridgeHost {
             command,
-            records,
             runner: None,
             loops: None,
             chats: None,
@@ -51,6 +58,16 @@ impl BridgeHost {
             claude_dirs: Vec::new(),
             agents_in: adopt::host_lookup(),
             resources: Arc::default(),
+            paused: Arc::new(PausedStore::open(records.state_dir.as_deref())),
+            records,
+            inbox: None,
+        }
+    }
+
+    pub fn with_inbox(self, inbox: Arc<Inbox>) -> Self {
+        BridgeHost {
+            inbox: Some(inbox),
+            ..self
         }
     }
 
@@ -114,12 +131,65 @@ impl BridgeHost {
     }
 
     /// Claude Code kept a conversation for `dir`, so `--continue` resumes it.
-    fn resumes(&self, ws: &Workspace, line: &str, dir: &Path) -> bool {
+    /// With a login, only its folder counts: the agent reads no other.
+    fn resumes(&self, ws: &Workspace, line: &str, dir: &Path, login: Option<&Login>) -> bool {
+        let dirs = match login {
+            Some(l) => vec![l.home.clone()],
+            None => adopt::claude_dirs(ws, &self.claude_dirs),
+        };
         crate::launch::is_claude_code(&LaunchCommand::Shell(line.to_owned()))
-            && crate::agents::claude::has_conversation(
-                &adopt::claude_dirs(ws, &self.claude_dirs),
-                dir,
-            )
+            && crate::agents::claude::has_conversation(&dirs, dir)
+    }
+
+    /// `line` with the status line that records `login`'s usage (ADR 0103 §6).
+    async fn with_status_line(
+        &self,
+        line: String,
+        dir: &Path,
+        login: Option<&Login>,
+    ) -> Result<String, TaskError> {
+        let hook = login.and_then(|l| {
+            crate::status_line::Hook::current(self.records.state_dir.as_deref(), &l.name)
+        });
+        let Some(hook) = hook else { return Ok(line) };
+        let dir = dir.to_owned();
+        blocking(move || crate::status_line::add_to_line(line, &dir, &hook)).await
+    }
+
+    /// The login an agent started with `line` runs on (ADR 0103): a talk's
+    /// Bot list when it has one, else the Workspace's. `keep` wins while it
+    /// exists; an adopted place keeps the login that holds its conversation.
+    async fn login(
+        &self,
+        ws: &Workspace,
+        bot: Option<&str>,
+        line: &str,
+        keep: Option<String>,
+        adopted: Option<PathBuf>,
+    ) -> Result<Option<Login>, TaskError> {
+        let (records, ws, bot, line) = (
+            Arc::clone(&self.records),
+            ws.clone(),
+            bot.map(str::to_owned),
+            line.to_owned(),
+        );
+        blocking(move || {
+            let all = records.load_workspaces()?;
+            let names =
+                super::runner::names_for(&all, &ws, bot.and_then(|b| all.bot(&ws.name, &b)));
+            let keep = keep.or_else(|| {
+                let dir = adopted?;
+                subscriptions::holding(all.subscriptions(), &ws.subscriptions, &dir)
+            });
+            Ok(subscriptions::login(
+                all.subscriptions(),
+                &names,
+                &LaunchCommand::Shell(line),
+                keep.as_deref(),
+                &super::runner::limits_of(&records, &all),
+            ))
+        })
+        .await
     }
 
     fn agent_command(&self, ws: &Workspace) -> String {
@@ -351,6 +421,7 @@ fn prepared(
     made: places::Made,
     line: String,
     given: Given,
+    login: Option<Login>,
 ) -> Prepared {
     if let Some(a) = &ws.agent {
         // Keys only: values may be tokens.
@@ -368,17 +439,28 @@ fn prepared(
         mcp: given.mcp,
         argv: shell_line(line),
         bot: None,
+        subscription: login.as_ref().map(|l| l.name.clone()),
         env: {
             let mut env = ws.agent.map(|a| a.env).unwrap_or_default();
             crate::connections::merge(&mut env, given.env);
+            // The loader refuses a login variable beside subscriptions.
+            env.extend(login.and_then(|l| l.env));
             env.into_iter().collect()
         },
     }
 }
 
+async fn paused_blocking(
+    f: impl FnOnce() -> Result<(), TaskError> + Send + 'static,
+) -> Result<(), TaskError> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| TaskError::Failed(format!("the paused Tasks were not kept: {e}")))?
+}
+
 /// Links build paths and records the places. A failure is only logged: the
-/// places are made. Blocking.
-fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place]) {
+/// places are made. Returns why the build disk was not used. Blocking.
+fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place]) -> Option<String> {
     let disk = match records.load_workspaces() {
         Ok(all) => all.get(workspace).and_then(|ws| all.build_disk(ws)),
         Err(_) => None,
@@ -389,7 +471,30 @@ fn note_places(records: &crate::config::Config, workspace: &str, made: &[Place])
         workspace,
         made,
         crate::records::now(),
-    );
+    )
+}
+
+/// One open item per message: every Task start that falls back finds it.
+fn ask_for_build_access(inbox: &Inbox, workspace: &str, why: &str) {
+    let item = NewItem {
+        kind: ItemKind::Todo,
+        title: "Allow muxa-bridge to write to the build disk".into(),
+        note: Some(format!(
+            "{why}\n\nUntil then, each Task builds in its own worktree. Tasks started after that use the build disk."
+        )),
+        workspace: Some(workspace.to_owned()),
+        due: None,
+        source: "host".into(),
+        key: Some(format!("build-access:{why}")),
+        once: false,
+        terminal: None,
+        routine: None,
+        place: None,
+        extra: Default::default(),
+    };
+    if let Err(e) = inbox.change(|b, now| b.add(item, now).map(drop)) {
+        tracing::warn!(error = %e, "cannot say why the build disk was not used");
+    }
 }
 
 async fn blocking<T: Send + 'static>(
@@ -435,7 +540,11 @@ impl Host for BridgeHost {
         ops: Vec<muxa_protocol::v2::SettingsOp>,
     ) -> Result<muxa_protocol::v2::Settings, TaskError> {
         let (store, revision) = (self.settings_store()?, revision.to_owned());
-        settings_call(move || store.update(&revision, ops)).await
+        let updated = settings_call(move || store.update(&revision, ops)).await?;
+        if let Some(chats) = &self.chats {
+            chats.reload_agents().await;
+        }
+        Ok(updated)
     }
 
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
@@ -470,8 +579,13 @@ impl Host for BridgeHost {
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let talk_text = talk.clone();
         let (records, ws_name) = (Arc::clone(&self.records), ws.name.clone());
+        let inbox = self.inbox.clone();
         let made = blocking(move || {
-            note_places(&records, &ws_name, &made.places);
+            if let Some(why) = note_places(&records, &ws_name, &made.places)
+                && let Some(inbox) = &inbox
+            {
+                ask_for_build_access(inbox, &ws_name, &why);
+            }
             places::brief(&made, &title_owned, goal.as_deref())?;
             if let Some(text) = &talk_text {
                 super::git::append_file(made.working(), "TASK.md", text)?;
@@ -490,9 +604,16 @@ impl Host for BridgeHost {
             line = talk_line(&ws, made.working(), line, commands).await?;
         }
         let adopts = spec.existing().is_some() || spec.checkout().is_some();
-        if adopts && self.resumes(&ws, &line, made.working()) {
+        let adopted = adopts.then(|| made.working().to_owned());
+        let login = self
+            .login(&ws, spec.bot.as_deref(), &line, None, adopted)
+            .await?;
+        if adopts && self.resumes(&ws, &line, made.working(), login.as_ref()) {
             line.push_str(" --continue");
         }
+        let mut line = self
+            .with_status_line(line, made.working(), login.as_ref())
+            .await?;
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
@@ -500,7 +621,7 @@ impl Host for BridgeHost {
             line = crate::launch::prompt_line(&line, start_prompt(adopts, spec.plan));
         }
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
-        let mut prepared = prepared(ws, title, made, line, given);
+        let mut prepared = prepared(ws, title, made, line, given, login);
         prepared.checkout = spec.checkout().map(str::to_owned);
         prepared.bot = spec.bot.clone();
         Ok(prepared)
@@ -517,6 +638,7 @@ impl Host for BridgeHost {
         };
         let ws = self.workspace(&label(WORKSPACE)?).await?;
         let made = made_of(ended, &label(DIR)?)?;
+        adopt::refuse_if_busy(Arc::clone(&self.agents_in), made.working()).await?;
         // The Workspace's connections and servers as they are now.
         let given = given(&ws).await?;
         let is_talk = ended.labels.contains_key(BOT);
@@ -529,15 +651,32 @@ impl Host for BridgeHost {
                 None => Vec::new(),
             };
             line = talk_line(&ws, made.working(), line, commands).await?;
-        } else {
+        }
+        // The conversation lives in the ended agent's login (ADR 0103 §5).
+        let keep = ended.labels.get(SUBSCRIPTION).cloned();
+        let bot = ended.labels.get(BOT).cloned();
+        let adopted = Some(made.working().to_owned());
+        let login = self
+            .login(&ws, bot.as_deref(), &line, keep, adopted)
+            .await?;
+        // The kept conversation goes on (ADR 0104), as in an adopted place.
+        if self.resumes(&ws, &line, made.working(), login.as_ref()) {
+            line.push_str(" --continue");
+        }
+        let mut line = self
+            .with_status_line(line, made.working(), login.as_ref())
+            .await?;
+        if !is_talk {
             line = crate::launch::prompt_line(&line, CONTINUE_PROMPT);
         }
         let title = ended
-            .name
-            .clone()
+            .labels
+            .get(TITLE)
+            .cloned()
+            .or_else(|| ended.name.clone())
             .or_else(|| made.branch.clone())
             .unwrap_or_else(|| "Task".into());
-        let mut prepared = prepared(ws, &title, made, line, given);
+        let mut prepared = prepared(ws, &title, made, line, given, login);
         prepared.checkout = ended.labels.get(CHECKOUT).cloned();
         prepared.bot = ended.labels.get(BOT).cloned();
         Ok(prepared)
@@ -583,6 +722,85 @@ impl Host for BridgeHost {
         if let Err(e) = noted {
             tracing::warn!(error = %e, "cannot note when connections were used");
         }
+    }
+
+    async fn login_launch(
+        &self,
+        subscription: &str,
+    ) -> Result<muxa_server::LoginLaunch, TaskError> {
+        let (records, name) = (Arc::clone(&self.records), subscription.to_owned());
+        let shell = self.shell();
+        let all = blocking(move || records.load_workspaces()).await?;
+        let sub = all
+            .subscriptions()
+            .iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| TaskError::Invalid(format!("no subscription named {name:?}")))?;
+        Ok(crate::status_line::login_launch(
+            sub,
+            shell,
+            self.records.home.as_deref(),
+        ))
+    }
+
+    async fn subscriptions(&self) -> Result<Vec<muxa_protocol::v2::SubscriptionUsage>, TaskError> {
+        let records = Arc::clone(&self.records);
+        blocking(move || {
+            let all = records.load_workspaces()?;
+            Ok(all
+                .subscriptions()
+                .iter()
+                .map(|s| {
+                    let found = match &records.state_dir {
+                        Some(dir) => crate::limits::read(dir, &s.name).unwrap_or_else(|e| {
+                            tracing::info!(subscription = %s.name, error = %e, "limits not read");
+                            crate::limits::Record::default()
+                        }),
+                        None => crate::limits::Record::default(),
+                    };
+                    crate::limits::usage(s, &found)
+                })
+                .collect())
+        })
+        .await
+    }
+
+    async fn token_usage(
+        &self,
+        day: Option<String>,
+    ) -> Result<muxa_protocol::v2::TokenUsage, TaskError> {
+        let zone = jiff::tz::TimeZone::system();
+        let date = match day {
+            Some(d) => d
+                .parse::<jiff::civil::Date>()
+                .map_err(|_| TaskError::Invalid("day must be YYYY-MM-DD".into()))?,
+            None => jiff::Timestamp::now().to_zoned(zone.clone()).date(),
+        };
+        let day = crate::tokens::Day::new(date, &zone)
+            .ok_or_else(|| TaskError::Invalid(format!("no day {date} on this host")))?;
+        let (records, mut claude) = (Arc::clone(&self.records), self.claude_dirs.clone());
+        blocking(move || {
+            let all = records.load_workspaces().map_err(|e| e.to_string())?;
+            let mut dirs =
+                crate::agents::data_dirs(&[], records.home.as_deref(), |key| all.agent_dirs(key));
+            for d in dirs.remove(crate::agents::claude::ID).unwrap_or_default() {
+                if !claude.contains(&d) {
+                    claude.push(d);
+                }
+            }
+            let codex = dirs.remove(crate::agents::codex::ID).unwrap_or_default();
+            let by = crate::tokens::by_folder(&claude, &codex, &day);
+            let roots: Vec<(String, PathBuf)> = all
+                .all()
+                .iter()
+                .map(|w| {
+                    let root = w.root.canonicalize().unwrap_or_else(|_| w.root.clone());
+                    (w.name.clone(), root)
+                })
+                .collect();
+            Ok(crate::tokens::assign(by, &roots, &day))
+        })
+        .await
     }
 
     async fn workspace_list(&self) -> Result<Vec<muxa_protocol::v2::Workspace>, TaskError> {
@@ -659,15 +877,24 @@ impl Host for BridgeHost {
 
     async fn routines(&self) -> Result<RoutineList, TaskError> {
         let records = Arc::clone(&self.records);
-        let listed = tokio::task::spawn_blocking(move || crate::routines::list(&records))
-            .await
-            .map_err(|e| TaskError::Failed(e.to_string()))?;
-        let listed = listed.map_err(TaskError::Failed)?;
+        let listed = tokio::task::spawn_blocking(move || {
+            let listed = crate::routines::list(&records)?;
+            let waits = super::runner::waits(&records, &listed.routines);
+            Ok::<_, String>((listed, waits))
+        })
+        .await
+        .map_err(|e| TaskError::Failed(e.to_string()))?;
+        let (listed, waits) = listed.map_err(TaskError::Failed)?;
         Ok(RoutineList {
             routines: listed
                 .routines
                 .into_iter()
-                .map(super::routines::to_v2)
+                .map(|r| {
+                    let until = waits.get(&(r.workspace.clone(), r.name.clone())).copied();
+                    let mut v2 = super::routines::to_v2(r);
+                    v2.waiting_until = until.map(|u| i64::try_from(u).unwrap_or(i64::MAX));
+                    v2
+                })
                 .collect(),
             problems: listed
                 .problems
@@ -699,7 +926,7 @@ impl Host for BridgeHost {
             .map_err(|e| match e {
                 StartError::Bad(m) | StartError::Unsupported(m) => TaskError::Invalid(m),
                 StartError::Busy(m) => TaskError::Busy(m),
-                StartError::Handled => TaskError::Busy(e.to_string()),
+                StartError::Handled | StartError::Waiting(_) => TaskError::Busy(e.to_string()),
                 StartError::Failed(m) => TaskError::Failed(m),
             })
     }
@@ -734,6 +961,24 @@ impl Host for BridgeHost {
 
     fn loop_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
         self.loops.as_ref().map(|l| l.subscribe())
+    }
+
+    async fn paused(&self) -> Vec<muxa_protocol::v2::Paused> {
+        self.paused.list()
+    }
+
+    async fn pause_keep(&self, paused: muxa_protocol::v2::Paused) -> Result<(), TaskError> {
+        let store = Arc::clone(&self.paused);
+        paused_blocking(move || store.keep(paused)).await
+    }
+
+    async fn pause_drop(&self, id: &str) -> Result<(), TaskError> {
+        let (store, id) = (Arc::clone(&self.paused), id.to_owned());
+        paused_blocking(move || store.remove(&id)).await
+    }
+
+    fn paused_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        Some(self.paused.changes())
     }
 
     async fn chat_open(
@@ -944,6 +1189,55 @@ mod tests {
         let named = host.prepare(&spec(&["web"])).await.unwrap();
         assert_eq!(named.mcp, ["docs"]);
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn a_build_disk_muxa_may_not_write_to_starts_the_task_and_says_why() {
+        use std::os::unix::fs::PermissionsExt;
+        let ssd = std::env::temp_dir().join(format!("muxa-tasks-{}-ssd", std::process::id()));
+        std::fs::create_dir_all(&ssd).unwrap();
+        let (host, base) = host(
+            "build-denied",
+            &format!("[build]\ndir = \"{}\"\n", ssd.display()),
+        );
+        let app = base.join("root/app");
+        super::super::adopt::tests::repo(&app);
+        let inbox = Arc::new(Inbox::memory());
+        let host = host.with_inbox(Arc::clone(&inbox));
+        let task = TaskSpec {
+            places: vec![muxa_protocol::v2::PlaceSpec::Branch {
+                repo: "app".into(),
+                branch: "fix".into(),
+                base: None,
+            }],
+            ..spec(&[])
+        };
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let ready = host.prepare(&task).await;
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let ready = ready.unwrap();
+        assert!(ready.dir.is_dir());
+        let items = inbox.view().items;
+        assert_eq!(items.len(), 1, "{items:?}");
+        let note = items[0].note.clone().unwrap_or_default();
+        assert!(note.contains(&ssd.display().to_string()), "{note}");
+        assert!(note.contains("Privacy & Security"), "{note}");
+        // A second start finds the open item.
+        let again = TaskSpec {
+            places: vec![muxa_protocol::v2::PlaceSpec::Branch {
+                repo: "app".into(),
+                branch: "fix-2".into(),
+                base: None,
+            }],
+            ..spec(&[])
+        };
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let second = host.prepare(&again).await;
+        std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+        second.unwrap();
+        assert_eq!(inbox.view().items.len(), 1);
+        let _ = std::fs::remove_dir_all(base);
+        let _ = std::fs::remove_dir_all(ssd);
     }
 
     #[tokio::test]

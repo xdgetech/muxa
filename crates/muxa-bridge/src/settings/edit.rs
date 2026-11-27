@@ -6,7 +6,8 @@
 use std::collections::BTreeMap;
 
 use muxa_protocol::settings::{
-    Access, BotSpec, ConnectionSpec, McpSpec, RoutineSpec, SettingsOp, WorkerSpec, WriteOnly,
+    Access, BotSpec, ConnectionSpec, McpSpec, RoutineSpec, SettingsOp, SubscriptionSpec,
+    WorkerSpec, WriteOnly,
 };
 use muxa_protocol::v2::LoopChecks;
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, value};
@@ -63,8 +64,21 @@ pub fn apply(
             park_after,
             claude_connectors,
             bot_rules,
+            subscriptions,
+            switch_subscriptions,
         } => {
             let t = find_ws(workspaces, &workspace)?;
+            if let Some(names) = subscriptions {
+                set_list(t, "subscriptions", &names);
+            }
+            if let Some(on) = switch_subscriptions {
+                // On is the default, so only off is written.
+                if on {
+                    t.remove("switch_subscriptions");
+                } else {
+                    t.insert("switch_subscriptions", value(false));
+                }
+            }
             if let Some(on) = claude_connectors {
                 set_bool(t, "claude_connectors", on, false);
             }
@@ -335,6 +349,7 @@ pub fn apply(
             enabled,
             worker,
             soul_text,
+            subscriptions,
         } => {
             let t = workspaces
                 .as_table_mut()
@@ -344,10 +359,98 @@ pub fn apply(
                 .ok_or("assistant is not a table; edit it by hand")?;
             set_bool(t, "enabled", enabled, true);
             set_str(t, "worker", worker.as_deref());
+            if let Some(names) = subscriptions {
+                set_list(t, "subscriptions", &names);
+            }
             if let Some(text) = soul_text {
                 check_soul(&text)?;
                 effects.assistant_soul = Some(text);
             }
+            Ok(())
+        }
+        SettingsOp::SubscriptionAdd { subscription } => {
+            let root = workspaces.as_table_mut();
+            if find_named(root, "subscription", &subscription.name)?.is_some() {
+                return Err(format!(
+                    "subscription {:?} exists already",
+                    subscription.name
+                ));
+            }
+            let mut t = Table::new();
+            t.insert("name", value(subscription.name.clone()));
+            write_subscription(&mut t, &subscription);
+            aot(root, "subscription")?.push(t);
+            Ok(())
+        }
+        SettingsOp::SubscriptionUpdate { subscription } => {
+            let t = find_named(
+                workspaces.as_table_mut(),
+                "subscription",
+                &subscription.name,
+            )?
+            .ok_or_else(|| format!("there is no subscription {:?}", subscription.name))?;
+            write_subscription(t, &subscription);
+            Ok(())
+        }
+        // A Workspace that still lists it makes the loader refuse the result.
+        SettingsOp::SubscriptionRemove { name } => {
+            remove_named(workspaces.as_table_mut(), "subscription", &name)
+        }
+        SettingsOp::SubscriptionAdopt {
+            workspace,
+            agent,
+            name,
+            plan,
+        } => {
+            let key = match agent.as_str() {
+                "claude-code" => crate::agents::claude::DIR_ENV,
+                "codex" => crate::agents::codex::DIR_ENV,
+                _ => return Err("agent must be \"claude-code\" or \"codex\"".into()),
+            };
+            let t = find_ws(workspaces, &workspace)?;
+            let home = t
+                .get_mut("agent")
+                .and_then(Item::as_table_like_mut)
+                .and_then(|a| a.get_mut("env"))
+                .and_then(Item::as_table_like_mut)
+                .and_then(|env| env.remove(key))
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .ok_or_else(|| format!("[workspace.agent] env has no {key}"))?;
+            if let Some(a) = t.get_mut("agent").and_then(Item::as_table_like_mut) {
+                drop_empty(a, "env");
+            }
+            drop_empty(t, "agent");
+            let mut list = names_in_list(t, "subscriptions");
+            let root = workspaces.as_table_mut();
+            // A subscription with this folder already is the same login.
+            let same = root
+                .get("subscription")
+                .and_then(Item::as_array_of_tables)
+                .and_then(|a| a.iter().find(|s| str_of(s, "home") == Some(&home)))
+                .and_then(|s| str_of(s, "name"))
+                .map(str::to_owned);
+            let name = match same {
+                Some(existing) => existing,
+                None => {
+                    if find_named(root, "subscription", &name)?.is_some() {
+                        return Err(format!("subscription {name:?} exists already"));
+                    }
+                    let mut s = Table::new();
+                    s.insert("name", value(name.clone()));
+                    let spec = SubscriptionSpec {
+                        name: name.clone(),
+                        agent,
+                        home,
+                        plan,
+                    };
+                    write_subscription(&mut s, &spec);
+                    aot(root, "subscription")?.push(s);
+                    name
+                }
+            };
+            list.retain(|n| n != &name);
+            list.insert(0, name);
+            set_list(find_ws(workspaces, &workspace)?, "subscriptions", &list);
             Ok(())
         }
         SettingsOp::BuildUpdate {
@@ -520,6 +623,18 @@ fn remove_named(t: &mut Table, key: &str, name: &str) -> Result<(), String> {
         t.remove(key);
     }
     Ok(())
+}
+
+/// A list of strings in `t`; empty when it is absent.
+fn names_in_list(t: &Table, key: &str) -> Vec<String> {
+    t.get(key)
+        .and_then(Item::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn names_in(t: &Table, key: &str) -> Vec<String> {
@@ -729,6 +844,13 @@ fn write_bot(t: &mut Table, b: &BotSpec) {
     } else {
         set_list(t, "commands", &b.commands);
     }
+    set_list(t, "subscriptions", &b.subscriptions);
+}
+
+fn write_subscription(t: &mut Table, s: &SubscriptionSpec) {
+    set_str(t, "agent", Some(&s.agent));
+    set_str(t, "home", Some(&s.home));
+    set_str(t, "plan", s.plan.as_deref());
 }
 
 fn write_worker(t: &mut Table, w: &WorkerSpec) {

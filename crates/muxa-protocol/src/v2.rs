@@ -200,6 +200,18 @@ pub struct Terminal {
     pub rows: u16,
 }
 
+/// A paused Task (ADR 0104): its agent as it was when it paused, with
+/// `live: false` and no status. The id stays the Task's id while it is paused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Paused {
+    pub terminal: Terminal,
+    /// Unix seconds.
+    pub paused_at: u64,
+    /// The Task Loop that was active at pause; resume arms it again.
+    #[serde(rename = "loop", default, skip_serializing_if = "Option::is_none")]
+    pub task_loop: Option<LoopSpec>,
+}
+
 /// A place a client asks for (ADR 0068). A repo is absolute, or relative
 /// to the Workspace's root as in ADR 0031.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -391,6 +403,19 @@ pub enum ClientMsg {
         #[serde(default)]
         worktree: Option<WorktreeMode>,
     },
+    /// Stops the Task's agent and shells and keeps the Task (ADR 0104).
+    PauseTask {
+        id: u64,
+        terminal: String,
+    },
+    /// Runs a paused Task's agent again; `terminal` is the paused id.
+    ResumeTask {
+        id: u64,
+        terminal: String,
+    },
+    PausedTasks {
+        id: u64,
+    },
     /// A file from the user's device into the Task's working place, under
     /// `.muxa/uploads/` (ADR 0081). `data` is base64.
     Upload {
@@ -474,6 +499,23 @@ pub enum ClientMsg {
     /// The Workspaces of `workspaces.toml`, for starting a Task. Nothing secret.
     Workspaces {
         id: u64,
+    },
+    /// Each subscription and the plan limits its agents last reported (ADR 0103).
+    Subscriptions {
+        id: u64,
+    },
+    /// The tokens agents used on one day, by Workspace and by Task (ADR 0103
+    /// §6). `day` is `YYYY-MM-DD` on the host's clock; absent, today.
+    TokenUsage {
+        id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        day: Option<String>,
+    },
+    /// Opens the agent's own login for a subscription in a host terminal,
+    /// or the one already open (ADR 0103 §7). Answers `started`.
+    LoginStart {
+        id: u64,
+        subscription: String,
     },
     /// The disk use of Task places, build folders and leftovers (ADR 0102).
     Disk {
@@ -726,6 +768,74 @@ pub enum WorktreeMode {
     Force,
 }
 
+/// A subscription, a named agent login, and the plan limits its agents last
+/// reported (ADR 0103). No credential and no account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubscriptionUsage {
+    pub name: String,
+    /// `claude-code` or `codex`.
+    pub agent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// Shortest first; empty before its first report.
+    #[serde(default)]
+    pub windows: Vec<UsageWindow>,
+    /// Unix seconds of the last report; None before the first.
+    #[serde(default)]
+    pub as_of: Option<u64>,
+}
+
+/// The tokens of one day on the host's clock, from the agents' transcripts
+/// (ADR 0103 §6). Tokens only: no vendor tells a share of a plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenUsage {
+    /// `YYYY-MM-DD`.
+    pub day: String,
+    /// Most first.
+    pub workspaces: Vec<WorkspaceTokens>,
+    /// The folders inside a Workspace other than its root, most first: a
+    /// Task's working place or a Routine's run folder. At most 50.
+    pub tasks: Vec<TaskTokens>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceTokens {
+    pub workspace: String,
+    #[serde(flatten)]
+    pub tokens: Tokens,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskTokens {
+    pub workspace: String,
+    /// The working folder, as a Task agent's `muxa.dir` names it.
+    pub dir: String,
+    /// The folder's name.
+    pub title: String,
+    #[serde(flatten)]
+    pub tokens: Tokens,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tokens {
+    /// Input not read from a cache.
+    pub input: u64,
+    /// Input read from a cache.
+    pub cached: u64,
+    /// Output, reasoning included.
+    pub output: u64,
+}
+
+/// One plan window: 300 minutes, 10080 minutes (a week).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageWindow {
+    pub minutes: u32,
+    /// 0 to 100, rounded.
+    pub used_percent: u32,
+    /// Unix seconds. A time in the past: the window reset, with no report since.
+    pub resets_at: u64,
+}
+
 /// A Workspace as a client may see it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
@@ -902,11 +1012,14 @@ pub struct LoopInfo {
     pub armed_at: u64,
     /// When `state` last changed.
     pub since: u64,
-    /// Why it is paused or stopped: `waiting`, `limit`, `error`, `no-agent`, `user`…
+    /// Why it is paused or stopped: `waiting`, `limit-reset`, `limit`, `error`, `no-agent`, `user`…
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_check: Option<LastCheck>,
+    /// Paused for `limit-reset`: when the fail prompt is typed (ADR 0103 §9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumes_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1203,6 +1316,10 @@ pub struct Routine {
     /// The event that runs it, e.g. `review` (ADR 0084).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on: Option<String>,
+    /// Unix seconds: a due run waits until then, while every subscription it
+    /// may use is at its limit (ADR 0103 §9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_until: Option<i64>,
 }
 
 /// How the last run ended.
@@ -1346,6 +1463,10 @@ pub enum ServerMsg {
     Host {
         host: HostReport,
     },
+    /// After `watch`: a Task was paused, resumed or closed. Every paused Task.
+    Paused {
+        paused: Vec<Paused>,
+    },
     /// A followed conversation changed.
     Chat {
         chat: u32,
@@ -1404,6 +1525,12 @@ pub enum Reply {
     Workspaces {
         workspaces: Vec<Workspace>,
     },
+    Subscriptions {
+        subscriptions: Vec<SubscriptionUsage>,
+    },
+    TokenUsage {
+        token_usage: TokenUsage,
+    },
     Disk {
         rows: Vec<DiskRow>,
     },
@@ -1416,7 +1543,7 @@ pub enum Reply {
         kept: Vec<DiskKept>,
     },
     Settings {
-        settings: Settings,
+        settings: Box<Settings>,
     },
     Migrated {
         tasks: Vec<V1Task>,
@@ -1429,6 +1556,12 @@ pub enum Reply {
     /// A Reader folder as a zip, in base64.
     Zipped {
         zip: String,
+    },
+    PausedList {
+        paused: Vec<Paused>,
+    },
+    PausedOne {
+        paused: Paused,
     },
     Empty {},
 }

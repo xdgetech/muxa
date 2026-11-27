@@ -33,6 +33,17 @@ pub enum SettingsError {
     Failed(String),
 }
 
+/// A new build disk muxa may not write to is refused, with the message Task
+/// start would give. A disk that is not mounted is saved.
+fn check_build_dir(all: &Workspaces) -> Result<(), SettingsError> {
+    let Some(dir) = &all.host_build().dir else {
+        return Ok(());
+    };
+    crate::records::build_access::check(dir, crate::records::build_access::WAIT)
+        .map(drop)
+        .map_err(SettingsError::Invalid)
+}
+
 /// What `ops` would write, checked by the loading rules.
 struct Plan {
     doc: DocumentMut,
@@ -175,6 +186,7 @@ impl SettingsStore {
         if let Err(e) = &loaded {
             problem.get_or_insert_with(|| e.to_string());
         }
+        let found_logins = view::found_logins(&config, home);
         let mut workspaces: Vec<_> = config
             .workspace
             .into_iter()
@@ -199,6 +211,8 @@ impl SettingsStore {
             workspaces,
             workers: config.worker,
             assistant: Some(assistant),
+            subscriptions: config.subscription,
+            found_logins,
             build: Some(build),
         })
     }
@@ -217,7 +231,19 @@ impl SettingsStore {
         }
         let path = self.path()?.to_owned();
         let original = self.read_text()?;
+        let sets_build = ops.iter().any(|o| {
+            matches!(
+                o,
+                SettingsOp::BuildUpdate {
+                    dir: Some(Some(_)),
+                    ..
+                }
+            )
+        });
         let plan = self.plan(&path, &original, ops)?;
+        if sets_build {
+            check_build_dir(&plan.current)?;
+        }
         self.write(&path, &original, &plan)?;
         tracing::info!(ops = ?plan.names, "settings changed");
         self.view()

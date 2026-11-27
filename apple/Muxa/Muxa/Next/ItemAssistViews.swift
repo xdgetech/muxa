@@ -157,9 +157,10 @@ extension SettingsOp {
     }
 }
 
-/// Where a started Bot talk (ADR 0083) shows.
-enum BotTalk {
-    /// Shows the started talk: the Task screen on iOS, Focus in the Mac's main
+/// Where a terminal opened from another page shows: a started Bot talk
+/// (ADR 0083), a login terminal or a Task from Usage.
+enum OpenInFocus {
+    /// Shows the terminal: the Task screen on iOS, Focus in the Mac's main
     /// window, which Settings may hide.
     @MainActor
     static func show(_ t: MuxaV2.Terminal, nav: NextNavigation, openWindow: OpenWindowAction) {
@@ -203,7 +204,7 @@ struct NewBotTalk: ViewModifier {
             return
         }
         name = ""
-        BotTalk.show(t, nav: nav, openWindow: openWindow)
+        OpenInFocus.show(t, nav: nav, openWindow: openWindow)
     }
 
     private var failed: Binding<Bool> {

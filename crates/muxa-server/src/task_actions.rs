@@ -9,6 +9,7 @@ use muxa_backend::{BackendError, SessionBackend, TerminalId, TerminalInfo};
 use muxa_inbox::{Inbox, InboxError};
 use muxa_protocol::v2::{ErrorCode, InboxItem, ItemKind, LoopSpec, Place, WorktreeMode};
 
+use crate::paused;
 use crate::session::{code_of, task_code};
 use crate::shells;
 use crate::task_items::is_agent;
@@ -46,15 +47,28 @@ pub(crate) async fn close_task<B: SessionBackend, H: Host>(
     terminal: &str,
     mode: WorktreeMode,
 ) -> Result<(), Refusal> {
-    let agent = backend
-        .get(&TerminalId::new(terminal.to_owned()))
-        .await
-        .map_err(|e| (code_of(&e), e.to_string()))?;
+    let agent = match backend.get(&TerminalId::new(terminal.to_owned())).await {
+        Ok(agent) => agent,
+        Err(e @ BackendError::NotFound(_)) => {
+            return match paused::find(host, terminal).await {
+                Some(p) => paused::close(host, inbox, &p, mode).await,
+                None => Err((code_of(&e), e.to_string())),
+            };
+        }
+        Err(e) => return Err((code_of(&e), e.to_string())),
+    };
     if !is_agent(&agent) {
         let message = format!("{terminal} is not a Task's agent; only a Task closes this way");
         return Err((ErrorCode::BadRequest, message));
     }
     end_task(backend, host, &agent, mode).await?;
+    // A pause whose terminal was not removed ends with it.
+    host.pause_drop(terminal).await.map_err(refused)?;
+    done_all(inbox, terminal)
+}
+
+/// Marks every open item of the agent `terminal` Done.
+pub(crate) fn done_all(inbox: &Inbox, terminal: &str) -> Result<(), Refusal> {
     let open: Vec<String> = inbox
         .view()
         .items
@@ -142,7 +156,7 @@ pub(crate) async fn retry<B: SessionBackend, H: Host>(
         if agent.live {
             restart_loop(host, &agent).await?;
         } else {
-            restart_agent(backend, host, &agent).await?;
+            restart_agent(backend, host, inbox, &agent).await?;
         }
     } else {
         return Err((
@@ -194,7 +208,7 @@ async fn task_agent<B: SessionBackend>(
 }
 
 /// The places on the agent's label; none when it has no readable label.
-fn places_of(agent: &TerminalInfo) -> Vec<Place> {
+pub(crate) fn places_of(agent: &TerminalInfo) -> Vec<Place> {
     let Some(raw) = agent.labels.get(PLACES) else {
         return Vec::new();
     };
@@ -205,7 +219,7 @@ fn places_of(agent: &TerminalInfo) -> Vec<Place> {
 }
 
 /// Stops the agent's loop while it still works; a finished one stays as it is.
-async fn stop_loop<H: Host>(host: &H, agent: &TerminalInfo) {
+pub(crate) async fn stop_loop<H: Host>(host: &H, agent: &TerminalInfo) {
     let id = agent.id.as_str();
     let active =
         host.loops().await.into_iter().any(|l| {
@@ -218,7 +232,10 @@ async fn stop_loop<H: Host>(host: &H, agent: &TerminalInfo) {
 
 /// Kills a live agent and removes its terminal. A kill that fails stops the
 /// close; a terminal that stays is only logged.
-async fn end_agent<B: SessionBackend>(backend: &B, agent: &TerminalInfo) -> Result<(), Refusal> {
+pub(crate) async fn end_agent<B: SessionBackend>(
+    backend: &B,
+    agent: &TerminalInfo,
+) -> Result<(), Refusal> {
     if agent.live {
         backend.kill(&agent.id).await.map_err(|e| {
             let message = format!("the agent did not end, so nothing was removed: {e}");
@@ -304,6 +321,7 @@ async fn restart_loop<H: Host>(host: &H, agent: &TerminalInfo) -> Result<(), Ref
 async fn restart_agent<B: SessionBackend, H: Host>(
     backend: &B,
     host: &H,
+    inbox: &Inbox,
     ended: &TerminalInfo,
 ) -> Result<(), Refusal> {
     let prepared = host.restart(ended).await.map_err(refused)?;
@@ -311,6 +329,7 @@ async fn restart_agent<B: SessionBackend, H: Host>(
         .await
         .map_err(|e| (code_of(&e), e.to_string()))?;
     tracing::info!(ended = %ended.id, terminal = %started.id, existing, "task agent restarted");
+    paused::end_pauses(host, inbox, &started).await;
     remove_terminal(backend, &ended.id).await;
     Ok(())
 }

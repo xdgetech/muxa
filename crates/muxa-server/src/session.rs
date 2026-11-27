@@ -21,11 +21,11 @@ use tokio::sync::{mpsc, oneshot, watch};
 use crate::attachment::{Attachment, Checked, Cmd, Link};
 use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
-use crate::shells;
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::uploads;
 use crate::wire::{self, Incoming};
-use crate::{inbox, item_actions, migrate, task_actions, task_items, usage};
+use crate::{inbox, item_actions, migrate, paused, task_actions, task_items, usage};
+use crate::{logins, shells};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -75,6 +75,7 @@ struct Session<'a, B: SessionBackend, H: Host> {
     inbox_watch: Option<watch::Receiver<u64>>,
     /// The host's Task Loop changes, after `watch`.
     loop_watch: Option<watch::Receiver<u64>>,
+    paused_watch: Option<watch::Receiver<u64>>,
     /// The backend's changes, after `watch`.
     changes: Option<B::Changes>,
     out: mpsc::UnboundedSender<Frame>,
@@ -136,6 +137,7 @@ where
         inbox,
         inbox_watch: None,
         loop_watch: None,
+        paused_watch: None,
         changes: None,
         out,
         ended,
@@ -193,6 +195,10 @@ where
             () = next_revision(&mut session.loop_watch) => {
                 let loops = session.host.loops().await;
                 send(&session.out, &ServerMsg::Loops { loops });
+            }
+            () = next_revision(&mut session.paused_watch) => {
+                let paused = session.host.paused().await;
+                send(&session.out, &ServerMsg::Paused { paused });
             }
             () = next_revision(&mut session.inbox_watch) => {
                 let inbox = session.inbox.view();
@@ -260,7 +266,7 @@ fn send(out: &mpsc::UnboundedSender<Frame>, msg: &ServerMsg) {
     }
 }
 
-fn to_wire(t: TerminalInfo) -> v2::Terminal {
+pub(crate) fn to_wire(t: TerminalInfo) -> v2::Terminal {
     v2::Terminal {
         id: t.id.as_str().to_owned(),
         name: t.name,
@@ -318,7 +324,13 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         let msg = match serde_json::from_slice::<ClientMsg>(payload) {
             Ok(msg) => msg,
             Err(e) => {
-                self.error(None, ErrorCode::BadRequest, bad_message(payload, &e));
+                // A request this server does not know still gets its reply, so a
+                // newer client does not wait for ever (ADR 0104).
+                self.error(
+                    request_id(payload),
+                    ErrorCode::BadRequest,
+                    bad_message(payload, &e),
+                );
                 return;
             }
         };
@@ -435,6 +447,18 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 Ok(()) => self.reply(id, Reply::Empty {}),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
+            ClientMsg::LoginStart { id, subscription } => {
+                match logins::start(self.backend, self.host, &subscription).await {
+                    Ok((t, existing)) => self.reply(
+                        id,
+                        Reply::Started {
+                            terminal: to_wire(t),
+                            existing,
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
             ClientMsg::TaskShell { id, terminal } => {
                 match shells::start(self.backend, self.host, &terminal).await {
                     Ok(t) => self.reply(
@@ -536,6 +560,14 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
             },
             ClientMsg::Workspaces { id } => self.workspaces(id).await,
+            ClientMsg::Subscriptions { id } => match self.host.subscriptions().await {
+                Ok(subscriptions) => self.reply(id, Reply::Subscriptions { subscriptions }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
+            ClientMsg::TokenUsage { id, day } => match self.host.token_usage(day).await {
+                Ok(token_usage) => self.reply(id, Reply::TokenUsage { token_usage }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
             ClientMsg::Disk { id } => self.disk(id).await,
             ClientMsg::Host { id } => match self.host_report().await {
                 Ok(host) => self.reply(id, Reply::Host { host }),
@@ -580,13 +612,40 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                         .await;
                 self.inbox_reply(id, done);
             }
+            ClientMsg::PauseTask { id, terminal } => {
+                match paused::pause(self.backend, self.host, &terminal).await {
+                    Ok(paused) => self.reply(id, Reply::PausedOne { paused }),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
+            ClientMsg::ResumeTask { id, terminal } => {
+                match paused::resume(self.backend, self.host, self.inbox, &terminal).await {
+                    Ok((terminal, existing)) => self.reply(
+                        id,
+                        Reply::Started {
+                            terminal: to_wire(terminal),
+                            existing,
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
+            ClientMsg::PausedTasks { id } => {
+                let paused = self.host.paused().await;
+                self.reply(id, Reply::PausedList { paused });
+            }
             ClientMsg::InboxRequestChanges { id, item, comment } => {
                 let done =
                     task_actions::request_changes(self.backend, self.inbox, &item, &comment).await;
                 self.inbox_reply(id, done);
             }
             ClientMsg::Settings { id } => match self.host.settings().await {
-                Ok(settings) => self.reply(id, Reply::Settings { settings }),
+                Ok(settings) => self.reply(
+                    id,
+                    Reply::Settings {
+                        settings: Box::new(settings),
+                    },
+                ),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },
             ClientMsg::SettingsUpdate { id, revision, ops } => {
@@ -615,7 +674,12 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                                 tracing::warn!(error = %e, "a renamed Bot's items keep the old name");
                             }
                         }
-                        self.reply(id, Reply::Settings { settings })
+                        self.reply(
+                            id,
+                            Reply::Settings {
+                                settings: Box::new(settings),
+                            },
+                        )
                     }
                     Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
                 }
@@ -884,6 +948,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     let message = format!("the Task started, but its loop did not: {e}");
                     return self.error(Some(id), task_code(&e), message);
                 }
+                paused::end_pauses(self.host, self.inbox, &terminal).await;
                 self.reply(
                     id,
                     Reply::Started {
@@ -905,6 +970,10 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 revisions.mark_unchanged();
                 self.inbox_watch = Some(revisions);
                 self.loop_watch = self.host.loop_changes().map(|mut r| {
+                    r.mark_unchanged();
+                    r
+                });
+                self.paused_watch = self.host.paused_changes().map(|mut r| {
                     r.mark_unchanged();
                     r
                 });
@@ -1165,6 +1234,14 @@ async fn next_revision(revisions: &mut Option<watch::Receiver<u64>>) {
 /// wrong type: only errors that name a field or an op are passed on.
 /// serde's message can quote a value, so for a request that carries secrets or
 /// file bytes it only says which field, or that the request is wrong.
+/// The `id` of a message that did not parse, when it has a whole number one.
+fn request_id(payload: &[u8]) -> Option<u64> {
+    serde_json::from_slice::<serde_json::Value>(payload)
+        .ok()?
+        .get("id")?
+        .as_u64()
+}
+
 fn bad_message(payload: &[u8], e: &serde_json::Error) -> String {
     let kind = serde_json::from_slice::<serde_json::Value>(payload)
         .ok()

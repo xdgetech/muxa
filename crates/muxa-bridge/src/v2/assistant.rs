@@ -235,19 +235,40 @@ fn launch(
     let config_file = mcp::write(&dir, &[], &[])?;
     let command = mcp::with_flags(command, &config_file, true);
     let rules = [bot_run::deny(&files.bound)];
+    // Its own list, else the default login as before (ADR 0103 §4).
+    let login = crate::records::subscriptions::login(
+        all.subscriptions(),
+        &all.assistant().subscriptions,
+        &command,
+        None,
+        &super::runner::limits_of(config, all),
+    );
     let command = bot_run::with_settings(command, &dir, &rules, &[])?;
+    let hook = login
+        .as_ref()
+        .and_then(|l| crate::status_line::Hook::current(config.state_dir.as_deref(), &l.name));
+    let command = match &hook {
+        Some(h) => crate::status_line::add(command, &dir, h)?,
+        None => command,
+    };
+    let mut labels = Labels::from([
+        ("muxa.kind".to_owned(), KIND.to_owned()),
+        ("muxa.role".to_owned(), "agent".to_owned()),
+        ("muxa.dir".to_owned(), dir.to_string_lossy().into_owned()),
+        (ITEM.to_owned(), item.id.clone()),
+        (STARTED.to_owned(), now().to_string()),
+    ]);
+    let mut env = BTreeMap::new();
+    if let Some(l) = login {
+        env.extend(l.env);
+        labels.insert(muxa_server::tasks::SUBSCRIPTION.to_owned(), l.name);
+    }
     Ok(Launch {
         argv: runner::argv(&command, runner::START_PROMPT),
         cwd: Some(dir.clone()),
         name: Some(format!("assistant {}", item.id)),
-        labels: Labels::from([
-            ("muxa.kind".to_owned(), KIND.to_owned()),
-            ("muxa.role".to_owned(), "agent".to_owned()),
-            ("muxa.dir".to_owned(), dir.to_string_lossy().into_owned()),
-            (ITEM.to_owned(), item.id.clone()),
-            (STARTED.to_owned(), now().to_string()),
-        ]),
-        env: BTreeMap::new(),
+        labels,
+        env,
     })
 }
 

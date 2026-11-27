@@ -9,10 +9,12 @@ struct WorkspaceAgentForm: View {
     @State private var command: String
     @State private var env: EnvDraft?
     @State private var error: String?
+    @State private var subscriptions: [String]
 
     init(workspace: SettingsWorkspace) {
         self.workspace = workspace
         _command = State(initialValue: workspace.agent.command ?? "")
+        _subscriptions = State(initialValue: workspace.subscriptions)
     }
 
     var body: some View {
@@ -41,6 +43,7 @@ struct WorkspaceAgentForm: View {
         } footer: {
             Text("Empty: the daemon's --task-command, usually claude.")
         }
+        logins
         environment
         SaveError(text: error, id: "settings.error")
         LoopChecksSection(workspace: workspace)
@@ -67,6 +70,50 @@ struct WorkspaceAgentForm: View {
         } footer: {
             Text("Every agent of the Workspace gets these. Values are write-only: the host never sends them back.")
         }
+    }
+
+    /// The subscriptions its agents use, in order (ADR 0103): each agent takes
+    /// the first of its kind. A login its env names is adopted from here.
+    private var logins: some View {
+        Section {
+            SubscriptionOrder(names: $subscriptions, available: model.settings.subscriptionNames(), id: "ws.subs") { name in
+                save([.workspaceUpdate(workspace: workspace.name,
+                                       subscriptions: SubscriptionOrder.first(name, in: subscriptions))])
+            }
+            if subscriptions.count > 1 {
+                // A closure, not `set: save`: see ClaudeConnectorsToggle.
+                Toggle("Switch when full", isOn: Binding(
+                    get: { workspace.switchSubscriptions },
+                    set: { on in save([.workspaceUpdate(workspace: workspace.name, switchSubscriptions: on)]) }))
+                    .disabled(model.settings.readOnly || model.settings.saving)
+                    .accessibilityIdentifier("ws.subs.switch")
+            }
+            if subscriptions != workspace.subscriptions {
+                Button("Save Subscriptions") { save([.workspaceUpdate(workspace: workspace.name, subscriptions: subscriptions)]) }
+                    .accessibilityIdentifier("ws.subs.save")
+            }
+            ForEach(envLogins, id: \.self) { f in
+                Button("Make Its Env Login a Subscription", systemImage: "arrow.down.doc") { save([Found.op(f)]) }
+                    .accessibilityIdentifier("ws.subs.adopt")
+            }
+        } header: {
+            Text("Subscriptions")
+        } footer: {
+            Text(envLogins.isEmpty ? Self.note(workspace)
+                : "Its env names a login. As a subscription, it shows its usage and the Workspace can list a second one.")
+        }
+        .onChange(of: workspace.subscriptions) { _, new in subscriptions = new }
+    }
+
+    static func note(_ ws: SettingsWorkspace) -> String {
+        if ws.subscriptions.isEmpty { return "Empty: the agent's default login." }
+        return ws.switchSubscriptions
+            ? "New agents take the Current login of their kind. At 95% of a limit they take the next one."
+            : "New agents take the Current login of their kind, also when it is full. Use another to switch."
+    }
+
+    private var envLogins: [FoundLogin] {
+        (model.settings.settings?.foundLogins ?? []).filter { $0.workspace == workspace.name }
     }
 
     private func save(_ ops: [SettingsOp]) {

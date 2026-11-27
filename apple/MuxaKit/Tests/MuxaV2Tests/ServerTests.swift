@@ -157,6 +157,44 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aRoutineSaysItWaitsForALimitReset() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let routines = try await c.routines().routines
+        #expect(routines.map(\.name) == ["digest", "audit"])
+        #expect(routines[0].waitingUntil == 1_700_003_600)
+        #expect(routines[1].waitingUntil == nil)
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func subscriptionsComeWithTheirLimits() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.subscriptions() == [SubscriptionUsage(
+            name: "claude-work", agent: "claude-code", plan: "Max 20x",
+            windows: [
+                UsageWindow(minutes: 300, usedPercent: 82, resetsAt: Date(timeIntervalSince1970: 1_764_014_400)),
+                UsageWindow(minutes: 10_080, usedPercent: 31, resetsAt: Date(timeIntervalSince1970: 1_764_320_400)),
+            ],
+            asOf: Date(timeIntervalSince1970: 1_764_000_120))])
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func tokenUsageComesByWorkspaceAndTask() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let usage = try await c.tokenUsage(day: "2026-11-24")
+        #expect(usage == TokenUsage(day: "2026-11-24", workspaces: [
+            WorkspaceTokens(workspace: "Personal", input: 1_200_000, cached: 9_000_000, output: 84_000),
+        ], tasks: [
+            TaskTokens(workspace: "Personal", dir: "/work/demo", title: "demo", input: 800_000, cached: 6_000_000, output: 60_000),
+        ]))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func settingsShowTheHostsFilesWithoutSecrets() async throws {
         let server = try Server()
         let c = try await server.connect()
@@ -178,6 +216,9 @@ struct ServerTests {
                     foundRepos: ["app", "docs"], hiddenRepos: ["docs"]),
             ],
             workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
+            subscriptions: [SubscriptionSpec(name: "claude-work", agent: "claude-code", home: "~/.claude-work",
+                                             plan: "Max 20x")],
+            foundLogins: [FoundLogin(agent: "claude-code", workspace: "Personal")],
             build: SettingsBuild(dir: "/ssd/build", dirFound: true)))
         await c.close()
     }
@@ -245,6 +286,29 @@ struct ServerTests {
         let changed = try await c.inbox(.inboxRequestChanges(item: second.id, comment: "Add a test"))
         #expect(changed.done.contains { $0.id == second.id })
         #expect(try await c.terminals().contains { $0.id == other.id })
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aPausedTaskIsListedAndResumesWithItsItems() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        try await c.watch()
+        var events = c.events.makeAsyncIterator()
+        let (agent, _) = try await c.startTask(workspace: "w", title: "wait")
+        let review = try #require(try await c.inbox(.taskReview(terminal: agent.id)).items.first)
+        let paused = try await c.pauseTask(agent.id)
+        #expect(paused.id == agent.id && !paused.terminal.live && paused.terminal.taskTitle == "wait")
+        let seen = await Self.next(&events) { if case .paused = $0 { false } else { true } }
+        #expect(seen == .paused([paused]))
+        #expect(try await c.pausedTasks() == [paused])
+        #expect(try await !c.terminals().contains { $0.id == agent.id })
+
+        let (again, _) = try await c.resumeTask(agent.id)
+        #expect(again.live && again.taskTitle == "wait" && again.id != agent.id)
+        #expect(try await c.pausedTasks().isEmpty)
+        #expect(try await c.inbox().items.first { $0.id == review.id }?.terminal == again.id)
+        await #expect(throws: V2Error.self) { try await c.resumeTask(agent.id) }
         await c.close()
     }
 

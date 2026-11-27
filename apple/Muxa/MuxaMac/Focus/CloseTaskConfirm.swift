@@ -40,7 +40,9 @@ struct CloseTaskConfirm: ViewModifier {
     /// `close-task` marks the talk's open items Done: its proposal and the items it added.
     private func message(_ task: MuxaV2.Terminal) -> String {
         guard let bot = task.talkBot else {
-            return "Its agent and shells stop. Its branch worktrees are removed when they are clean and merged."
+            let worktrees = "Its branch worktrees are removed when they are clean and merged."
+            // A paused Task has no agent or shell left to stop (ADR 0104).
+            return model.pausedRecord(task.id) != nil ? worktrees : "Its agent and shells stop. " + worktrees
         }
         let ends = "\(bot) stops answering and the chat leaves the list. You cannot open it again."
         switch model.inbox.items.filter({ $0.terminal == task.id }).count {

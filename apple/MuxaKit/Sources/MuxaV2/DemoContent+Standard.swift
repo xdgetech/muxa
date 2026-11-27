@@ -9,7 +9,7 @@ extension DemoContent {
     /// its Routine `scan` (`t8`, ADR 0086). The Bot `scout` has no Routines
     /// and a live talk (`t9`). The Capture assistant suggests
     /// where `d13` goes (ADR 0084). Approving `d8` needs force: its worktree
-    /// holds work. `d9` came from muxa v1.
+    /// holds work. `d9` came from muxa v1. `t10` is a paused Task (ADR 0104).
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String, app: String = "claude-code") -> Terminal {
             Terminal(
@@ -194,7 +194,52 @@ extension DemoContent {
                     ])),
             ],
             losesWork: ["d8": "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"],
-            settings: settings)
+            settings: settings,
+            subscriptions: usage,
+            tokenUsage: tokens,
+            paused: [
+                Paused(
+                    terminal: Terminal(
+                        id: "t10", name: "api-review", live: false, status: nil,
+                        labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.branch": "api-review",
+                                 "muxa.workspace": "app", "muxa.repo": "/demo/app", "muxa.dir": "/demo/app-api-review",
+                                 "muxa.title": "Wait for the API review",
+                                 "muxa.places": #"[{"kind":"branch","path":"/demo/app-api-review","branch":"api-review"}]"#],
+                        cols: 80, rows: 24),
+                    pausedAt: 1_764_000_000),
+            ])
+    }()
+
+    /// Today's tokens: the Tasks' folders are the demo agents' `muxa.dir`.
+    private static let tokens: TokenUsage = {
+        let day = Date().formatted(.iso8601.year().month().day())
+        return TokenUsage(day: day, workspaces: [
+            WorkspaceTokens(workspace: "app", input: 1_200_000, cached: 9_400_000, output: 84_000),
+            WorkspaceTokens(workspace: "Personal", input: 310_000, cached: 1_900_000, output: 22_000),
+        ], tasks: [
+            TaskTokens(workspace: "app", dir: "/demo/app-fix-login", title: "app-fix-login",
+                       input: 640_000, cached: 5_100_000, output: 41_000),
+            TaskTokens(workspace: "app", dir: "/demo/runs/dependency-digest", title: "dependency-digest",
+                       input: 220_000, cached: 1_300_000, output: 9_000),
+        ])
+    }()
+
+    /// The limits the demo's agents last reported (ADR 0103): one near its
+    /// 5-hour limit, one never used yet.
+    private static let usage: [SubscriptionUsage] = {
+        let now = Date()
+        let hours = { (h: Double) in now.addingTimeInterval(h * 3600) }
+        return [
+            SubscriptionUsage(name: "claude-personal", agent: "claude-code", plan: "Max 20x", windows: [
+                UsageWindow(minutes: 300, usedPercent: 82, resetsAt: hours(3)),
+                UsageWindow(minutes: 10_080, usedPercent: 31, resetsAt: hours(60)),
+            ], asOf: now.addingTimeInterval(-240)),
+            SubscriptionUsage(name: "claude-spare", agent: "claude-code", plan: "Max 5x"),
+            SubscriptionUsage(name: "chatgpt", agent: "codex", plan: "Plus", windows: [
+                UsageWindow(minutes: 300, usedPercent: 18, resetsAt: hours(1.5)),
+                UsageWindow(minutes: 10_080, usedPercent: 41, resetsAt: hours(90)),
+            ], asOf: now.addingTimeInterval(-720)),
+        ]
     }()
 
     /// What pr-watch proposed in a talk: a turned-off Routine of its own and
@@ -275,13 +320,21 @@ extension DemoContent {
                         spec: RoutineSpec(name: "weekly-review", at: "18:00", timezone: "Europe/Berlin",
                                           instructions: "routines/weekly-review.md"),
                         instructionsText: "Sum up the week's Done items.\n"),
-                ]),
+                ],
+                subscriptions: ["claude-personal", "claude-spare"]),
         ],
         workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")],
         assistant: SettingsAssistant(
             enabled: true,
             soulText: "I sort what you capture: the Workspace, a due date, and whether a Bot can help.\n",
             memoryText: "Release items go to app. Personal errands have no Workspace.\n"),
+        subscriptions: [
+            SubscriptionSpec(name: "claude-personal", agent: "claude-code", home: "~/.claude", plan: "Max 20x"),
+            SubscriptionSpec(name: "claude-spare", agent: "claude-code", home: "~/.claude-spare", plan: "Max 5x"),
+            SubscriptionSpec(name: "chatgpt", agent: "codex", home: "~/.codex", plan: "Plus"),
+        ],
+        // app's env names its own Claude login: onboarding offers to adopt it.
+        foundLogins: [FoundLogin(agent: "claude-code", workspace: "app")],
         build: SettingsBuild(dir: "/Volumes/Build/muxa", dirFound: true, extraPaths: ["out"]))
 
     private static let plan = """

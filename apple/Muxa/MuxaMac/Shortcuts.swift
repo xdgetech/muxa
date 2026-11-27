@@ -75,6 +75,7 @@ struct Shortcut: Identifiable {
     // In Focus ⌘W closes the active shell, as in iTerm2; the agent's pane stays, and so does the window.
     static let closePane = Shortcut("close-pane", .panes, "Close shell, or the window outside Focus", KeyChord("w", .command))
     static let closeTask = Shortcut("close-task", .panes, "Close Task…", nil)
+    static let pauseTask = Shortcut("pause-task", .panes, "Pause Task", nil)
     static let closeOtherPanes = Shortcut("close-other-panes", .panes, "Close other shells", nil)
     static let pane = Shortcut("pane", .panes, "Pane 1–9", fixed: "⌘1 … ⌘9")
     static let inboxPanel = Shortcut("inbox-panel", .panes, "Inbox panel", KeyChord("i", [.command, .shift]))
@@ -92,7 +93,7 @@ struct Shortcut: Identifiable {
         home, focus, bots, goToTask, nextNeedsYou, previousNeedsYou, nextTask, previousTask, sidebar, routines,
         capture, captureAnywhere, newTask, settings, shortcuts,
         open, later, done, retry, move,
-        split, nextPane, previousPane, closePane, closeOtherPanes, closeTask, pane, inboxPanel, readerPanel, chatPanel, readerSave,
+        split, nextPane, previousPane, closePane, closeOtherPanes, pauseTask, closeTask, pane, inboxPanel, readerPanel, chatPanel, readerSave,
         newChat, runBot, botTabs, applyProposal,
     ]
 }

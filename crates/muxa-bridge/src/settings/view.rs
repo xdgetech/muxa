@@ -6,9 +6,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use muxa_protocol::settings::{
-    BotRules, BotSpec, ConnectionSpec, EnvKey, McpSpec, MemoryVersion, RoutineSpec, SettingsAgent,
-    SettingsAssistant, SettingsBot, SettingsBuild, SettingsConnection, SettingsLoop,
-    SettingsRoutine, SettingsWorkspace, WorkerSpec,
+    BotRules, BotSpec, ConnectionSpec, EnvKey, FoundLogin, McpSpec, MemoryVersion, RoutineSpec,
+    SettingsAgent, SettingsAssistant, SettingsBot, SettingsBuild, SettingsConnection, SettingsLoop,
+    SettingsRoutine, SettingsWorkspace, SubscriptionSpec, WorkerSpec,
 };
 use muxa_protocol::v2::LoopChecks;
 use serde::Deserialize;
@@ -26,6 +26,8 @@ pub struct FileConfig {
     #[serde(default)]
     pub worker: Vec<WorkerSpec>,
     pub assistant: Option<toml::Value>,
+    #[serde(default)]
+    pub subscription: Vec<SubscriptionSpec>,
     pub build: Option<FileBuild>,
 }
 
@@ -59,6 +61,57 @@ pub struct FileWorkspace {
     claude_connectors: bool,
     #[serde(default)]
     bots: FileBotRules,
+    #[serde(default)]
+    subscriptions: Vec<String>,
+    switch_subscriptions: Option<bool>,
+}
+
+impl FileWorkspace {
+    /// The agents whose login this Workspace's env names, by its variable
+    /// (ADR 0016); none once it lists subscriptions. The values stay here.
+    pub fn env_logins(&self) -> Vec<&'static str> {
+        if !self.subscriptions.is_empty() {
+            return Vec::new();
+        }
+        let env = self.agent.as_ref().map(|a| &a.env);
+        [
+            (crate::agents::claude::DIR_ENV, "claude-code"),
+            (crate::agents::codex::DIR_ENV, "codex"),
+        ]
+        .into_iter()
+        .filter(|(key, _)| env.is_some_and(|e| e.contains_key(*key)))
+        .map(|(_, agent)| agent)
+        .collect()
+    }
+}
+
+/// Logins on the host that are no subscription yet (ADR 0103 §7): the
+/// default folders that exist, and each Workspace's env login. Blocking.
+pub fn found_logins(config: &FileConfig, home: Option<&Path>) -> Vec<FoundLogin> {
+    let taken = |raw: &str| {
+        config
+            .subscription
+            .iter()
+            .any(|s| s.home == raw || (expand(&s.home, home).ok() == expand(raw, home).ok()))
+    };
+    let mut found: Vec<FoundLogin> = [("claude-code", "~/.claude"), ("codex", "~/.codex")]
+        .into_iter()
+        .filter(|(_, raw)| !taken(raw))
+        .filter(|(_, raw)| expand(raw, home).is_ok_and(|p| p.is_dir()))
+        .map(|(agent, raw)| FoundLogin {
+            agent: agent.to_owned(),
+            home: Some(raw.to_owned()),
+            workspace: None,
+        })
+        .collect();
+    for w in &config.workspace {
+        found.extend(w.env_logins().into_iter().map(|agent| FoundLogin {
+            agent: agent.to_owned(),
+            home: None,
+            workspace: Some(w.name.clone()),
+        }));
+    }
+    found
 }
 
 /// `[workspace.bots]`; with no `allow` the Bots get the defaults (ADR 0090),
@@ -199,6 +252,15 @@ pub fn assistant(
             .map(str::to_owned),
         soul_text: text(SOUL_FILE, MAX_SOUL),
         memory_text: text(MEMORY_FILE, MAX_MEMORY),
+        subscriptions: get("subscriptions")
+            .and_then(toml::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(toml::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -356,6 +418,8 @@ pub fn workspace(
                 .unwrap_or_else(crate::records::bots::default_allow),
             deny: w.bots.deny,
         },
+        subscriptions: w.subscriptions,
+        switch_subscriptions: w.switch_subscriptions.unwrap_or(true),
         connections,
         mcp: w.mcp,
         routines: list,

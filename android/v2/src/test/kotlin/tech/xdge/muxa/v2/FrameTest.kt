@@ -56,6 +56,15 @@ class FrameTest {
     }
 
     @Test
+    fun aLoopHeldForALimitSaysWhenItGoesOn() {
+        val wire = """{"loop":{"terminal":"t1","check":"make test","max_attempts":3,"timeout":600,"state":"paused","attempts":1,"armed_at":1,"since":2,"reason":"limit-reset","resumes_at":1700003600}}"""
+        val lp = field<LoopInfo>("loop", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals("limit-reset", lp.reason)
+        assertEquals(1_700_003_600L, lp.resumesAt)
+        assertTrue(lp.isActive)
+    }
+
+    @Test
     fun itemsDecodeFromTheWire() {
         // An older server may still send `later_until`; it is ignored (ADR 0096).
         val wire = """{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"""
@@ -101,6 +110,22 @@ class FrameTest {
         assertEquals(listOf(ReaderEntry("README.md"), ReaderEntry("output/qa/report.md", ignored = true)), entries)
         // A tracked file sends no `ignored`.
         assertEquals(null, (json.encodeToJsonElement(ReaderEntry.serializer(), entries[0]) as JsonObject)["ignored"])
+    }
+
+    @Test
+    fun pausedTasksTravelAsTheSpecSays() {
+        assertEquals("""{"id":1,"type":"pause-task","terminal":"t1"}""", V2Request.PauseTask("t1").json(1).toString())
+        assertEquals("""{"id":2,"type":"resume-task","terminal":"t1"}""", V2Request.ResumeTask("t1").json(2).toString())
+        assertEquals("""{"id":3,"type":"paused-tasks"}""", V2Request.PausedTasks.json(3).toString())
+        val wire = """{"paused":[{"terminal":{"id":"t1","name":"fix","live":false,"status":null,
+            "labels":{"muxa.kind":"task","muxa.role":"agent","muxa.title":"Fix it"},"cols":80,"rows":24},
+            "paused_at":1764000000,"loop":{"check":"make test","max_attempts":3,"timeout":600}},
+            {"terminal":{"id":"t2","live":false,"cols":80,"rows":24},"paused_at":1764000001}]}"""
+        val paused = field<List<Paused>>("paused", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals("Fix it" to 1_764_000_000L, paused[0].terminal.taskTitle to paused[0].pausedAt)
+        assertEquals(LoopSpec("make test", 3, 600), paused[0].loop)
+        // No loop was active.
+        assertEquals(null, paused[1].loop)
     }
 
     @Test
