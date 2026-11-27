@@ -28,6 +28,19 @@ pub fn check(dir: &Path, wait: Duration) -> Result<Access, String> {
     check_with(dir, wait, probe)
 }
 
+/// The folder is there and the daemon may write to it, within [`WAIT`].
+/// A refusal or a wait is logged. Blocking.
+pub fn usable(dir: &Path) -> bool {
+    match check(dir, WAIT) {
+        Ok(Access::Writable) => true,
+        Ok(Access::Missing) => false,
+        Err(why) => {
+            tracing::warn!(dir = %dir.display(), error = %why, "skipping the build disk");
+            false
+        }
+    }
+}
+
 fn check_with(
     dir: &Path,
     wait: Duration,

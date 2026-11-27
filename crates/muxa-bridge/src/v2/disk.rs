@@ -33,8 +33,8 @@ struct Found {
 
 /// The rows, with sizes.
 pub async fn report(config: &Config, holds: &Holds) -> Result<Vec<DiskRow>, TaskError> {
-    let mut found = scan(config, holds).await?;
-    sizes(&mut found).await;
+    let Scan { mut found, blocked } = scan(config, holds).await?;
+    sizes(&mut found, blocked).await;
     Ok(found.into_iter().map(|f| f.row).collect())
 }
 
@@ -44,7 +44,7 @@ pub async fn clean(
     holds: &Holds,
     clean: DiskClean,
 ) -> Result<DiskCleaned, TaskError> {
-    let found = scan(config, holds).await?;
+    let found = scan(config, holds).await?.found;
     let unknown: Vec<&String> = clean
         .paths
         .iter()
@@ -138,14 +138,22 @@ async fn forget(config: &Config, path: &Path, build: Vec<PathBuf>) {
     .await;
 }
 
-async fn scan(config: &Config, holds: &Holds) -> Result<Vec<Found>, TaskError> {
+struct Scan {
+    found: Vec<Found>,
+    /// Build disks the daemon cannot use now; nothing under them was read.
+    blocked: Vec<PathBuf>,
+}
+
+async fn scan(config: &Config, holds: &Holds) -> Result<Scan, TaskError> {
     let (c, state) = (config.clone(), config.state_dir.clone());
-    let (all, records) = blocking(move || {
+    let (all, records, blocked) = blocking(move || {
         let records = match state.as_deref() {
             Some(dir) => place_records::read(dir).map_err(|e| e.to_string())?.places,
             None => Vec::new(),
         };
-        Ok((c.load_workspaces()?, records))
+        let all = c.load_workspaces()?;
+        let blocked = blocked_disks(&all);
+        Ok((all, records, blocked))
     })
     .await
     .map_err(TaskError::Failed)?;
@@ -165,7 +173,8 @@ async fn scan(config: &Config, holds: &Holds) -> Result<Vec<Found>, TaskError> {
         }
     }
     let built: Vec<PathBuf> = records.iter().flat_map(|r| r.build.clone()).collect();
-    let loose = blocking(move || Ok(loose_folders(&all, &seen, &built)))
+    let skip = blocked.clone();
+    let loose = blocking(move || Ok(loose_folders(&all, &seen, &built, &skip)))
         .await
         .unwrap_or_default();
     out.extend(loose.into_iter().map(|(kind, path, ws)| {
@@ -174,7 +183,25 @@ async fn scan(config: &Config, holds: &Holds) -> Result<Vec<Found>, TaskError> {
             (kind == DiskKind::TaskFolder).then(|| "a Task folder holds the user's files".into());
         found(kind, path, Some(ws), None, held, None, why, Vec::new())
     }));
-    Ok(out)
+    Ok(Scan {
+        found: out,
+        blocked,
+    })
+}
+
+/// Build disks that are mounted but the daemon may not read, e.g. behind a
+/// macOS privacy prompt: reading them would wait for good. Blocking.
+fn blocked_disks(all: &Workspaces) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = all
+        .all()
+        .iter()
+        .filter_map(|ws| all.build_disk(ws))
+        .map(|d| d.dir)
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs.retain(|d| d.is_dir() && !crate::records::build_access::usable(d));
+    dirs
 }
 
 async fn recorded(r: &PlaceRecord, holds: &Holds, now: u64) -> Found {
@@ -317,6 +344,7 @@ fn loose_folders(
     all: &Workspaces,
     seen: &HashSet<PathBuf>,
     built: &[PathBuf],
+    blocked: &[PathBuf],
 ) -> Vec<(DiskKind, PathBuf, String)> {
     let mut out = Vec::new();
     for ws in all.all() {
@@ -325,7 +353,7 @@ fn loose_folders(
                 out.push((DiskKind::TaskFolder, dir, ws.name.clone()));
             }
         }
-        let Some(disk) = all.build_disk(ws) else {
+        let Some(disk) = all.build_disk(ws).filter(|d| !blocked.contains(&d.dir)) else {
             continue;
         };
         for dir in subdirs(&disk.dir.join(&ws.name)) {
@@ -372,9 +400,10 @@ async fn idle(path: &Path) -> bool {
 }
 
 /// `du -sk` of each row and of its build folders. Links are not followed.
-async fn sizes(found: &mut [Found]) {
+async fn sizes(found: &mut [Found], blocked: Vec<PathBuf>) {
     let mut paths: Vec<PathBuf> = found.iter().map(|f| PathBuf::from(&f.row.path)).collect();
     paths.extend(found.iter().flat_map(|f| f.build.iter().cloned()));
+    paths.retain(|p| !blocked.iter().any(|b| p.starts_with(b)));
     let measured = blocking(move || Ok(du(&paths))).await.unwrap_or_default();
     let size = |p: &Path| measured.iter().find(|(q, _)| q == p).map(|(_, b)| *b);
     for f in found {

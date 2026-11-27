@@ -867,11 +867,26 @@ impl Host for BridgeHost {
     ) -> Result<(), TaskError> {
         let removed = super::close::remove(places, mode).await;
         let (records, places) = (Arc::clone(&self.records), places.to_vec());
-        let _ = blocking(move || {
-            super::place_records::after_close(records.state_dir.as_deref(), &places);
-            Ok(())
+        let build = blocking(move || {
+            Ok(super::place_records::after_close(
+                records.state_dir.as_deref(),
+                &places,
+            ))
         })
-        .await;
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "cannot update the list of Task places");
+            Vec::new()
+        });
+        // Gigabytes of build output can take minutes to delete, and the
+        // client's connection waits on this reply.
+        if !build.is_empty() {
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = super::build_dirs::remove(&build) {
+                    tracing::warn!(error = %e, "cannot remove a closed Task's build folders");
+                }
+            });
+        }
         removed
     }
 

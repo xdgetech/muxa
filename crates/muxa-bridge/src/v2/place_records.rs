@@ -141,10 +141,12 @@ pub fn after_make(
     problem
 }
 
-/// After Close Task: forgets the worktrees that are gone, and removes their
-/// build folders. Blocking.
-pub fn after_close(state_dir: Option<&Path>, places: &[Place]) {
-    let Some(dir) = state_dir else { return };
+/// After Close Task: forgets the worktrees that are gone and returns their
+/// build folders, for the caller to remove. Blocking.
+pub fn after_close(state_dir: Option<&Path>, places: &[Place]) -> Vec<PathBuf> {
+    let Some(dir) = state_dir else {
+        return Vec::new();
+    };
     let gone: Vec<PathBuf> = places
         .iter()
         .filter(|p| p.kind == PlaceKind::Branch)
@@ -152,7 +154,7 @@ pub fn after_close(state_dir: Option<&Path>, places: &[Place]) {
         .filter(|p| !p.exists())
         .collect();
     if gone.is_empty() {
-        return;
+        return Vec::new();
     }
     let dropped = update(dir, |list| {
         let mut build = Vec::new();
@@ -164,14 +166,10 @@ pub fn after_close(state_dir: Option<&Path>, places: &[Place]) {
         }
         build
     });
-    match dropped {
-        Ok(build) => {
-            if let Err(e) = super::build_dirs::remove(&build) {
-                tracing::warn!(error = %e, "cannot remove a closed Task's build folders");
-            }
-        }
-        Err(e) => tracing::warn!(error = %e, "cannot update the list of Task places"),
-    }
+    dropped.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "cannot update the list of Task places");
+        Vec::new()
+    })
 }
 
 #[cfg(test)]
@@ -207,6 +205,41 @@ mod tests {
         assert_eq!(read.get(Path::new("/a")).map(|r| r.made), Some(2));
         update(&dir, |p| p.drop_path(Path::new("/a"))).unwrap();
         assert!(read_back(&dir).get(Path::new("/a")).is_none());
+    }
+
+    #[test]
+    fn after_close_forgets_gone_worktrees_and_leaves_their_build_folders_to_the_caller() {
+        let state = crate::v2::adopt::tests::temp("after-close");
+        let kept = state.join("kept-worktree");
+        std::fs::create_dir_all(&kept).unwrap();
+        let gone = state.join("gone-worktree");
+        let build = state.join("build").join("target");
+        std::fs::create_dir_all(&build).unwrap();
+        update(&state, |p| {
+            p.put(PlaceRecord {
+                path: gone.clone(),
+                build: vec![build.clone()],
+                ..record("")
+            });
+            p.put(PlaceRecord {
+                path: kept.clone(),
+                ..record("")
+            });
+        })
+        .unwrap();
+        let place = |path: &Path| Place {
+            kind: PlaceKind::Branch,
+            path: path.display().to_string(),
+            branch: Some("fix".into()),
+        };
+
+        let returned = after_close(Some(&state), &[place(&gone), place(&kept)]);
+
+        assert_eq!(returned, vec![build.clone()]);
+        assert!(build.is_dir(), "the caller removes the build folders");
+        let list = read_back(&state);
+        assert!(list.get(&gone).is_none());
+        assert!(list.get(&kept).is_some());
     }
 
     fn read_back(dir: &Path) -> Places {

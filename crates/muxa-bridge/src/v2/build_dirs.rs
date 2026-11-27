@@ -86,6 +86,17 @@ pub fn remove(build: &[PathBuf]) -> Result<(), String> {
             tracing::warn!(path = %dir.display(), "not a build folder muxa made; kept");
             continue;
         }
+        // A disk macOS holds behind a privacy prompt would block the delete
+        // for good; the folder stays and the Disk page lists it.
+        let Some(parent) = dir.parent() else { continue };
+        match build_access::check(parent, build_access::WAIT) {
+            Ok(Access::Writable) => {}
+            Ok(Access::Missing) => continue,
+            Err(why) => {
+                problems.push(why);
+                continue;
+            }
+        }
         match std::fs::remove_dir_all(dir) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -229,5 +240,20 @@ mod tests {
         assert!(!made.exists());
         assert!(!ssd.join("w/r").exists());
         assert!(kept.exists() && link.exists());
+    }
+
+    #[test]
+    fn remove_keeps_a_folder_on_a_disk_muxa_may_not_write_to_and_says_why() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp("build-remove-denied");
+        let place = root.join("ssd/w/r");
+        let made = place.join("target");
+        std::fs::create_dir_all(made.join("debug")).unwrap();
+        std::fs::set_permissions(&place, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let got = remove(std::slice::from_ref(&made));
+        std::fs::set_permissions(&place, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let why = got.unwrap_err();
+        assert!(why.contains("Privacy & Security"), "{why}");
+        assert!(made.join("debug").is_dir(), "nothing under it was removed");
     }
 }

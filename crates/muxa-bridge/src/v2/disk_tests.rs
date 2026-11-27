@@ -261,3 +261,32 @@ async fn a_worktree_with_submodules_goes_only_when_they_hold_nothing() {
     let kept = h.clean(&[&held], false, false).await.unwrap();
     assert!(kept.kept[0].why.contains("submodule lib"), "{kept:?}");
 }
+
+#[tokio::test]
+async fn a_build_disk_muxa_may_not_write_to_is_not_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = host("blocked-disk");
+    let ssd = h.root.join("ssd");
+    let leftover = ssd.join("w/r-old");
+    std::fs::create_dir_all(leftover.join("target")).unwrap();
+    let file = h.config.workspaces.clone().unwrap();
+    let toml = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(
+        &file,
+        format!("[build]\ndir = \"{}\"\n\n{toml}", ssd.display()),
+    )
+    .unwrap();
+    let listed = |rows: &[DiskRow]| {
+        rows.iter()
+            .any(|r| r.path == leftover.display().to_string())
+    };
+    assert!(
+        listed(&h.rows().await),
+        "control: a usable disk lists its loose folder"
+    );
+
+    std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let rows = h.rows().await;
+    std::fs::set_permissions(&ssd, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(!listed(&rows));
+}
