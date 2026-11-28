@@ -1,3 +1,4 @@
+import MuxaSession
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -39,7 +40,7 @@ extension View {
     /// The Mac's field editor treats both keys as submit, so Shift+Return
     /// inserts the line itself. iOS takes Return in a vertical field as a new
     /// line and never submits, so one typed new line sends there; a pasted
-    /// text keeps its lines.
+    /// text keeps its lines. A Return that confirms a conversion never sends.
     func returnSends(_ text: Binding<String>, send: @escaping () -> Void) -> some View {
         #if os(macOS)
         onSubmit(send).onKeyPress(.return, phases: .down) { press in
@@ -51,12 +52,30 @@ extension View {
             return .handled
         }
         #else
-        onSubmit(send).onChange(of: text.wrappedValue) { old, new in
-            guard let typed = withoutTypedReturn(old: old, new: new) else { return }
-            // `send` trims and clears; one write fewer leaves UIKit no older text to apply.
-            send()
-            if text.wrappedValue == new { text.wrappedValue = typed }
+        submitOnReturn(send).onChange(of: text.wrappedValue) { old, new in
+            switch ChatReturn.typed(old: old, new: new, imeOwnsReturn: IMEWatch.shared.ownsReturn) {
+            case .send(let typed):
+                // `send` trims and clears; one write fewer leaves UIKit no older text to apply.
+                send()
+                if text.wrappedValue == new { text.wrappedValue = typed }
+            case .confirm(let typed):
+                text.wrappedValue = typed
+            case nil:
+                return
+            }
         }
+        #endif
+    }
+
+    /// `onSubmit`, except for the Return that confirms an input method's
+    /// conversion on iOS. The Mac's input method keeps that Return itself.
+    func submitOnReturn(_ action: @escaping () -> Void) -> some View {
+        #if os(iOS)
+        onAppear(perform: IMEWatch.start).onSubmit {
+            if !IMEWatch.shared.ownsReturn { action() }
+        }
+        #else
+        onSubmit(action)
         #endif
     }
 
@@ -102,15 +121,4 @@ extension Image {
         self.init(nsImage: image)
         #endif
     }
-}
-
-/// `new` without the one new line typed into `old`; nil for any other edit.
-func withoutTypedReturn(old: String, new: String) -> String? {
-    guard new.count == old.count + 1 else { return nil }
-    let at = zip(old, new).prefix { $0 == $1 }.count
-    let i = new.index(new.startIndex, offsetBy: at)
-    guard new[i] == "\n" else { return nil }
-    var rest = new
-    rest.remove(at: i)
-    return rest == old ? rest : nil
 }

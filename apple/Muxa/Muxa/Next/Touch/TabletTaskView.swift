@@ -76,7 +76,7 @@ private struct ReplyBar: View {
                 TextField(prompt == nil ? "Type a line for the terminal" : "Reply, or tell it what to change", text: $text)
                     .focused(focused)
                     .submitLabel(.send)
-                    .onSubmit(send)
+                    .submitOnReturn(send)
                     .fieldWell(radius: 10, ground: Palette.ground)
                     .accessibilityIdentifier("focus.line")
                 if let option = prompt?.approve {

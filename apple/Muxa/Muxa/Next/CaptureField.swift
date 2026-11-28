@@ -34,7 +34,7 @@ struct CaptureField: View {
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .submitLabel(.done)
-                    .onSubmit { Task { await add() } }
+                    .submitOnReturn { Task { await add() } }
                     .accessibilityLabel("Capture")
                     .accessibilityIdentifier("capture.field")
                 if !text.isEmpty, !bare {

@@ -61,7 +61,7 @@ struct GoToTask: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($focused)
-                .onSubmit { open(rows) }
+                .submitOnReturn { open(rows) }
                 .onKeyPress(.downArrow) { move(1, in: rows) }
                 .onKeyPress(.upArrow) { move(-1, in: rows) }
                 .accessibilityIdentifier("goto.field")
