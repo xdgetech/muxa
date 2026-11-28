@@ -85,7 +85,23 @@ public final class KeyInputView: UIView, UITextInput {
     }
 
     public func insertText(_ text: String) {
+        let ended = composition.isComposing
         send(keyBar.type(composition.insert(text)))
+        if ended { forgetCommitted() }
+    }
+
+    /// The committed text went to the pane and is not in this document. The
+    /// input method still counts it, and on iPadOS it then keeps the next
+    /// Return. Telling it the text changed makes it read the document again;
+    /// after the input method's own call returns, so it is not re-entered.
+    func forgetCommitted() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.composition.isComposing else { return }
+            self.inputDelegate?.selectionWillChange(self)
+            self.inputDelegate?.textWillChange(self)
+            self.inputDelegate?.textDidChange(self)
+            self.inputDelegate?.selectionDidChange(self)
+        }
     }
 
     public func deleteBackward() {
