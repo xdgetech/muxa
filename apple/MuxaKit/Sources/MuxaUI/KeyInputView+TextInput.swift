@@ -31,6 +31,7 @@ extension KeyInputView {
 
     public func unmarkText() {
         send(composition.commit())
+        forgetCommitted()
     }
 
     public var markedTextRange: UITextRange? {

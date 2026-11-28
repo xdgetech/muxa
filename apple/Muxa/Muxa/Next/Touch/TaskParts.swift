@@ -101,7 +101,7 @@ struct TerminalLine: View {
             TextField(prompt, text: $text)
                 .focused(focused)
                 .submitLabel(.send)
-                .onSubmit(send)
+                .submitOnReturn(send)
                 .padding(.horizontal, 4)
                 .fieldWell(radius: minTouch / 2)
                 .accessibilityIdentifier("focus.line")

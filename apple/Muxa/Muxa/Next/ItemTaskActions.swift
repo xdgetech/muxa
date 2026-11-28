@@ -73,7 +73,7 @@ struct ItemTaskActions: View {
         HStack {
             TextField("What should the agent change?", text: $comment)
                 .focused($commentFocused)
-                .onSubmit { Task { await requestChanges() } }
+                .submitOnReturn { Task { await requestChanges() } }
                 .fieldWell(radius: 10)
                 .accessibilityIdentifier("detail.comment")
             Button("Send") { Task { await requestChanges() } }
